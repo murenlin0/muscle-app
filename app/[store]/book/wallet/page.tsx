@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { PageShell } from '@/app/components/page-shell';
 import { useLiff } from '@/app/components/liff-provider';
+import { LiffStatusGate } from '@/components/liff-status-gate';
 import { LoadingScreen } from '@/components/loading-screen';
 import { useStore } from '@/components/store-provider';
 import { Badge } from '@/components/ui/badge';
@@ -60,7 +61,11 @@ export default function WalletPage() {
   }, [status, lineUserId, apiBase]);
 
   if (status !== 'ready' || loading) {
-    return <LoadingScreen />;
+    return (
+      <LiffStatusGate>
+        <LoadingScreen />
+      </LiffStatusGate>
+    );
   }
 
   if (error || !client) {

@@ -4,6 +4,8 @@ export interface StoreConfig {
   /** URL slug，同時也是資料庫 stores.id */
   slug: StoreSlug;
   name: string;
+  /** 預約訊息內店名一行，用於解析（須與 LIFF 送出格式一致） */
+  messageStoreLabel: string;
   area: string;
   /** 官網「我要預約」→ 該店官方 LINE（加好友／聊天連結） */
   lineOfficialUrl: string;
@@ -20,6 +22,7 @@ export const STORES: Record<StoreSlug, StoreConfig> = {
   store1: {
     slug: 'store1',
     name: '林口民有店',
+    messageStoreLabel: '筋棧民有店',
     area: '新北市林口區',
     lineOfficialUrl: 'https://line.me/R/ti/p/@REPLACE_MINYOU',
     googleMapsUrl: 'https://maps.google.com/?q=筋棧+林口民有',
@@ -31,6 +34,7 @@ export const STORES: Record<StoreSlug, StoreConfig> = {
   store2: {
     slug: 'store2',
     name: '林口文一店',
+    messageStoreLabel: '筋棧文一店',
     area: '新北市林口區',
     lineOfficialUrl: 'https://line.me/R/ti/p/@REPLACE_WENYI',
     googleMapsUrl: 'https://maps.google.com/?q=筋棧+林口文一',
@@ -66,4 +70,23 @@ export function storeIdFromSlug(slug: StoreSlug): StoreSlug {
 
 export function storeBookPath(slug: StoreSlug): string {
   return `/${slug}/book`;
+}
+
+/** 店內系統為全店共用；分店由預約訊息內店名判斷 */
+export const STAFF_PORTAL_PATH = '/staff';
+
+export function storeStaffPath(_slug: StoreSlug): string {
+  return STAFF_PORTAL_PATH;
+}
+
+export function storeAdminPath(slug: StoreSlug): string {
+  return `/${slug}/admin`;
+}
+
+export function resolveStoreSlugFromMessageLabel(label: string): StoreSlug | null {
+  const trimmed = label.trim();
+  for (const store of STORE_LIST) {
+    if (store.messageStoreLabel === trimmed) return store.slug;
+  }
+  return null;
 }

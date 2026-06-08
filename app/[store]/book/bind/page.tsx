@@ -6,6 +6,7 @@ import { Phone, UserRound } from 'lucide-react';
 import { PageShell } from '@/app/components/page-shell';
 import { useLiff } from '@/app/components/liff-provider';
 import { BindSubmitButton } from '@/components/bind-submit-button';
+import { LiffStatusGate } from '@/components/liff-status-gate';
 import { LoadingScreen } from '@/components/loading-screen';
 import { useStore } from '@/components/store-provider';
 import { Badge } from '@/components/ui/badge';
@@ -71,10 +72,6 @@ function BindForm() {
 
     await refreshClient();
     router.replace(bookBase);
-  }
-
-  if (status !== 'ready') {
-    return <LoadingScreen />;
   }
 
   return (
@@ -155,8 +152,10 @@ function BindForm() {
 
 export default function BindPage() {
   return (
-    <Suspense fallback={<LoadingScreen />}>
-      <BindForm />
-    </Suspense>
+    <LiffStatusGate>
+      <Suspense fallback={<LoadingScreen />}>
+        <BindForm />
+      </Suspense>
+    </LiffStatusGate>
   );
 }

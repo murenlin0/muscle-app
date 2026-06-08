@@ -1,11 +1,20 @@
 'use client';
 
 import { createContext, useContext, useMemo } from 'react';
-import { getStoreOrThrow, storeBookPath, type StoreConfig, type StoreSlug } from '@/lib/stores';
+import {
+  getStoreOrThrow,
+  storeAdminPath,
+  storeBookPath,
+  storeStaffPath,
+  type StoreConfig,
+  type StoreSlug,
+} from '@/lib/stores';
 
 interface StoreContextValue {
   store: StoreConfig;
   bookBase: string;
+  staffBase: string;
+  adminBase: string;
   apiBase: string;
 }
 
@@ -23,6 +32,8 @@ export function StoreProvider({
     return {
       store,
       bookBase: storeBookPath(slug),
+      staffBase: storeStaffPath(slug),
+      adminBase: storeAdminPath(slug),
       apiBase: `/api/${slug}`,
     };
   }, [slug]);

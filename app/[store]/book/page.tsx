@@ -22,14 +22,24 @@ export default function BookHomePage() {
   const { bookBase } = useStore();
   const { status, error, loadingMessage, client, displayName } = useLiff();
 
+  const needsBind = status === 'ready' && !client;
+
   useEffect(() => {
-    if (status === 'ready' && !client) {
+    if (needsBind) {
       router.replace(`${bookBase}/bind`);
     }
-  }, [status, client, router, bookBase]);
+  }, [needsBind, router, bookBase]);
 
   if (status === 'loading') {
     return <LoadingScreen message={loadingMessage} />;
+  }
+
+  if (needsBind) {
+    return <LoadingScreen message="前往綁定頁面…" />;
+  }
+
+  if (!client) {
+    return <LoadingScreen message="載入中…" />;
   }
 
   if (status === 'error') {
@@ -44,8 +54,6 @@ export default function BookHomePage() {
       </main>
     );
   }
-
-  if (!client) return null;
 
   return (
     <main className="min-h-svh">
@@ -81,9 +89,7 @@ export default function BookHomePage() {
           />
         </div>
 
-        <p className="mt-10 text-center text-sm text-muted-foreground">
-          {process.env.NEXT_PUBLIC_LIFF_ID ? 'LINE 會員服務' : '本機 DEV 模式'}
-        </p>
+        <p className="mt-10 text-center text-sm text-muted-foreground">LINE 會員服務</p>
       </div>
     </main>
   );

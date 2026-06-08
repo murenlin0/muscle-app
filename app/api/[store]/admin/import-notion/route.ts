@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { parseStoreFromParamsAsync } from '@/lib/api-store';
 import { importNotionCsvFromText } from '@/lib/import-notion-server';
+import { canAccessStore, getPortalSession } from '@/lib/portal-session';
 
 export async function POST(
   request: Request,
@@ -9,10 +10,12 @@ export async function POST(
   const store = await parseStoreFromParamsAsync(context.params);
   if (store instanceof NextResponse) return store;
 
+  const session = await getPortalSession();
   const secret = request.headers.get('x-admin-secret');
   const expected = process.env.ADMIN_IMPORT_SECRET;
+  const sessionOk = session && canAccessStore(session, store);
 
-  if (expected && secret !== expected) {
+  if (expected && secret !== expected && !sessionOk) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 

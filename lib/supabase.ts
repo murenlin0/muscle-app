@@ -21,8 +21,13 @@ export function getSupabase(): SupabaseClient {
 export function getSupabaseAdmin(): SupabaseClient {
   if (adminClient) return adminClient;
   const url = requireEnv('NEXT_PUBLIC_SUPABASE_URL');
-  const key =
-    process.env.SUPABASE_SERVICE_ROLE_KEY ?? requireEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY');
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!key) {
+    throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY（請在 Vercel 環境變數設定 service_role key）');
+  }
+  if (key === process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    throw new Error('SUPABASE_SERVICE_ROLE_KEY 不可與 anon key 相同');
+  }
   adminClient = createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
   });

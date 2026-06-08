@@ -41,10 +41,18 @@ export function LiffProvider({ children }: { children: React.ReactNode }) {
 
   const fetchMe = useCallback(
     async (userId: string): Promise<Client | null> => {
-      const res = await fetch(`${apiBase}/me`, { headers: apiHeaders(userId) });
+      const res = await withTimeout(
+        fetch(`${apiBase}/me`, { headers: apiHeaders(userId) }),
+        15000,
+        '連線伺服器逾時，請稍後再試',
+      );
       const data = (await res.json()) as { client: Client | null; error?: string };
       if (!res.ok) {
-        throw new Error(data.error ?? '無法取得會員資料');
+        const hint =
+          data.error?.includes('permission denied')
+            ? '\n\n請確認 Supabase 已執行 02_rls.sql，且 Vercel 已設定 SUPABASE_SERVICE_ROLE_KEY。'
+            : '';
+        throw new Error((data.error ?? '無法取得會員資料') + hint);
       }
       return data.client;
     },
