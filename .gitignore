@@ -33,6 +33,9 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# 客人資料，請用 admin 匯入，不要進 git
+*.csv
+
 # vercel
 .vercel
 
