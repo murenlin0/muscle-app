@@ -15,11 +15,17 @@ export function PortalShell({
   variant?: PortalVariant;
   backHref?: string;
   headerActions?: React.ReactNode;
-  size?: 'md' | 'lg' | 'xl';
+  size?: 'md' | 'lg' | 'xl' | 'full';
   children: React.ReactNode;
 }) {
   const maxWidth =
-    size === 'xl' ? 'max-w-5xl' : size === 'lg' ? 'max-w-3xl' : 'max-w-md';
+    size === 'full'
+      ? 'max-w-[min(100%,1720px)]'
+      : size === 'xl'
+        ? 'max-w-5xl'
+        : size === 'lg'
+          ? 'max-w-3xl'
+          : 'max-w-md';
 
   return (
     <main className="min-h-svh bg-background">

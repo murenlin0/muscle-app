@@ -11,7 +11,7 @@ export default function StoreReportsPage() {
 
   if (bootstrapping) {
     return (
-      <PortalShell title="本店報表" variant="admin" size="lg" backHref={adminBase}>
+      <PortalShell title="本店報表" variant="admin" size="full" backHref={adminBase}>
         <p className="text-center text-sm text-muted-foreground">載入中…</p>
       </PortalShell>
     );
@@ -22,7 +22,7 @@ export default function StoreReportsPage() {
       title="本店報表"
       subtitle={store.name}
       variant="admin"
-      size="lg"
+      size="full"
       backHref={adminBase}
     >
       <ReportsDashboard storeFilter={store.slug} />

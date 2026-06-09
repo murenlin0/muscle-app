@@ -1,41 +1,20 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { EditableLedgerTable, type LedgerRow } from '@/components/portal/editable-ledger-table';
 import { StatusBanner } from '@/components/portal/status-banner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { STORE_LIST, type StoreSlug } from '@/lib/stores';
 import { TRANSACTION_CATEGORIES, type TransactionCategory } from '@/lib/transaction-category';
-import { cn } from '@/lib/utils';
-
-interface TransactionRow {
-  id: string;
-  occurredOn: string;
-  title: string;
-  amount: number;
-  category: TransactionCategory;
-  paymentMethods: string[];
-}
 
 interface ReportList {
-  rows: TransactionRow[];
+  rows: LedgerRow[];
   totalRows: number;
   totalAmount: number;
   latestRecordDate: string | null;
 }
-
-const CATEGORY_STYLE: Record<TransactionCategory, string> = {
-  一般消費: 'bg-amber-900/30 text-amber-200',
-  會員儲值: 'bg-pink-900/30 text-pink-200',
-  會員使用: 'bg-purple-900/30 text-purple-200',
-  會員補差額: 'bg-purple-900/20 text-purple-300',
-  轉移: 'bg-emerald-900/30 text-emerald-200',
-  支出: 'bg-blue-900/30 text-blue-200',
-  工資: 'bg-zinc-700/40 text-zinc-200',
-  收入: 'bg-orange-900/30 text-orange-200',
-  分紅: 'bg-red-900/30 text-red-200',
-};
 
 function fmt(n: number) {
   return n.toLocaleString('zh-TW');
@@ -78,12 +57,13 @@ export function ReportsDashboard({
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [notionStatus, setNotionStatus] = useState<string | null>(null);
 
+  const activeStore = storeFilter ?? store;
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     const qs = new URLSearchParams({ from, to });
-    if (showStorePicker) qs.set('store', store);
-    else if (storeFilter) qs.set('store', storeFilter);
+    qs.set('store', activeStore);
     if (category) qs.set('category', category);
 
     const res = await fetch(`/api/portal/reports/transactions?${qs}`);
@@ -95,7 +75,7 @@ export function ReportsDashboard({
       return;
     }
     setReport(data.report ?? null);
-  }, [from, to, store, storeFilter, showStorePicker, category]);
+  }, [from, to, activeStore, category]);
 
   useEffect(() => {
     void load();
@@ -155,7 +135,7 @@ export function ReportsDashboard({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        storeId: storeFilter ?? store,
+        storeId: activeStore,
         fixNotion: false,
       }),
     });
@@ -180,46 +160,44 @@ export function ReportsDashboard({
     <div className="space-y-4">
       {error ? <StatusBanner variant="error">{error}</StatusBanner> : null}
       {syncMsg ? <StatusBanner variant="success">{syncMsg}</StatusBanner> : null}
+      {notionStatus ? <StatusBanner variant="success">{notionStatus}</StatusBanner> : null}
 
       {canSyncNotion ? (
-        <div className="glass-card flex flex-wrap items-center justify-between gap-4 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-md border border-[#333] bg-[#1c1c1c] px-4 py-3">
           <div>
-            <p className="text-sm font-medium">Notion 歷史資料匯入</p>
-            <p className="mt-1 text-xs text-muted-foreground">
-              一次匯入「新版筋棧1店每日紀錄」全部資料，不受下方日期篩選影響。
-            </p>
+            <p className="text-sm font-medium text-[#e0e0e0]">Notion 歷史資料匯入</p>
+            <p className="mt-0.5 text-xs text-[#888]">一次性匯入全部，之後請在本表直接編輯。</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" disabled={testing} onClick={() => void handleTestNotion()}>
+            <Button type="button" variant="outline" size="sm" disabled={testing} onClick={() => void handleTestNotion()}>
               {testing ? '測試中…' : '測試 Notion 連線'}
             </Button>
-            <Button type="button" disabled={syncing} onClick={() => void handleSync()}>
+            <Button type="button" size="sm" disabled={syncing} onClick={() => void handleSync()}>
               {syncing ? '匯入中…' : '一鍵匯入全部'}
             </Button>
           </div>
         </div>
       ) : null}
-      {notionStatus ? <StatusBanner variant="success">{notionStatus}</StatusBanner> : null}
 
-      <div className="glass-card flex flex-wrap items-end gap-3 p-4">
-        <div className="space-y-1.5">
-          <Label htmlFor="from" className="text-xs">
+      <div className="flex flex-wrap items-end gap-3 rounded-md border border-[#333] bg-[#1c1c1c] p-3">
+        <div className="space-y-1">
+          <Label htmlFor="from" className="text-xs text-[#888]">
             起日
           </Label>
-          <Input id="from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-9" />
+          <Input id="from" type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-9 border-[#444] bg-[#252525]" />
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="to" className="text-xs">
+        <div className="space-y-1">
+          <Label htmlFor="to" className="text-xs text-[#888]">
             迄日
           </Label>
-          <Input id="to" type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-9" />
+          <Input id="to" type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-9 border-[#444] bg-[#252525]" />
         </div>
-        <div className="space-y-1.5">
-          <Label className="text-xs">類型</Label>
+        <div className="space-y-1">
+          <Label className="text-xs text-[#888]">類型</Label>
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value as TransactionCategory | '')}
-            className="flex h-9 min-w-[8rem] rounded-md border border-input bg-input px-2 text-sm"
+            className="flex h-9 min-w-[8rem] rounded-md border border-[#444] bg-[#252525] px-2 text-sm"
           >
             <option value="">全部</option>
             {TRANSACTION_CATEGORIES.map((c) => (
@@ -230,12 +208,12 @@ export function ReportsDashboard({
           </select>
         </div>
         {showStorePicker ? (
-          <div className="space-y-1.5">
-            <Label className="text-xs">分店</Label>
+          <div className="space-y-1">
+            <Label className="text-xs text-[#888]">分店</Label>
             <select
               value={store}
               onChange={(e) => setStore(e.target.value as StoreSlug)}
-              className="flex h-9 rounded-md border border-input bg-input px-2 text-sm"
+              className="flex h-9 rounded-md border border-[#444] bg-[#252525] px-2 text-sm"
             >
               {STORE_LIST.map((s) => (
                 <option key={s.slug} value={s.slug}>
@@ -245,82 +223,31 @@ export function ReportsDashboard({
             </select>
           </div>
         ) : null}
-        <Button type="button" size="sm" onClick={() => void load()} disabled={loading}>
+        <Button type="button" size="sm" variant="outline" onClick={() => void load()} disabled={loading}>
           {loading ? '載入中…' : '篩選'}
         </Button>
       </div>
 
-      <div className="glass-card overflow-hidden">
-        <div className="flex items-center justify-between border-b border-border/50 px-4 py-2 text-xs text-muted-foreground">
-          <span>
-            {report
-              ? `共 ${fmt(report.totalRows)} 筆 · 金額合計 $${fmt(report.totalAmount)}`
-              : '載入中…'}
-          </span>
-          {report?.latestRecordDate ? (
-            <span>資料最新：{formatDate(report.latestRecordDate)}</span>
-          ) : null}
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[880px] text-left text-sm">
-            <thead className="bg-muted/30 text-xs text-muted-foreground">
-              <tr>
-                <th className="px-4 py-2.5 font-medium">日期</th>
-                <th className="px-4 py-2.5 font-medium">標題</th>
-                <th className="px-4 py-2.5 font-medium text-right">金額數字</th>
-                <th className="px-4 py-2.5 font-medium">類型</th>
-                <th className="px-4 py-2.5 font-medium">付款方式</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                    載入中…
-                  </td>
-                </tr>
-              ) : !report?.rows.length ? (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                    此區間尚無資料。總管理員可按上方「一鍵匯入全部」。
-                  </td>
-                </tr>
-              ) : (
-                report.rows.map((row) => (
-                  <tr key={row.id} className="border-t border-border/40 hover:bg-muted/20">
-                    <td className="whitespace-nowrap px-4 py-2 text-muted-foreground">
-                      {formatDate(row.occurredOn)}
-                    </td>
-                    <td className="max-w-[28rem] truncate px-4 py-2" title={row.title}>
-                      {row.title}
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums">
-                      {fmt(row.amount)}
-                    </td>
-                    <td className="px-4 py-2">
-                      <span
-                        className={cn(
-                          'inline-flex rounded px-2 py-0.5 text-xs',
-                          CATEGORY_STYLE[row.category] ?? 'bg-muted text-muted-foreground',
-                        )}
-                      >
-                        {row.category}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 text-muted-foreground">
-                      {row.paymentMethods.length ? row.paymentMethods.join('、') : '—'}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+      <div className="flex items-center justify-between text-xs text-[#888]">
+        <span>
+          {report
+            ? `共 ${fmt(report.totalRows)} 筆 · 金額合計 $${fmt(report.totalAmount)}`
+            : ' '}
+        </span>
+        {report?.latestRecordDate ? (
+          <span>資料最新：{formatDate(report.latestRecordDate)}</span>
+        ) : null}
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        欄位對齊 Notion 每日紀錄。類型已簡化為九種；匯入後以本站資料庫為準，可停用 Notion。
+      <EditableLedgerTable
+        rows={report?.rows ?? []}
+        loading={loading}
+        storeId={activeStore}
+        onRefresh={() => void load()}
+      />
+
+      <p className="text-xs text-[#666]">
+        點欄位即可編輯，離開欄位自動儲存。拖曳欄位右側邊線可調整寬度。下方「+ 新增一列」可手動加入紀錄。
       </p>
     </div>
   );
