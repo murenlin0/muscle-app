@@ -15,5 +15,9 @@ function loadEnv() {
 
 loadEnv();
 
-const report = await migrateLedgerData('store1');
-console.log(JSON.stringify(report, null, 2));
+migrateLedgerData('store1')
+  .then((report) => console.log(JSON.stringify(report, null, 2)))
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
