@@ -17,6 +17,8 @@ export interface DailyTransactionListItem {
   category: TransactionCategory;
   paymentMethods: string[];
   staffName: string | null;
+  clientName: string | null;
+  clientPhone: string | null;
 }
 
 export interface ReportListResult {
@@ -79,6 +81,8 @@ type TxDbRow = {
   category: string;
   payment_methods: string[];
   staff_name: string | null;
+  client_name: string | null;
+  client_phone: string | null;
 };
 
 function mapTxRow(row: TxDbRow): DailyTransactionListItem {
@@ -90,6 +94,8 @@ function mapTxRow(row: TxDbRow): DailyTransactionListItem {
     category: (row.category as TransactionCategory) ?? '一般消費',
     paymentMethods: row.payment_methods ?? [],
     staffName: row.staff_name ?? null,
+    clientName: row.client_name ?? null,
+    clientPhone: row.client_phone ?? null,
   };
 }
 
@@ -123,7 +129,9 @@ async function fetchTransactionRows(
   const all = await fetchAllPages<TxDbRow>(async (offset, pageSize) => {
     let q = supabase
       .from('daily_transactions')
-      .select('id, occurred_on, title, amount, category, payment_methods, staff_name')
+      .select(
+        'id, occurred_on, title, amount, category, payment_methods, staff_name, client_name, client_phone',
+      )
       .gte('occurred_on', from)
       .lte('occurred_on', to)
       .order('occurred_on', { ascending: false })
@@ -150,7 +158,9 @@ async function fetchTransactionPage(
   const offset = page * pageSize;
   let q = supabase
     .from('daily_transactions')
-    .select('id, occurred_on, title, amount, category, payment_methods, staff_name')
+    .select(
+      'id, occurred_on, title, amount, category, payment_methods, staff_name, client_name, client_phone',
+    )
     .gte('occurred_on', from)
     .lte('occurred_on', to)
     .order('occurred_on', { ascending: false })

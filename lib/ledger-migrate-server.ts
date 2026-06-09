@@ -1,6 +1,10 @@
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { normalizeLedgerAccounts } from '@/lib/ledger-accounts';
 import { normalizeLedgerAmount } from '@/lib/ledger-amount';
+import {
+  isMultiStaffCompoundTitle,
+  splitMultiStaffTransaction,
+} from '@/lib/multi-staff-split';
 import { splitLegacyTransferRow, type TransferSourceRow } from '@/lib/transfer-split';
 import {
   LEGACY_TRANSFER_CATEGORY,
@@ -12,6 +16,7 @@ export interface LedgerMigrateReport {
   scanned: number;
   updated: number;
   splitTransfers: number;
+  splitMultiStaff: number;
   issues: string[];
 }
 
@@ -68,10 +73,72 @@ export async function migrateLedgerData(storeId: StoreSlug = 'store1'): Promise<
     scanned: data.length,
     updated: 0,
     splitTransfers: 0,
+    splitMultiStaff: 0,
     issues: [],
   };
 
+  const compoundHandled = new Set<string>();
+
   for (const row of data) {
+    if (isMultiStaffCompoundTitle(row.title)) {
+      const groupKey = `${row.occurred_on}|${row.title.replace(/\s/g, '')}`;
+      if (compoundHandled.has(groupKey)) continue;
+      compoundHandled.add(groupKey);
+
+      const split = splitMultiStaffTransaction(row);
+      if (!split) {
+        report.issues.push(`無法拆分多人合寫：${row.occurred_on} ${row.title.slice(0, 48)}`);
+        continue;
+      }
+
+      const parsedPhone = split[0]?.client_phone;
+      const relatedIds = data
+        .filter(
+          (r) =>
+            r.occurred_on === row.occurred_on &&
+            (r.client_phone === parsedPhone ||
+              r.title.includes(split[0].client_name) ||
+              isMultiStaffCompoundTitle(r.title)),
+        )
+        .map((r) => r.id);
+
+      const { error: delErr } = await supabase
+        .from('daily_transactions')
+        .delete()
+        .in('id', [...new Set(relatedIds)]);
+
+      if (delErr) {
+        report.issues.push(`刪除多人合寫舊列失敗 ${groupKey}: ${delErr.message}`);
+        continue;
+      }
+
+      const { error: insErr } = await supabase.from('daily_transactions').insert(
+        split.map((s) => ({
+          store_id: storeId,
+          occurred_on: row.occurred_on,
+          title: s.title,
+          amount: normalizeLedgerAmount(s.category, s.amount),
+          category: s.category,
+          payment_methods: normalizeLedgerAccounts(s.payment_methods, s.category),
+          staff_name: s.staff_name,
+          client_name: s.client_name,
+          client_phone: s.client_phone,
+          is_vip: s.is_vip,
+          source: row.source ?? 'notion',
+          notion_page_id: row.notion_page_id
+            ? `${row.notion_page_id}#${s.staff_name}`
+            : null,
+        })),
+      );
+
+      if (insErr) {
+        report.issues.push(`多人合寫拆分失敗 ${groupKey}: ${insErr.message}`);
+      } else {
+        report.splitMultiStaff += 1;
+        report.updated += split.length;
+      }
+      continue;
+    }
     const category = row.category as TransactionCategory | typeof LEGACY_TRANSFER_CATEGORY;
 
     if (category === LEGACY_TRANSFER_CATEGORY) {

@@ -8,6 +8,7 @@ import { getSupabaseAdmin } from '@/lib/supabase';
 import { normalizeLedgerAccounts } from '@/lib/ledger-accounts';
 import { normalizeLedgerAmount } from '@/lib/ledger-amount';
 import type { StoreSlug } from '@/lib/stores';
+import { isMultiStaffCompoundTitle, splitMultiStaffTransaction } from '@/lib/multi-staff-split';
 import { splitLegacyTransferRow } from '@/lib/transfer-split';
 import {
   LEGACY_TRANSFER_CATEGORY,
@@ -56,7 +57,8 @@ export function mapNotionRowToTransaction(
   row: NotionDailyRow,
   storeId: StoreSlug,
 ): DailyTransactionRow {
-  const title = normalizeNotionTitle(row.title);
+  // 保留 Notion 原始標題（師傅、金額、餘額等完整資訊）
+  const title = row.title.trim();
   const parsed = parseNotionNamePhone(title);
   const staff = normalizeStaffName(row.staffName);
   const category = mapNotionServiceTypeToCategory(row.serviceType, row.paymentMethods);
@@ -79,10 +81,37 @@ export function mapNotionRowToTransaction(
   });
 }
 
+function expandMultiStaffRow(row: DailyTransactionRow): DailyTransactionRow[] | null {
+  if (!isMultiStaffCompoundTitle(row.title)) return null;
+  const split = splitMultiStaffTransaction(row);
+  if (!split) return null;
+
+  return split.map((s) =>
+    finalizeRow({
+      ...row,
+      title: s.title,
+      amount: s.amount,
+      category: s.category,
+      payment_methods: s.payment_methods,
+      staff_name: s.staff_name,
+      client_name: s.client_name,
+      client_phone: s.client_phone,
+      is_vip: s.is_vip,
+      notion_page_id: `${row.notion_page_id}#${s.staff_name}`,
+    }),
+  );
+}
+
 function expandRows(rows: DailyTransactionRow[]): DailyTransactionRow[] {
   const out: DailyTransactionRow[] = [];
 
   for (const row of rows) {
+    const multi = expandMultiStaffRow(row);
+    if (multi) {
+      out.push(...multi);
+      continue;
+    }
+
     if (row.category === LEGACY_TRANSFER_CATEGORY) {
       const split = splitLegacyTransferRow(row);
       if (split) {

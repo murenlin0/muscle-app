@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { BarChart3, FileSpreadsheet, LogOut, Users } from 'lucide-react';
+import { BarChart3, Contact, FileSpreadsheet, LogOut, Users } from 'lucide-react';
 import { PortalShell } from '@/app/components/portal-shell';
 import { AdminHubCard } from '@/components/portal/admin-hub-card';
 import { portalLogout, useStoreAdminGuard } from '@/components/portal/use-portal-guard';
@@ -59,6 +59,12 @@ export default function AdminHubPage() {
           icon={Users}
           title="人員與權限"
           description="師傅 PIN、店長權限與啟用狀態"
+        />
+        <AdminHubCard
+          href={`${adminBase}/clients`}
+          icon={Contact}
+          title="客人資料庫"
+          description="會員餘額與消費紀錄"
         />
       </div>
     </PortalShell>

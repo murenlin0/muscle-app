@@ -31,6 +31,9 @@ export async function PATCH(
     amount?: number;
     category?: TransactionCategory;
     paymentMethods?: string[];
+    staffName?: string | null;
+    clientName?: string | null;
+    clientPhone?: string | null;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -51,6 +54,9 @@ export async function PATCH(
       amount: body.amount,
       category: body.category,
       paymentMethods: body.paymentMethods,
+      staffName: body.staffName,
+      clientName: body.clientName,
+      clientPhone: body.clientPhone,
     });
     return NextResponse.json({ ok: true });
   } catch (e) {

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
   BarChart3,
+  Contact,
   FileSpreadsheet,
   LogOut,
   Users,
@@ -83,6 +84,12 @@ export default function SuperAdminPage() {
           icon={BarChart3}
           title="全店報表"
           description="民有、文一及跨店彙總（待 GCal 同步後上線）"
+        />
+        <AdminHubCard
+          href="/admin/clients"
+          icon={Contact}
+          title="客人資料庫"
+          description="各店會員餘額與消費紀錄"
         />
         {STORE_LIST.map((store) => (
           <AdminHubCard

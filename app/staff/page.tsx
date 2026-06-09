@@ -2,7 +2,8 @@
 
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
-import { ClipboardPaste, LogOut } from 'lucide-react';
+import { ClipboardPaste, Contact, LogOut } from 'lucide-react';
+import Link from 'next/link';
 import { PortalShell } from '@/app/components/portal-shell';
 import {
   BookingPreviewPanel,
@@ -105,8 +106,15 @@ export default function StaffWorkspacePage() {
         </Button>
       }
     >
-      <div className="mb-6">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <WorkflowSteps active={workflowStep} />
+        <Link
+          href="/staff/clients"
+          className="inline-flex items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm text-muted-foreground transition hover:bg-muted/50 hover:text-foreground"
+        >
+          <Contact className="size-4" />
+          客人資料庫
+        </Link>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2 lg:items-start">

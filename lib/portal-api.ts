@@ -8,6 +8,7 @@ import {
   getPortalSession,
   type PortalSession,
 } from '@/lib/portal-session';
+import { findStaffForLogin } from '@/lib/staff-auth-server';
 import type { StoreSlug } from '@/lib/stores';
 
 const NO_STORE_HEADERS = {
@@ -83,6 +84,39 @@ export async function requireReportsAccess(
     return NextResponse.json({ error: '師傅無法查看報表' }, { status: 403 });
   }
   return session;
+}
+
+export type ClientsAccessContext = {
+  session: PortalSession;
+  storeId: StoreSlug;
+};
+
+export async function requireClientsAccess(
+  storeParam?: StoreSlug | null,
+): Promise<ClientsAccessContext | NextResponse> {
+  const session = await requirePortalSession();
+  if (session instanceof NextResponse) return session;
+
+  if (session.role === 'super') {
+    return { session, storeId: storeParam ?? 'store1' };
+  }
+
+  if (session.role === 'store') {
+    if (storeParam && storeParam !== session.storeId) {
+      return NextResponse.json({ error: '無權查看其他分店' }, { status: 403 });
+    }
+    return { session, storeId: session.storeId };
+  }
+
+  const staff = await findStaffForLogin(session.staffId);
+  if (!staff?.store_id) {
+    return NextResponse.json({ error: '找不到師傅分店' }, { status: 403 });
+  }
+  const staffStoreId = staff.store_id as StoreSlug;
+  if (storeParam && storeParam !== staffStoreId) {
+    return NextResponse.json({ error: '無權查看其他分店' }, { status: 403 });
+  }
+  return { session, storeId: staffStoreId };
 }
 
 export async function requirePortalAccountManagement(): Promise<

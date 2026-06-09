@@ -43,11 +43,9 @@ function today(): string {
 export function ReportsDashboard({
   storeFilter,
   showStorePicker = false,
-  canSyncNotion = false,
 }: {
   storeFilter?: StoreSlug;
   showStorePicker?: boolean;
-  canSyncNotion?: boolean;
 }) {
   const [from, setFrom] = useState(LEDGER_DEFAULT_FROM);
   const [to, setTo] = useState(today());
@@ -60,12 +58,9 @@ export function ReportsDashboard({
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('asc');
   const [loading, setLoading] = useState(true);
   const [overviewLoading, setOverviewLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
   const [normalizing, setNormalizing] = useState(false);
-  const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
-  const [notionStatus, setNotionStatus] = useState<string | null>(null);
   const [ledgerMeta, setLedgerMeta] = useState<{ totalCount: number; apiVersion: number } | null>(null);
 
   const activeStore = storeFilter ?? store;
@@ -126,7 +121,14 @@ export function ReportsDashboard({
         totalCount = chunk.totalCount ?? chunk.rows.length;
         latestRecordDate = chunk.latestRecordDate;
         if (chunk.earliestInRange) earliestInRange = chunk.earliestInRange;
-        allRows.push(...chunk.rows);
+        allRows.push(
+          ...chunk.rows.map((r) => ({
+            ...r,
+            staffName: r.staffName ?? null,
+            clientName: r.clientName ?? null,
+            clientPhone: r.clientPhone ?? null,
+          })),
+        );
         hasMore = chunk.hasMore;
         page += 1;
 
@@ -179,81 +181,6 @@ export function ReportsDashboard({
     void load();
   }, [load]);
 
-  async function handleTestNotion() {
-    setTesting(true);
-    setNotionStatus(null);
-    setError(null);
-    const res = await fetch('/api/portal/reports/notion-status');
-    const data = (await res.json()) as {
-      ok?: boolean;
-      hint?: string;
-      databaseTitle?: string;
-      diagnostics?: {
-        configured: boolean;
-        envVarUsed: string | null;
-        keyPrefix: string | null;
-        keyLength: number;
-        formatOk: boolean;
-        formatHint: string | null;
-      };
-      notionStatus?: number;
-      notionCode?: string;
-      notionMessage?: string;
-      vercelEnv?: string;
-      error?: string;
-    };
-    setTesting(false);
-    if (!res.ok) {
-      setError(data.error ?? '無法測試 Notion 連線');
-      return;
-    }
-    const d = data.diagnostics;
-    if (data.ok) {
-      setNotionStatus(
-        `連線成功（${data.vercelEnv}）。資料庫：${data.databaseTitle ?? '新版筋棧1店每日紀錄'}。金鑰：${d?.envVarUsed} ${d?.keyPrefix}…`,
-      );
-      return;
-    }
-    const parts = [
-      data.hint,
-      d?.formatHint,
-      data.notionMessage ? `Notion：${data.notionCode ?? data.notionStatus} ${data.notionMessage}` : null,
-      d?.configured
-        ? `已讀到 ${d.envVarUsed}（${d.keyPrefix}…，長度 ${d.keyLength}）`
-        : 'Vercel 未讀到 NOTION_API_KEY',
-    ].filter(Boolean);
-    setError(parts.join(' '));
-  }
-
-  async function handleSync() {
-    setSyncing(true);
-    setSyncMsg(null);
-    setError(null);
-    const res = await fetch('/api/portal/reports/sync-notion', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        storeId: activeStore,
-        fixNotion: false,
-      }),
-    });
-    const data = (await res.json()) as {
-      error?: string;
-      upserted?: number;
-      latestRecordDate?: string;
-      notionRows?: number;
-    };
-    setSyncing(false);
-    if (!res.ok) {
-      setError(data.error ?? '同步失敗');
-      return;
-    }
-    setSyncMsg(
-      `已匯入全部 ${data.upserted ?? 0} 筆（Notion 共 ${data.notionRows ?? 0} 筆）。最新日期：${data.latestRecordDate ?? '—'}`,
-    );
-    await load();
-  }
-
   async function handleNormalizeLedger() {
     setNormalizing(true);
     setSyncMsg(null);
@@ -265,7 +192,13 @@ export function ReportsDashboard({
     });
     const data = (await res.json()) as {
       error?: string;
-      report?: { scanned: number; updated: number; splitTransfers: number; issues: string[] };
+      report?: {
+        scanned: number;
+        updated: number;
+        splitTransfers: number;
+        splitMultiStaff: number;
+        issues: string[];
+      };
     };
     setNormalizing(false);
     if (!res.ok) {
@@ -276,7 +209,7 @@ export function ReportsDashboard({
     const issueNote =
       r && r.issues.length > 0 ? `（${r.issues.length} 筆需手動處理）` : '';
     setSyncMsg(
-      `已正規化：掃描 ${r?.scanned ?? 0} 筆、更新 ${r?.updated ?? 0} 筆、拆分轉移 ${r?.splitTransfers ?? 0} 筆${issueNote}`,
+      `已正規化：掃描 ${r?.scanned ?? 0} 筆、更新 ${r?.updated ?? 0} 筆、拆分轉移 ${r?.splitTransfers ?? 0} 筆、拆分多人合寫 ${r?.splitMultiStaff ?? 0} 組${issueNote}`,
     );
     if (r?.issues.length) {
       setError(r.issues.slice(0, 3).join('；'));
@@ -288,24 +221,6 @@ export function ReportsDashboard({
     <div className="flex flex-col gap-5">
       {error ? <StatusBanner variant="error">{error}</StatusBanner> : null}
       {syncMsg ? <StatusBanner variant="success">{syncMsg}</StatusBanner> : null}
-      {notionStatus ? <StatusBanner variant="success">{notionStatus}</StatusBanner> : null}
-
-      {canSyncNotion ? (
-        <div className="flex flex-wrap items-center justify-between gap-4 rounded-md border border-[#333] bg-[#1c1c1c] px-4 py-3">
-          <div>
-            <p className="text-sm font-medium text-[#e0e0e0]">Notion 歷史資料匯入</p>
-            <p className="mt-0.5 text-xs text-[#888]">一次性匯入全部，之後請在流水帳直接編輯。</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" size="sm" disabled={testing} onClick={() => void handleTestNotion()}>
-              {testing ? '測試中…' : '測試 Notion 連線'}
-            </Button>
-            <Button type="button" size="sm" disabled={syncing} onClick={() => void handleSync()}>
-              {syncing ? '匯入中…' : '一鍵匯入全部'}
-            </Button>
-          </div>
-        </div>
-      ) : null}
 
       <div className="flex flex-wrap items-end gap-3 rounded-md border border-[#333] bg-[#1c1c1c] p-3">
         <div className="space-y-1">

@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CATEGORY_NOTION_STYLE, ledgerAmountClass } from '@/lib/category-styles';
+import {
+  categoryShowsClient,
+  syncClientFieldsFromTitle,
+} from '@/lib/ledger-client-detect';
 import { LEDGER_ACCOUNTS, primaryLedgerAccount } from '@/lib/ledger-accounts';
 import {
   normalizeLedgerAmount,
@@ -21,9 +25,12 @@ export interface LedgerRow {
   amount: number;
   category: TransactionCategory;
   paymentMethods: string[];
+  staffName: string | null;
+  clientName: string | null;
+  clientPhone: string | null;
 }
 
-type ColKey = 'date' | 'title' | 'amount' | 'category' | 'payment';
+type ColKey = 'date' | 'title' | 'amount' | 'category' | 'staff' | 'client' | 'payment';
 type RowStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 const COL_LABELS: Record<ColKey, string> = {
@@ -31,15 +38,19 @@ const COL_LABELS: Record<ColKey, string> = {
   title: '標題',
   amount: '金額數字',
   category: '類型',
+  staff: '人員',
+  client: '客人',
   payment: '更動的帳戶',
 };
 
 const DEFAULT_WIDTHS: Record<ColKey, number> = {
   date: 128,
-  title: 480,
+  title: 420,
   amount: 108,
-  category: 132,
-  payment: 120,
+  category: 120,
+  staff: 88,
+  client: 140,
+  payment: 100,
 };
 
 const WIDTHS_STORAGE_KEY = 'muscle-ledger-col-widths';
@@ -68,6 +79,9 @@ function newDraftRow(): LedgerRow {
     amount: 0,
     category: '一般消費',
     paymentMethods: [],
+    staffName: null,
+    clientName: null,
+    clientPhone: null,
   };
 }
 
@@ -88,7 +102,16 @@ function rowSnapshot(row: LedgerRow): string {
     amount: n.amount,
     category: n.category,
     paymentMethods: n.paymentMethods,
+    staffName: n.staffName,
+    clientName: n.clientName,
+    clientPhone: n.clientPhone,
   });
+}
+
+function clientDisplay(row: LedgerRow): string {
+  if (!categoryShowsClient(row.category)) return '';
+  if (row.clientName && row.clientPhone) return `${row.clientName} ${row.clientPhone}`;
+  return row.clientName ?? row.clientPhone ?? '';
 }
 
 function computeTotals(rows: LedgerRow[]) {
@@ -118,6 +141,7 @@ export function EditableLedgerTable({
   const [widths, setWidths] = useState<Record<ColKey, number>>(DEFAULT_WIDTHS);
   const [rowStatus, setRowStatus] = useState<Record<string, RowStatus>>({});
   const [rowError, setRowError] = useState<string | null>(null);
+  const [staffOptions, setStaffOptions] = useState<string[]>([]);
 
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
@@ -140,6 +164,26 @@ export function EditableLedgerTable({
   useEffect(() => {
     setWidths(loadWidths());
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadStaff() {
+      const res = await fetch('/api/staff/roster', { cache: 'no-store' });
+      const data = (await res.json()) as {
+        staff?: { display_name: string; store_id: string }[];
+      };
+      if (cancelled || !res.ok) return;
+      const names = (data.staff ?? [])
+        .filter((s) => s.store_id === storeId)
+        .map((s) => s.display_name)
+        .sort((a, b) => a.localeCompare(b, 'zh-Hant'));
+      setStaffOptions(names);
+    }
+    void loadStaff();
+    return () => {
+      cancelled = true;
+    };
+  }, [storeId]);
 
   useEffect(() => {
     return () => {
@@ -223,6 +267,9 @@ export function EditableLedgerTable({
       amount: normalized.amount,
       category: normalized.category,
       paymentMethods: normalized.paymentMethods,
+      staffName: normalized.staffName,
+      clientName: normalized.clientName,
+      clientPhone: normalized.clientPhone,
     };
 
     const isNew = id.startsWith('new-');
@@ -310,7 +357,15 @@ export function EditableLedgerTable({
     resizeRef.current = { col, startX: e.clientX, startW: widths[col] };
   }
 
-  const colOrder: ColKey[] = ['date', 'title', 'amount', 'category', 'payment'];
+  const colOrder: ColKey[] = [
+    'date',
+    'title',
+    'amount',
+    'category',
+    'staff',
+    'client',
+    'payment',
+  ];
   const showInitialEmpty = loading && rows.length === 0;
 
   return (
@@ -336,7 +391,7 @@ export function EditableLedgerTable({
           />
         ) : null}
 
-        <table className="w-full table-fixed border-collapse text-sm" style={{ minWidth: 900 }}>
+        <table className="w-full table-fixed border-collapse text-sm" style={{ minWidth: 1100 }}>
           <colgroup>
             {colOrder.map((col) => (
               <col key={col} style={{ width: widths[col] }} />
@@ -362,13 +417,13 @@ export function EditableLedgerTable({
           <tbody>
             {showInitialEmpty ? (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-[#888]">
+                <td colSpan={8} className="px-4 py-10 text-center text-[#888]">
                   載入中…
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={6} className="px-4 py-10 text-center text-[#888]">
+                <td colSpan={8} className="px-4 py-10 text-center text-[#888]">
                   尚無資料，請按下方新增一列。
                 </td>
               </tr>
@@ -402,8 +457,24 @@ export function EditableLedgerTable({
                         type="text"
                         value={row.title}
                         onChange={(e) => updateRow(row.id, { title: e.target.value })}
-                        onBlur={() => void saveRowById(row.id)}
-                        placeholder="輸入標題…"
+                        onBlur={() => {
+                          const current = rowsRef.current.find((r) => r.id === row.id);
+                          if (!current) return;
+                          const detected = syncClientFieldsFromTitle(
+                            current.title,
+                            current.category,
+                            {
+                              clientName: current.clientName,
+                              clientPhone: current.clientPhone,
+                            },
+                          );
+                          updateRow(row.id, {
+                            clientName: detected.clientName,
+                            clientPhone: detected.clientPhone,
+                          });
+                          void saveRowById(row.id);
+                        }}
+                        placeholder="師傅、時長、金額、客人…"
                         className={cn(cellInput, 'text-[#ebebeb]')}
                       />
                     </td>
@@ -427,7 +498,15 @@ export function EditableLedgerTable({
                         value={row.category}
                         onChange={(e) => {
                           const category = e.target.value as TransactionCategory;
-                          updateRow(row.id, { category });
+                          const detected = syncClientFieldsFromTitle(row.title, category, {
+                            clientName: row.clientName,
+                            clientPhone: row.clientPhone,
+                          });
+                          updateRow(row.id, {
+                            category,
+                            clientName: detected.clientName,
+                            clientPhone: detected.clientPhone,
+                          });
                           void saveRowById(row.id);
                         }}
                         className={cn(
@@ -442,6 +521,45 @@ export function EditableLedgerTable({
                           </option>
                         ))}
                       </select>
+                    </td>
+                    <td className="p-0 align-middle">
+                      <select
+                        value={row.staffName ?? ''}
+                        onChange={(e) => {
+                          updateRow(row.id, {
+                            staffName: e.target.value || null,
+                          });
+                          void saveRowById(row.id);
+                        }}
+                        className={cn(cellInput, 'text-[#bbb]')}
+                      >
+                        <option value="">—</option>
+                        {staffOptions.map((name) => (
+                          <option key={name} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                        {row.staffName && !staffOptions.includes(row.staffName) ? (
+                          <option value={row.staffName}>{row.staffName}</option>
+                        ) : null}
+                      </select>
+                    </td>
+                    <td className="p-0 align-middle">
+                      {categoryShowsClient(row.category) ? (
+                        <input
+                          type="text"
+                          value={clientDisplay(row)}
+                          readOnly
+                          title={
+                            row.clientPhone
+                              ? `${row.clientName ?? ''} ${row.clientPhone}`
+                              : '從標題自動偵測'
+                          }
+                          className={cn(cellInput, 'text-[#999] cursor-default')}
+                        />
+                      ) : (
+                        <span className="block px-2 py-1.5 text-[#555]">—</span>
+                      )}
                     </td>
                     <td className="p-0 align-middle">
                       {showAccount ? (

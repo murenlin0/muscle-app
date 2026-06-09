@@ -45,7 +45,7 @@ export default function SuperReportsPage() {
 
   return (
     <PortalShell title="全店報表" subtitle="總管理員" variant="admin" size="full" backHref="/admin">
-      <ReportsDashboard showStorePicker canSyncNotion />
+      <ReportsDashboard showStorePicker />
     </PortalShell>
   );
 }

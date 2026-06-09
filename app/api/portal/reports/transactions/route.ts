@@ -62,6 +62,9 @@ export async function POST(request: Request) {
     amount?: number;
     category?: TransactionCategory;
     paymentMethods?: string[];
+    staffName?: string | null;
+    clientName?: string | null;
+    clientPhone?: string | null;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -87,6 +90,9 @@ export async function POST(request: Request) {
       amount: Number(body.amount) || 0,
       category: body.category,
       paymentMethods: body.paymentMethods ?? [],
+      staffName: body.staffName,
+      clientName: body.clientName,
+      clientPhone: body.clientPhone,
     });
     return NextResponse.json({ ok: true, id });
   } catch (e) {
