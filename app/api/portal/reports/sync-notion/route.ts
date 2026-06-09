@@ -36,7 +36,7 @@ export async function POST(request: Request) {
 
   const storeId = body.storeId ?? 'store1';
   const databaseId = body.databaseId ?? NOTION_STORE1_DAILY_DB_ID;
-  const fixNotion = body.fixNotion !== false;
+  const fixNotion = body.fixNotion === true;
   const dryRun = Boolean(body.dryRun);
 
   try {

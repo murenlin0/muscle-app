@@ -6,6 +6,10 @@ import {
 import type { NotionDailyRow } from '@/lib/notion-api';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import type { StoreSlug } from '@/lib/stores';
+import {
+  mapNotionServiceTypeToCategory,
+  type TransactionCategory,
+} from '@/lib/transaction-category';
 
 export interface DailyTransactionRow {
   store_id: StoreSlug;
@@ -14,6 +18,7 @@ export interface DailyTransactionRow {
   title: string;
   amount: number;
   service_type: string | null;
+  category: TransactionCategory;
   payment_methods: string[];
   staff_name: string | null;
   is_designated: boolean;
@@ -47,6 +52,7 @@ export function mapNotionRowToTransaction(
     title,
     amount: row.amount,
     service_type: row.serviceType,
+    category: mapNotionServiceTypeToCategory(row.serviceType, row.paymentMethods),
     payment_methods: row.paymentMethods,
     staff_name: staff,
     is_designated: row.isDesignated,

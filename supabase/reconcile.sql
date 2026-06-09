@@ -242,6 +242,7 @@ create table if not exists public.daily_transactions (
   title text not null,
   amount integer not null default 0,
   service_type text,
+  category text,
   payment_methods text[] not null default '{}',
   staff_name text,
   is_designated boolean not null default false,
@@ -256,6 +257,11 @@ create table if not exists public.daily_transactions (
 
 create index if not exists daily_transactions_store_date_idx
   on public.daily_transactions (store_id, occurred_on desc);
+
+alter table public.daily_transactions add column if not exists category text;
+
+create index if not exists daily_transactions_category_idx
+  on public.daily_transactions (store_id, category, occurred_on desc);
 
 alter table if exists public.daily_transactions enable row level security;
 grant select, insert, update, delete on public.daily_transactions to service_role;

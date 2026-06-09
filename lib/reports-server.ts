@@ -1,41 +1,29 @@
 import { getSupabaseAdmin } from '@/lib/supabase';
 import type { StoreSlug } from '@/lib/stores';
+import {
+  isRevenueCategory,
+  TRANSACTION_CATEGORIES,
+  type TransactionCategory,
+} from '@/lib/transaction-category';
 
-const REVENUE_SERVICE_TYPES = new Set([
-  '30分',
-  '60分',
-  '90分',
-  '120分',
-  '150分',
-  '180分',
-  '儲值',
-  '收入',
-  'VIP 30分',
-  'VIP 60分',
-  'VIP 90分',
-  'VIP 120分',
-  'VIP 150分',
-  'VIP 180分',
-]);
+export interface DailyTransactionListItem {
+  id: string;
+  occurredOn: string;
+  title: string;
+  amount: number;
+  category: TransactionCategory;
+  paymentMethods: string[];
+  staffName: string | null;
+}
 
-const REVENUE_PAYMENT_METHODS = new Set(['現金', 'Line', '富邦', '街口', '會員使用', '仁中信']);
-
-export interface ReportSummary {
+export interface ReportListResult {
   from: string;
   to: string;
   storeId: StoreSlug | 'all';
-  totalRevenue: number;
-  transactionCount: number;
-  byPayment: Record<string, number>;
-  byStaff: Record<string, number>;
-  byDay: { date: string; amount: number; count: number }[];
+  rows: DailyTransactionListItem[];
+  totalRows: number;
+  totalAmount: number;
   latestRecordDate: string | null;
-}
-
-function isRevenueRow(serviceType: string | null, paymentMethods: string[]): boolean {
-  if (!serviceType || !REVENUE_SERVICE_TYPES.has(serviceType)) return false;
-  if (serviceType === '儲值' || serviceType === '收入') return true;
-  return paymentMethods.some((p) => REVENUE_PAYMENT_METHODS.has(p));
 }
 
 export async function getLatestTransactionDate(
@@ -55,73 +43,59 @@ export async function getLatestTransactionDate(
   return data?.occurred_on ?? null;
 }
 
-export async function getReportSummary(
+export async function listDailyTransactions(
   from: string,
   to: string,
   storeId?: StoreSlug,
-): Promise<ReportSummary> {
+  category?: TransactionCategory,
+): Promise<ReportListResult> {
   const supabase = getSupabaseAdmin();
 
   let q = supabase
     .from('daily_transactions')
     .select(
-      'occurred_on, amount, service_type, payment_methods, staff_name, title',
+      'id, occurred_on, title, amount, category, payment_methods, staff_name',
     )
     .gte('occurred_on', from)
     .lte('occurred_on', to)
-    .order('occurred_on', { ascending: true });
+    .order('occurred_on', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(2000);
 
   if (storeId) q = q.eq('store_id', storeId);
+  if (category) q = q.eq('category', category);
 
   const { data, error } = await q;
   if (error) throw new Error(error.message);
 
-  const rows = data ?? [];
-  const byPayment: Record<string, number> = {};
-  const byStaff: Record<string, number> = {};
-  const byDayMap = new Map<string, { amount: number; count: number }>();
+  const rows: DailyTransactionListItem[] = (data ?? []).map((row) => ({
+    id: row.id as string,
+    occurredOn: row.occurred_on as string,
+    title: row.title as string,
+    amount: row.amount as number,
+    category: (row.category as TransactionCategory) ?? '一般消費',
+    paymentMethods: (row.payment_methods as string[]) ?? [],
+    staffName: (row.staff_name as string | null) ?? null,
+  }));
 
-  let totalRevenue = 0;
-  let transactionCount = 0;
-
-  for (const row of rows) {
-    const payments = (row.payment_methods as string[] | null) ?? [];
-    if (!isRevenueRow(row.service_type, payments)) continue;
-
-    transactionCount += 1;
-    totalRevenue += row.amount ?? 0;
-
-    for (const p of payments) {
-      if (REVENUE_PAYMENT_METHODS.has(p)) {
-        byPayment[p] = (byPayment[p] ?? 0) + (row.amount ?? 0);
-      }
-    }
-
-    const staff = row.staff_name ?? '（未指定）';
-    byStaff[staff] = (byStaff[staff] ?? 0) + (row.amount ?? 0);
-
-    const day = row.occurred_on as string;
-    const bucket = byDayMap.get(day) ?? { amount: 0, count: 0 };
-    bucket.amount += row.amount ?? 0;
-    bucket.count += 1;
-    byDayMap.set(day, bucket);
-  }
-
-  const byDay = [...byDayMap.entries()]
-    .map(([date, v]) => ({ date, ...v }))
-    .sort((a, b) => a.date.localeCompare(b.date));
-
+  const totalAmount = rows.reduce((sum, r) => sum + r.amount, 0);
   const latestRecordDate = await getLatestTransactionDate(storeId);
 
   return {
     from,
     to,
     storeId: storeId ?? 'all',
-    totalRevenue,
-    transactionCount,
-    byPayment,
-    byStaff,
-    byDay,
+    rows,
+    totalRows: rows.length,
+    totalAmount,
     latestRecordDate,
   };
 }
+
+export function revenueTotalFromRows(rows: DailyTransactionListItem[]): number {
+  return rows
+    .filter((r) => isRevenueCategory(r.category))
+    .reduce((sum, r) => sum + r.amount, 0);
+}
+
+export { TRANSACTION_CATEGORIES };

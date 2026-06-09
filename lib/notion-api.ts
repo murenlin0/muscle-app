@@ -16,11 +16,32 @@ export interface NotionDailyRow {
 }
 
 function notionToken(): string {
-  const token = process.env.NOTION_API_KEY?.trim();
-  if (!token) {
-    throw new Error('缺少 NOTION_API_KEY 環境變數');
+  const raw = process.env.NOTION_API_KEY?.trim().replace(/^["']|["']$/g, '');
+  if (!raw) {
+    throw new Error(
+      '缺少 NOTION_API_KEY。請在 Vercel → Environment Variables 設定 Internal Integration 的 secret_... 金鑰，並 Redeploy。',
+    );
   }
-  return token;
+  if (!raw.startsWith('secret_') && !raw.startsWith('ntn_')) {
+    throw new Error(
+      'NOTION_API_KEY 格式不正確。請使用 Notion Internal Integration 的 Secret（secret_ 開頭），不是 OAuth Client ID。',
+    );
+  }
+  return raw;
+}
+
+function wrapNotionError(status: number, body: string): Error {
+  if (status === 401) {
+    return new Error(
+      'Notion API 金鑰無效 (401)。請到 notion.so/my-integrations 複製 Internal Integration Secret，貼到 Vercel 的 NOTION_API_KEY，確認資料庫已 Connect to 該 Integration，然後 Redeploy。',
+    );
+  }
+  if (status === 404) {
+    return new Error(
+      '找不到 Notion 資料庫 (404)。請在「新版筋棧1店每日紀錄」右上角 ⋯ → Connect to → 選你的 Integration。',
+    );
+  }
+  return new Error(`Notion query 失敗 (${status}): ${body}`);
 }
 
 function textFromRich(prop: { title?: { plain_text: string }[] } | undefined): string {
@@ -98,7 +119,7 @@ export async function queryNotionDatabaseAll(
 
     if (!res.ok) {
       const body = await res.text();
-      throw new Error(`Notion query 失敗 (${res.status}): ${body}`);
+      throw wrapNotionError(res.status, body);
     }
 
     const data = (await res.json()) as {
@@ -133,7 +154,7 @@ export async function updateNotionPageProperties(
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Notion 更新失敗 ${pageId} (${res.status}): ${body}`);
+    throw wrapNotionError(res.status, body);
   }
 }
 

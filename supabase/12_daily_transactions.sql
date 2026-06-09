@@ -9,6 +9,7 @@ create table if not exists public.daily_transactions (
   title text not null,
   amount integer not null default 0,
   service_type text,
+  category text,
   payment_methods text[] not null default '{}',
   staff_name text,
   is_designated boolean not null default false,
