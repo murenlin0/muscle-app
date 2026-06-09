@@ -67,13 +67,9 @@ export function isRevenueCategory(category: TransactionCategory): boolean {
   return REVENUE_CATEGORIES.has(category);
 }
 
+/** 損益表收入（不含會員儲值＝預收，不算營收） */
 export function isPnlIncomeCategory(category: TransactionCategory): boolean {
-  return (
-    category === '一般消費' ||
-    category === '會員儲值' ||
-    category === '會員補差額' ||
-    category === '收入'
-  );
+  return category === '一般消費' || category === '會員補差額' || category === '收入';
 }
 
 export function isPnlExpenseCategory(category: TransactionCategory): boolean {

@@ -1,7 +1,11 @@
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { primaryLedgerAccount } from '@/lib/ledger-accounts';
 import type { StoreSlug } from '@/lib/stores';
-import { isPnlExpenseCategory, type TransactionCategory } from '@/lib/transaction-category';
+import {
+  isPnlExpenseCategory,
+  isPnlIncomeCategory,
+  type TransactionCategory,
+} from '@/lib/transaction-category';
 
 export interface ExpenseBreakdown {
   添購: number;
@@ -48,6 +52,11 @@ interface TxRow {
   title: string;
 }
 
+/** 會員使用不動帳戶；其餘依簽帳金額累計帳戶餘額 */
+function affectsAccountBalance(category: TransactionCategory): boolean {
+  return category !== '會員使用';
+}
+
 function classifyExpense(title: string, category: string): keyof ExpenseBreakdown {
   if (category === '工資') return '師傅薪水';
   const t = title;
@@ -63,15 +72,29 @@ function emptyBreakdown(): ExpenseBreakdown {
   return { 添購: 0, 房租: 0, 水電: 0, 廣告: 0, 師傅薪水: 0, 其他: 0 };
 }
 
-function accountDelta(row: TxRow): { cash: number; bank: number } {
-  const cat = row.category as TransactionCategory;
-  if (cat === '會員使用') return { cash: 0, bank: 0 };
+async function fetchAllRows(storeId: StoreSlug, to: string): Promise<TxRow[]> {
+  const supabase = getSupabaseAdmin();
+  const pageSize = 1000;
+  const all: TxRow[] = [];
+  let from = 0;
 
-  const acc = primaryLedgerAccount(row.payment_methods ?? [], cat);
-  const amt = row.amount ?? 0;
-  if (acc === '現金') return { cash: amt, bank: 0 };
-  if (acc === '富邦') return { cash: 0, bank: amt };
-  return { cash: 0, bank: 0 };
+  while (true) {
+    const { data, error } = await supabase
+      .from('daily_transactions')
+      .select('occurred_on, amount, category, payment_methods, title')
+      .eq('store_id', storeId)
+      .lte('occurred_on', to)
+      .order('occurred_on', { ascending: true })
+      .range(from, from + pageSize - 1);
+
+    if (error) throw new Error(error.message);
+    if (!data?.length) break;
+    all.push(...(data as TxRow[]));
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+
+  return all;
 }
 
 export async function getFinancialOverview(
@@ -79,17 +102,7 @@ export async function getFinancialOverview(
   to: string,
   storeId: StoreSlug,
 ): Promise<FinancialOverview> {
-  const supabase = getSupabaseAdmin();
-
-  const { data: txRows, error: txError } = await supabase
-    .from('daily_transactions')
-    .select('occurred_on, amount, category, payment_methods, title')
-    .eq('store_id', storeId)
-    .lte('occurred_on', to);
-
-  if (txError) throw new Error(txError.message);
-
-  const all = (txRows ?? []) as TxRow[];
+  const all = await fetchAllRows(storeId, to);
   const period = all.filter((r) => r.occurred_on >= from && r.occurred_on <= to);
 
   let cashOnHand = 0;
@@ -98,15 +111,21 @@ export async function getFinancialOverview(
 
   for (const row of all) {
     const cat = row.category as TransactionCategory;
-    const { cash, bank } = accountDelta(row);
-    cashOnHand += cash;
-    bankAccounts += bank;
+    const amt = row.amount ?? 0;
 
-    if (cat === '會員儲值') memberPrepaid += Math.abs(row.amount ?? 0);
-    if (cat === '會員使用') memberPrepaid -= Math.abs(row.amount ?? 0);
+    if (cat === '會員儲值') memberPrepaid += Math.abs(amt);
+    if (cat === '會員使用') memberPrepaid -= Math.abs(amt);
+
+    if (!affectsAccountBalance(cat)) continue;
+
+    const acc = primaryLedgerAccount(row.payment_methods ?? [], cat);
+    if (acc === '現金') cashOnHand += amt;
+    else if (acc === '富邦') bankAccounts += amt;
   }
 
   const accountsReceivable = Math.max(0, memberPrepaid);
+  // 總資產＝店內現金＋銀行（應收帳款為會員儲值餘額，已含於帳戶現金中）
+  const totalAssets = cashOnHand + bankAccounts;
 
   let serviceIncome = 0;
   let subleaseIncome = 0;
@@ -117,9 +136,9 @@ export async function getFinancialOverview(
     const amt = row.amount ?? 0;
 
     if (cat === '收入') {
-      subleaseIncome += amt;
-    } else if (cat === '一般消費' || cat === '會員補差額' || cat === '會員儲值') {
-      serviceIncome += amt;
+      subleaseIncome += Math.abs(amt);
+    } else if (isPnlIncomeCategory(cat)) {
+      serviceIncome += Math.abs(amt);
     } else if (isPnlExpenseCategory(cat)) {
       const expenseAmt = Math.abs(amt);
       if (cat === '支出' || cat === '工資') {
@@ -141,6 +160,7 @@ export async function getFinancialOverview(
   const totalIncome = serviceIncome + subleaseIncome;
   const netProfit = totalIncome - totalExpense;
 
+  const supabase = getSupabaseAdmin();
   const { data: shareholderRows, error: shError } = await supabase
     .from('shareholders')
     .select('id, name, ownership_percent')
@@ -163,7 +183,7 @@ export async function getFinancialOverview(
 
   const shareholders = (shareholderRows ?? []).map((sh) => {
     const pct = Number(sh.ownership_percent) || 0;
-    const dividendDue = Math.round(netProfit * pct);
+    const dividendDue = Math.round(Math.max(0, netProfit) * pct);
     const dividendPaid = dividendPaidByName.get(sh.name as string) ?? 0;
     return {
       id: sh.id as string,
@@ -180,7 +200,7 @@ export async function getFinancialOverview(
     to,
     storeId,
     assets: {
-      total: cashOnHand + bankAccounts + accountsReceivable,
+      total: totalAssets,
       cashOnHand,
       bankAccounts,
       accountsReceivable,

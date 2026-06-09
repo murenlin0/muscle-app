@@ -1,11 +1,12 @@
 'use client';
 
 import { useState } from 'react';
+import { displayMoney } from '@/lib/financial-display';
 import type { FinancialOverview } from '@/lib/financial-summary-server';
 import { cn } from '@/lib/utils';
 
 function fmt(n: number) {
-  return n.toLocaleString('zh-TW');
+  return displayMoney(n).toLocaleString('zh-TW');
 }
 
 function Money({ value, className }: { value: number; className?: string }) {
@@ -153,7 +154,7 @@ export function FinancialOverviewPanel({
           <LineItem label="應收帳款" value={assets.accountsReceivable} />
         </div>
         <p className="mt-auto pt-3 text-[10px] leading-relaxed text-[#666]">
-          資產為截至區間結束日，依更動的帳戶（現金／富邦）與會員儲值餘額彙整。
+          資產為截至迄日的現金／富邦帳戶餘額；應收帳款為會員儲值金餘額（參考用）。
         </p>
       </PanelCard>
 
@@ -179,7 +180,7 @@ export function FinancialOverviewPanel({
 
           <LineItem
             label="支出"
-            value={Math.abs(incomeStatement.totalExpense)}
+            value={incomeStatement.totalExpense}
             bold
             onClick={() => setExpand(expand === 'expense' ? null : 'expense')}
             active={expand === 'expense'}
@@ -200,10 +201,16 @@ export function FinancialOverviewPanel({
           ) : null}
 
           <div className="border-t border-[#333] pt-2">
-            <LineItem label="淨利" value={incomeStatement.netProfit} bold />
+            <LineItem
+              label={incomeStatement.netProfit >= 0 ? '淨利' : '淨損'}
+              value={incomeStatement.netProfit}
+              bold
+            />
           </div>
         </div>
-        <p className="mt-auto pt-3 text-[10px] text-[#666]">收支為區間內損益（起日至迄日）。</p>
+        <p className="mt-auto pt-3 text-[10px] text-[#666]">
+          收支為區間損益；收入－支出＝淨利（此區金額均顯示正數）。
+        </p>
       </PanelCard>
 
       <PanelCard title="股東權益">
