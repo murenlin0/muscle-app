@@ -11,9 +11,7 @@ import {
 } from '../lib/notion-daily-import';
 import { migrateLedgerData } from '../lib/ledger-migrate-server';
 import { NOTION_STORE1_DAILY_DB_ID, queryNotionDatabaseAll } from '../lib/notion-api';
-import { primaryLedgerAccount } from '../lib/ledger-accounts';
-import { normalizeLedgerAmount } from '../lib/ledger-amount';
-import type { TransactionCategory } from '../lib/transaction-category';
+import { sumLedgerAccountBalances } from '../lib/ledger-balances';
 
 function loadEnv() {
   const raw = readFileSync(resolve(process.cwd(), '.env.local'), 'utf8');
@@ -39,16 +37,8 @@ async function printBalances(storeId: string) {
     if (data.length < 1000) break;
     o += 1000;
   }
-  let cash = 0;
-  let bank = 0;
-  for (const r of all) {
-    const cat = r.category as TransactionCategory;
-    const acc = primaryLedgerAccount(r.payment_methods ?? [], cat);
-    const n = normalizeLedgerAmount(cat, r.amount);
-    if (acc === '現金') cash += n;
-    if (acc === '富邦') bank += n;
-  }
-  console.log(`餘額 (${all.length} 列): 現金=${cash} 富邦=${bank}`);
+  const { cashOnHand, bankAccounts } = sumLedgerAccountBalances(all);
+  console.log(`餘額 (${all.length} 列): 現金=${cashOnHand} 富邦=${bankAccounts}`);
 }
 
 async function main() {

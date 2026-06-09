@@ -1,14 +1,19 @@
-import { normalizeLedgerAmount } from '@/lib/ledger-amount';
-import { primaryLedgerAccount } from '@/lib/ledger-accounts';
-import type { TransactionCategory } from '@/lib/transaction-category';
-
 export interface LedgerBalanceRow {
   amount: number;
   category: string;
   payment_methods: string[];
 }
 
-/** Notion 算法：依「更動的帳戶」加總正規化後金額（支出／工資／分紅／轉出為負） */
+const BANK_PM_ALIASES = new Set(['富邦', 'Line', '街口', '仁中信', '轉帳', 'line']);
+
+function paymentMethodsHaveBank(pm: string[]): boolean {
+  return pm.some((p) => BANK_PM_ALIASES.has(p) || BANK_PM_ALIASES.has(p.toLowerCase()));
+}
+
+/**
+ * Notion 餘額算法：付款方式含現金／銀行帳戶者，各加一次資料庫內原始金額。
+ * （與 Notion 報表加總一致，不依類型翻轉正負號）
+ */
 export function sumLedgerAccountBalances(rows: LedgerBalanceRow[]): {
   cashOnHand: number;
   bankAccounts: number;
@@ -17,13 +22,12 @@ export function sumLedgerAccountBalances(rows: LedgerBalanceRow[]): {
   let bankAccounts = 0;
 
   for (const row of rows) {
-    const cat = row.category as TransactionCategory;
-    const acc = primaryLedgerAccount(row.payment_methods ?? [], cat);
-    if (!acc) continue;
+    const pm = row.payment_methods ?? [];
+    if (pm.includes('會員使用') || row.category === '會員使用') continue;
 
-    const amt = normalizeLedgerAmount(cat, row.amount ?? 0);
-    if (acc === '現金') cashOnHand += amt;
-    else if (acc === '富邦') bankAccounts += amt;
+    const amt = Math.round(row.amount ?? 0);
+    if (pm.includes('現金')) cashOnHand += amt;
+    if (paymentMethodsHaveBank(pm)) bankAccounts += amt;
   }
 
   return { cashOnHand, bankAccounts };

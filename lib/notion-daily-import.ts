@@ -6,10 +6,8 @@ import {
 import type { NotionDailyRow } from '@/lib/notion-api';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { normalizeLedgerAccounts } from '@/lib/ledger-accounts';
-import { normalizeLedgerAmount } from '@/lib/ledger-amount';
 import type { StoreSlug } from '@/lib/stores';
-import { isMultiStaffCompoundTitle, splitMultiStaffTransaction } from '@/lib/multi-staff-split';
-import { splitLegacyTransferRow } from '@/lib/transfer-split';
+import { normalizeCompoundTopupRow } from '@/lib/multi-staff-split';
 import {
   LEGACY_TRANSFER_CATEGORY,
   mapNotionServiceTypeToCategory,
@@ -44,11 +42,13 @@ function parseOccurredOn(dateStart: string | null, fallbackIso: string | null): 
 
 function finalizeRow(row: DailyTransactionRow): DailyTransactionRow {
   const category = row.category as TransactionCategory;
-  if (row.category === LEGACY_TRANSFER_CATEGORY) return row;
+  if (row.category === LEGACY_TRANSFER_CATEGORY) {
+    return { ...row, amount: Math.round(row.amount) };
+  }
 
   return {
     ...row,
-    amount: normalizeLedgerAmount(category, row.amount),
+    amount: Math.round(row.amount),
     payment_methods: normalizeLedgerAccounts(row.payment_methods, category),
   };
 }
@@ -81,53 +81,31 @@ export function mapNotionRowToTransaction(
   });
 }
 
-function expandMultiStaffRow(row: DailyTransactionRow): DailyTransactionRow[] | null {
-  if (!isMultiStaffCompoundTitle(row.title)) return null;
-  const split = splitMultiStaffTransaction(row);
-  if (!split) return null;
+function normalizeMultiStaffTopupRow(row: DailyTransactionRow): DailyTransactionRow | null {
+  const normalized = normalizeCompoundTopupRow(row);
+  if (!normalized) return null;
 
-  return split.map((s) =>
-    finalizeRow({
-      ...row,
-      title: s.title,
-      amount: s.amount,
-      category: s.category,
-      payment_methods: s.payment_methods,
-      staff_name: s.staff_name,
-      client_name: s.client_name,
-      client_phone: s.client_phone,
-      is_vip: s.is_vip,
-      notion_page_id: `${row.notion_page_id}#${s.staff_name}`,
-    }),
-  );
+  return finalizeRow({
+    ...row,
+    title: normalized.title,
+    amount: normalized.amount,
+    category: normalized.category,
+    payment_methods: normalized.payment_methods,
+    staff_name: normalized.staff_name,
+    client_name: normalized.client_name,
+    client_phone: normalized.client_phone,
+    is_vip: normalized.is_vip,
+  });
 }
 
 function expandRows(rows: DailyTransactionRow[]): DailyTransactionRow[] {
   const out: DailyTransactionRow[] = [];
 
   for (const row of rows) {
-    const multi = expandMultiStaffRow(row);
-    if (multi) {
-      out.push(...multi);
+    const topup = normalizeMultiStaffTopupRow(row);
+    if (topup) {
+      out.push(topup);
       continue;
-    }
-
-    if (row.category === LEGACY_TRANSFER_CATEGORY) {
-      const split = splitLegacyTransferRow(row);
-      if (split) {
-        for (const s of split.rows) {
-          out.push(
-            finalizeRow({
-              ...row,
-              ...s,
-              store_id: row.store_id,
-              notion_page_id: s.notion_page_id ?? row.notion_page_id,
-              category: s.category as TransactionCategory,
-            }),
-          );
-        }
-        continue;
-      }
     }
     out.push(row);
   }

@@ -150,6 +150,50 @@ export function isMultiStaffCompoundTitle(title: string): boolean {
   return parseMultiStaffCompoundTitle(title) !== null;
 }
 
+const BANK_PM = new Set(['富邦', 'Line', '街口', '仁中信', '轉帳', 'line']);
+
+function hasBankPayment(pm: string[]): boolean {
+  return pm.some((p) => BANK_PM.has(p) || BANK_PM.has(p.toLowerCase()));
+}
+
+/**
+ * Notion 已將多人合寫拆成多列（儲值富邦列 + 各師傅會員使用列）。
+ * 僅在「單列富邦儲值」時正規化為會員儲值，不憑空展開子列（避免重複計入富邦）。
+ */
+export function shouldNormalizeCompoundAsTopupRow(row: MultiStaffSourceRow & {
+  category?: string;
+}): boolean {
+  const parsed = parseMultiStaffCompoundTitle(row.title);
+  if (!parsed) return false;
+  const pm = row.payment_methods ?? [];
+  if (pm.includes('會員使用') || row.category === '會員使用') return false;
+  return hasBankPayment(pm) && Math.abs(row.amount) === parsed.topup;
+}
+
+/** 將 Notion 富邦儲值列正規化為單筆會員儲值（不展開） */
+export function normalizeCompoundTopupRow(
+  row: MultiStaffSourceRow & { category?: string },
+): MultiStaffSplitRow | null {
+  const parsed = parseMultiStaffCompoundTitle(row.title);
+  if (!parsed || !shouldNormalizeCompoundAsTopupRow(row)) return null;
+
+  const firstStaff = parsed.staffNames[0];
+  const topupSeg = formatTopupSegment(parsed.topup, parsed.bonus, parsed.totalUsage / parsed.staffNames.length);
+  const vipSuffix = `VIP${parsed.clientName}${parsed.clientPhone}`;
+  const balanceAfter = parsed.finalBalance + (parsed.totalUsage / parsed.staffNames.length) * (parsed.staffNames.length - 1);
+
+  return {
+    title: `${firstStaff}${parsed.duration}${topupSeg}、${balanceAfter}${vipSuffix}`,
+    amount: parsed.topup,
+    category: '會員儲值',
+    payment_methods: row.payment_methods?.length ? row.payment_methods : ['富邦'],
+    staff_name: canonicalStaffName(firstStaff),
+    client_name: parsed.clientName,
+    client_phone: parsed.clientPhone,
+    is_vip: true,
+  };
+}
+
 /** 拆成：首筆儲值（富邦）＋其餘會員使用 */
 export function splitMultiStaffTransaction(row: MultiStaffSourceRow): MultiStaffSplitRow[] | null {
   const parsed = parseMultiStaffCompoundTitle(row.title);

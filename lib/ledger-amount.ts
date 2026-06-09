@@ -1,13 +1,19 @@
-import type { TransactionCategory } from '@/lib/transaction-category';
+import {
+  LEGACY_TRANSFER_CATEGORY,
+  type TransactionCategory,
+} from '@/lib/transaction-category';
 
 const NEGATIVE_CATEGORIES = new Set<TransactionCategory>(['支出', '工資', '分紅', '轉出']);
 const POSITIVE_CATEGORIES = new Set<TransactionCategory>(['轉入']);
 
 /** 依類型正規化金額正負號 */
 export function normalizeLedgerAmount(
-  category: TransactionCategory,
+  category: TransactionCategory | typeof LEGACY_TRANSFER_CATEGORY,
   amount: number,
 ): number {
+  if (category === LEGACY_TRANSFER_CATEGORY) {
+    return Math.round(amount);
+  }
   const n = Math.round(Math.abs(amount));
   if (n === 0) return 0;
   if (NEGATIVE_CATEGORIES.has(category)) return -n;
