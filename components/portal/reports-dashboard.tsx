@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { EditableLedgerTable, type LedgerRow } from '@/components/portal/editable-ledger-table';
 import { FinancialOverviewPanel } from '@/components/portal/financial-overview-panel';
 import { StatusBanner } from '@/components/portal/status-banner';
@@ -52,7 +52,8 @@ export function ReportsDashboard({
   const [report, setReport] = useState<ReportList | null>(null);
   const [overview, setOverview] = useState<FinancialOverview | null>(null);
   const [stats, setStats] = useState({ totalRows: 0, totalAmount: 0 });
-  const [fetchKey, setFetchKey] = useState('');
+  const [dataGeneration, setDataGeneration] = useState(0);
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('asc');
   const [loading, setLoading] = useState(true);
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -64,6 +65,20 @@ export function ReportsDashboard({
 
   const activeStore = storeFilter ?? store;
 
+  const displayRows = useMemo(() => {
+    const rows = report?.rows ?? [];
+    if (sortOrder === 'desc') return rows;
+    return [...rows].reverse();
+  }, [report?.rows, sortOrder]);
+
+  const rangeBounds = useMemo(() => {
+    const rows = report?.rows ?? [];
+    if (!rows.length) return null;
+    const oldest = rows[rows.length - 1]?.occurredOn;
+    const newest = rows[0]?.occurredOn;
+    return { oldest, newest };
+  }, [report?.rows]);
+
   const load = useCallback(async () => {
     setLoading(true);
     setOverviewLoading(true);
@@ -71,11 +86,12 @@ export function ReportsDashboard({
     const qs = new URLSearchParams({ from, to });
     qs.set('store', activeStore);
     if (category) qs.set('category', category);
-    const key = `${from}|${to}|${activeStore}|${category}`;
-
     const [txRes, ovRes] = await Promise.all([
-      fetch(`/api/portal/reports/transactions?${qs}`),
-      fetch(`/api/portal/reports/overview?${new URLSearchParams({ from, to, store: activeStore })}`),
+      fetch(`/api/portal/reports/transactions?${qs}`, { cache: 'no-store' }),
+      fetch(
+        `/api/portal/reports/overview?${new URLSearchParams({ from, to, store: activeStore })}`,
+        { cache: 'no-store' },
+      ),
     ]);
 
     const txData = (await txRes.json()) as { report?: ReportList; error?: string };
@@ -97,7 +113,7 @@ export function ReportsDashboard({
 
     const r = txData.report ?? null;
     setReport(r);
-    setFetchKey(key);
+    setDataGeneration((g) => g + 1);
     if (r) {
       setStats({ totalRows: r.totalRows, totalAmount: r.totalAmount });
     }
@@ -302,26 +318,39 @@ export function ReportsDashboard({
                 ))}
               </select>
             </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-[#888]">排序</Label>
+              <select
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value as 'desc' | 'asc')}
+                className="flex h-9 min-w-[8rem] rounded-md border border-[#444] bg-[#252525] px-2 text-sm"
+              >
+                <option value="asc">舊 → 新</option>
+                <option value="desc">新 → 舊</option>
+              </select>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center justify-between text-xs text-[#888]">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#888]">
           <span>
             {stats.totalRows > 0 || report
               ? `共 ${fmt(stats.totalRows)} 筆 · 金額合計 $${fmt(stats.totalAmount)}`
               : ' '}
           </span>
           <span>
-            {report?.latestRecordDate
-              ? `資料：${formatDate(from)}～${formatDate(to)} · 最新 ${formatDate(report.latestRecordDate)}`
-              : `區間：${formatDate(from)}～${formatDate(to)}`}
+            {rangeBounds
+              ? `區間內：最舊 ${formatDate(rangeBounds.oldest)} · 最新 ${formatDate(rangeBounds.newest)}`
+              : `篩選：${formatDate(from)}～${formatDate(to)}`}
+            {report?.latestRecordDate ? ` · 資料庫最新 ${formatDate(report.latestRecordDate)}` : ''}
           </span>
         </div>
 
         <EditableLedgerTable
-          rows={report?.rows ?? []}
+          key={`${dataGeneration}-${sortOrder}`}
+          rows={displayRows}
           loading={loading}
-          fetchKey={fetchKey}
+          dataGeneration={dataGeneration}
           storeId={activeStore}
           onStatsChange={setStats}
         />

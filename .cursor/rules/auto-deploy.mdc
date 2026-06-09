@@ -1,0 +1,16 @@
+---
+description: Commit and push to main after code changes so Vercel auto-deploys
+alwaysApply: true
+---
+
+# Auto-deploy after changes
+
+When you finish implementing code changes the user asked for:
+
+1. **Commit** all relevant files with a clear message (do not include `.env*`, secrets, or `.next/`).
+2. **Push** to `origin/main` so Vercel deploys production automatically.
+3. Tell the user deployment was triggered and they should wait ~1–2 minutes, then hard-refresh (Ctrl+Shift+R).
+
+Skip commit/push only if the user explicitly says not to deploy, or if there are no code changes to ship.
+
+If push fails, report the error and what the user needs to fix (auth, branch protection, etc.).

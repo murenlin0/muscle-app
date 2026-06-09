@@ -104,13 +104,13 @@ const cellInput =
 export function EditableLedgerTable({
   rows: initialRows,
   loading,
-  fetchKey,
+  dataGeneration,
   storeId,
   onStatsChange,
 }: {
   rows: LedgerRow[];
   loading: boolean;
-  fetchKey: string;
+  dataGeneration: number;
   storeId: StoreSlug;
   onStatsChange?: (stats: { totalRows: number; totalAmount: number }) => void;
 }) {
@@ -123,22 +123,19 @@ export function EditableLedgerTable({
   rowsRef.current = rows;
   const lastSavedRef = useRef<Map<string, string>>(new Map());
   const savedTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const prevFetchKeyRef = useRef(fetchKey);
+  const prevDataGenerationRef = useRef(0);
   const resizeRef = useRef<{ col: ColKey; startX: number; startW: number } | null>(null);
   const widthsRef = useRef(widths);
   widthsRef.current = widths;
 
   useEffect(() => {
-    if (fetchKey !== prevFetchKeyRef.current) {
-      prevFetchKeyRef.current = fetchKey;
-      rowsRef.current = initialRows;
-      setRows(initialRows);
-      lastSavedRef.current = new Map(
-        initialRows.map((r) => [r.id, rowSnapshot(r)]),
-      );
-      onStatsChange?.(computeTotals(initialRows));
-    }
-  }, [fetchKey, initialRows, onStatsChange]);
+    if (dataGeneration === 0 || dataGeneration === prevDataGenerationRef.current) return;
+    prevDataGenerationRef.current = dataGeneration;
+    rowsRef.current = initialRows;
+    setRows(initialRows);
+    lastSavedRef.current = new Map(initialRows.map((r) => [r.id, rowSnapshot(r)]));
+    onStatsChange?.(computeTotals(initialRows));
+  }, [dataGeneration, initialRows, onStatsChange]);
 
   useEffect(() => {
     setWidths(loadWidths());

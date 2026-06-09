@@ -2,6 +2,8 @@ import { notFound } from 'next/navigation';
 import { StoreProvider } from '@/components/store-provider';
 import { getStore, isStoreSlug, type StoreSlug } from '@/lib/stores';
 
+export const dynamic = 'force-dynamic';
+
 export default async function AdminLayout({
   children,
   params,

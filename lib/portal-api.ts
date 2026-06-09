@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import type { NextResponse as NextResponseType } from 'next/server';
 import {
   canAccessStore,
   canManagePortalAccounts,
@@ -8,6 +9,18 @@ import {
   type PortalSession,
 } from '@/lib/portal-session';
 import type { StoreSlug } from '@/lib/stores';
+
+const NO_STORE_HEADERS = {
+  'Cache-Control': 'no-store, no-cache, must-revalidate',
+  Pragma: 'no-cache',
+};
+
+export function portalJson<T>(body: T, init?: ResponseInit): NextResponseType {
+  return NextResponse.json(body, {
+    ...init,
+    headers: { ...NO_STORE_HEADERS, ...init?.headers },
+  });
+}
 
 export async function requirePortalSession(): Promise<PortalSession | NextResponse> {
   const session = await getPortalSession();

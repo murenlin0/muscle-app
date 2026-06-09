@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { requireReportsAccess } from '@/lib/portal-api';
+import { portalJson, requireReportsAccess } from '@/lib/portal-api';
+
+export const dynamic = 'force-dynamic';
 import { createDailyTransaction } from '@/lib/daily-transactions-server';
 import { listDailyTransactions } from '@/lib/reports-server';
 import type { TransactionCategory } from '@/lib/transaction-category';
@@ -35,7 +37,7 @@ export async function GET(request: Request) {
 
   try {
     const report = await listDailyTransactions(from, to, storeId, category);
-    return NextResponse.json({ report });
+    return portalJson({ report });
   } catch (e) {
     const message = e instanceof Error ? e.message : '無法載入報表';
     return NextResponse.json({ error: message }, { status: 500 });

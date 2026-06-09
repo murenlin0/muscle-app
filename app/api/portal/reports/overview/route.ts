@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { requireReportsAccess } from '@/lib/portal-api';
+import { portalJson, requireReportsAccess } from '@/lib/portal-api';
+
+export const dynamic = 'force-dynamic';
 import { getFinancialOverview } from '@/lib/financial-summary-server';
 import type { StoreSlug } from '@/lib/stores';
 
@@ -25,7 +27,7 @@ export async function GET(request: Request) {
 
   try {
     const overview = await getFinancialOverview(from, to, storeId);
-    return NextResponse.json({ overview });
+    return portalJson({ overview });
   } catch (e) {
     const message = e instanceof Error ? e.message : '無法載入財務總覽';
     return NextResponse.json({ error: message }, { status: 500 });
