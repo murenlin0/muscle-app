@@ -60,7 +60,7 @@ export async function listDailyTransactions(
     .lte('occurred_on', to)
     .order('occurred_on', { ascending: false })
     .order('created_at', { ascending: false })
-    .limit(2000);
+    .limit(10000);
 
   if (storeId) q = q.eq('store_id', storeId);
   if (category) q = q.eq('category', category);

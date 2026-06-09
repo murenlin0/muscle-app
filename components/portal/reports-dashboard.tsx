@@ -123,7 +123,7 @@ export function ReportsDashboard({
       return;
     }
     setSyncMsg(
-      `已從 Notion 匯入 ${data.upserted ?? 0} 筆（共讀取 ${data.notionRows ?? 0} 筆）。最新日期：${data.latestRecordDate ?? '—'}`,
+      `已匯入全部 ${data.upserted ?? 0} 筆（Notion 共 ${data.notionRows ?? 0} 筆）。最新日期：${data.latestRecordDate ?? '—'}`,
     );
     await load();
   }
@@ -132,6 +132,20 @@ export function ReportsDashboard({
     <div className="space-y-4">
       {error ? <StatusBanner variant="error">{error}</StatusBanner> : null}
       {syncMsg ? <StatusBanner variant="success">{syncMsg}</StatusBanner> : null}
+
+      {canSyncNotion ? (
+        <div className="glass-card flex flex-wrap items-center justify-between gap-4 p-4">
+          <div>
+            <p className="text-sm font-medium">Notion 歷史資料匯入</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              一次匯入「新版筋棧1店每日紀錄」全部資料，不受下方日期篩選影響。
+            </p>
+          </div>
+          <Button type="button" disabled={syncing} onClick={() => void handleSync()}>
+            {syncing ? '匯入中…' : '一鍵匯入全部'}
+          </Button>
+        </div>
+      ) : null}
 
       <div className="glass-card flex flex-wrap items-end gap-3 p-4">
         <div className="space-y-1.5">
@@ -180,11 +194,6 @@ export function ReportsDashboard({
         <Button type="button" size="sm" onClick={() => void load()} disabled={loading}>
           {loading ? '載入中…' : '篩選'}
         </Button>
-        {canSyncNotion ? (
-          <Button type="button" size="sm" variant="outline" disabled={syncing} onClick={() => void handleSync()}>
-            {syncing ? '匯入中…' : '從 Notion 匯入（一次性）'}
-          </Button>
-        ) : null}
       </div>
 
       <div className="glass-card overflow-hidden">
@@ -220,7 +229,7 @@ export function ReportsDashboard({
               ) : !report?.rows.length ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                    此區間尚無資料。總管理員可按「從 Notion 匯入」匯入歷史紀錄。
+                    此區間尚無資料。總管理員可按上方「一鍵匯入全部」。
                   </td>
                 </tr>
               ) : (
