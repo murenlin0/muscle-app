@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 import { parseStoreFromParamsAsync } from '@/lib/api-store';
 import { requirePortalSession } from '@/lib/portal-api';
-import { createTeamMember, listTeamMembers, type TeamPermission } from '@/lib/team-server';
+import {
+  batchUpdateTeamMembers,
+  createTeamMember,
+  listTeamMembers,
+  type AccessLevel,
+} from '@/lib/team-server';
 import type { StoreSlug } from '@/lib/stores';
 
 function storeFilterFromSession(
@@ -10,6 +15,13 @@ function storeFilterFromSession(
   if (session instanceof NextResponse) return undefined;
   if (session.role === 'store') return session.storeId;
   return undefined;
+}
+
+function teamOptions(session: Exclude<Awaited<ReturnType<typeof requirePortalSession>>, NextResponse>) {
+  return {
+    actorStoreId: session.role === 'store' ? session.storeId : undefined,
+    canAssignStoreAdmin: session.role === 'super',
+  };
 }
 
 export async function GET(request: Request) {
@@ -33,7 +45,10 @@ export async function GET(request: Request) {
 
   try {
     const members = await listTeamMembers(storeFilter);
-    return NextResponse.json({ members });
+    return NextResponse.json({
+      members,
+      canAssignStoreAdmin: session.role === 'super',
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : '無法載入';
     return NextResponse.json({ error: message }, { status: 500 });
@@ -52,7 +67,7 @@ export async function POST(request: Request) {
     displayName?: string;
     staffPin?: string;
     adminPassword?: string;
-    permissions?: TeamPermission[];
+    accessLevel?: AccessLevel;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -60,22 +75,60 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'invalid json' }, { status: 400 });
   }
 
-  const storeId =
-    session.role === 'store' ? session.storeId : body.storeId;
+  const storeId = session.role === 'store' ? session.storeId : body.storeId;
   if (!storeId || !body.displayName?.trim() || !body.staffPin?.trim()) {
     return NextResponse.json({ error: '請填寫姓名、PIN 與分店' }, { status: 400 });
   }
 
   try {
-    await createTeamMember(storeId, {
-      displayName: body.displayName,
-      staffPin: body.staffPin,
-      adminPassword: body.adminPassword,
-      permissions: body.permissions ?? ['staff'],
-    });
+    await createTeamMember(
+      storeId,
+      {
+        displayName: body.displayName,
+        staffPin: body.staffPin,
+        adminPassword: body.adminPassword,
+        accessLevel: body.accessLevel ?? 'staff',
+      },
+      teamOptions(session),
+    );
     return NextResponse.json({ ok: true });
   } catch (e) {
     const message = e instanceof Error ? e.message : '建立失敗';
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  const session = await requirePortalSession();
+  if (session instanceof NextResponse) return session;
+  if (session.role === 'staff') {
+    return NextResponse.json({ error: '師傅無法管理人員' }, { status: 403 });
+  }
+
+  let body: {
+    updates?: Array<{
+      staffId: string;
+      displayName?: string;
+      staffPin?: string;
+      adminPassword?: string;
+      accessLevel: AccessLevel;
+    }>;
+  };
+  try {
+    body = (await request.json()) as typeof body;
+  } catch {
+    return NextResponse.json({ error: 'invalid json' }, { status: 400 });
+  }
+
+  if (!body.updates?.length) {
+    return NextResponse.json({ error: '沒有要儲存的變更' }, { status: 400 });
+  }
+
+  try {
+    await batchUpdateTeamMembers(body.updates, teamOptions(session));
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : '儲存失敗';
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

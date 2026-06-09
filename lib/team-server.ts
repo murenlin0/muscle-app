@@ -3,18 +3,29 @@ import { hashStaffPin } from '@/lib/staff-pin';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { getStore, type StoreSlug } from '@/lib/stores';
 
-export type TeamPermission = 'staff' | 'store_admin';
+export type AccessLevel = 'none' | 'staff' | 'store_admin';
 
 export interface TeamMember {
   staffId: string;
   displayName: string;
   storeId: StoreSlug;
   storeName: string;
-  isActive: boolean;
-  permissions: TeamPermission[];
-  staffPin: string | null;
+  accessLevel: AccessLevel;
+  staffPin: string;
   adminPassword: string | null;
   portalAccountId: string | null;
+}
+
+export function accessLevelLabel(level: AccessLevel): string {
+  if (level === 'none') return '無權限';
+  if (level === 'staff') return '師傅';
+  return '店長';
+}
+
+function deriveAccessLevel(isActive: boolean, hasStoreAdmin: boolean): AccessLevel {
+  if (!isActive) return 'none';
+  if (hasStoreAdmin) return 'store_admin';
+  return 'staff';
 }
 
 export async function listTeamMembers(storeFilter?: StoreSlug): Promise<TeamMember[]> {
@@ -22,7 +33,7 @@ export async function listTeamMembers(storeFilter?: StoreSlug): Promise<TeamMemb
 
   let staffQuery = supabase
     .from('staff')
-    .select('id, display_name, store_id, is_active, login_pin, pin_hash')
+    .select('id, display_name, store_id, is_active, login_pin')
     .order('display_name');
 
   if (storeFilter) {
@@ -34,7 +45,7 @@ export async function listTeamMembers(storeFilter?: StoreSlug): Promise<TeamMemb
 
   const { data: portalRows, error: portalError } = await supabase
     .from('portal_accounts')
-    .select('id, staff_id, store_id, role, password_plain, is_active')
+    .select('id, staff_id, password_plain, is_active')
     .eq('role', 'store');
 
   if (portalError) throw new Error(portalError.message);
@@ -46,16 +57,14 @@ export async function listTeamMembers(storeFilter?: StoreSlug): Promise<TeamMemb
   return (staffRows ?? []).map((row) => {
     const storeId = row.store_id as StoreSlug;
     const portal = portalByStaffId.get(row.id);
-    const permissions: TeamPermission[] = ['staff'];
-    if (portal?.is_active) permissions.push('store_admin');
+    const hasStoreAdmin = Boolean(portal?.is_active);
 
     return {
       staffId: row.id,
       displayName: row.display_name,
       storeId,
       storeName: getStore(storeId)?.name ?? storeId,
-      isActive: row.is_active,
-      permissions,
+      accessLevel: deriveAccessLevel(row.is_active, hasStoreAdmin),
       staffPin: row.login_pin ?? '',
       adminPassword: portal?.password_plain ?? null,
       portalAccountId: portal?.id ?? null,
@@ -65,16 +74,15 @@ export async function listTeamMembers(storeFilter?: StoreSlug): Promise<TeamMemb
 
 export interface UpdateTeamMemberInput {
   displayName?: string;
-  isActive?: boolean;
   staffPin?: string;
   adminPassword?: string;
-  permissions?: TeamPermission[];
+  accessLevel: AccessLevel;
 }
 
 export async function updateTeamMember(
   staffId: string,
   input: UpdateTeamMemberInput,
-  actorStoreId?: StoreSlug,
+  options: { actorStoreId?: StoreSlug; canAssignStoreAdmin: boolean },
 ): Promise<void> {
   const supabase = getSupabaseAdmin();
 
@@ -86,13 +94,38 @@ export async function updateTeamMember(
 
   if (staffError) throw new Error(staffError.message);
   if (!staff) throw new Error('找不到師傅');
-  if (actorStoreId && staff.store_id !== actorStoreId) {
+  if (options.actorStoreId && staff.store_id !== options.actorStoreId) {
     throw new Error('無權修改其他分店人員');
+  }
+
+  const { data: existingPortal } = await supabase
+    .from('portal_accounts')
+    .select('id, is_active')
+    .eq('staff_id', staffId)
+    .eq('role', 'store')
+    .maybeSingle();
+
+  const currentLevel = deriveAccessLevel(staff.is_active, Boolean(existingPortal?.is_active));
+  const nextLevel = input.accessLevel;
+
+  if (!options.canAssignStoreAdmin) {
+    if (currentLevel === 'store_admin' && nextLevel !== 'store_admin') {
+      throw new Error(`無法變更「${staff.display_name}」的店長權限，請聯繫總管理`);
+    }
+    if (nextLevel === 'store_admin') {
+      throw new Error('店長無法指派店長權限');
+    }
   }
 
   const staffUpdate: Record<string, unknown> = {};
   if (input.displayName?.trim()) staffUpdate.display_name = input.displayName.trim();
-  if (typeof input.isActive === 'boolean') staffUpdate.is_active = input.isActive;
+
+  if (input.accessLevel === 'none') {
+    staffUpdate.is_active = false;
+  } else {
+    staffUpdate.is_active = true;
+  }
+
   if (input.staffPin?.trim()) {
     const pin = input.staffPin.trim();
     staffUpdate.login_pin = pin;
@@ -104,19 +137,12 @@ export async function updateTeamMember(
     if (error) throw new Error(error.message);
   }
 
-  const wantsStoreAdmin = input.permissions?.includes('store_admin') ?? false;
-
-  const { data: existingPortal } = await supabase
-    .from('portal_accounts')
-    .select('id, is_active')
-    .eq('staff_id', staffId)
-    .eq('role', 'store')
-    .maybeSingle();
+  const wantsStoreAdmin = input.accessLevel === 'store_admin';
 
   if (wantsStoreAdmin) {
     const password = input.adminPassword?.trim();
     if (!existingPortal && !password) {
-      throw new Error('啟用店長權限請設定管理密碼');
+      throw new Error(`「${staff.display_name}」設為店長須填管理密碼`);
     }
 
     const portalPayload: Record<string, unknown> = {
@@ -124,7 +150,7 @@ export async function updateTeamMember(
       store_id: staff.store_id,
       display_name: input.displayName?.trim() || staff.display_name,
       staff_id: staffId,
-      is_active: input.isActive ?? staff.is_active,
+      is_active: true,
     };
 
     if (password) {
@@ -151,15 +177,33 @@ export async function updateTeamMember(
   }
 }
 
+export async function batchUpdateTeamMembers(
+  updates: Array<{ staffId: string } & UpdateTeamMemberInput>,
+  options: { actorStoreId?: StoreSlug; canAssignStoreAdmin: boolean },
+): Promise<void> {
+  for (const item of updates) {
+    const { staffId, ...input } = item;
+    await updateTeamMember(staffId, input, options);
+  }
+}
+
 export async function createTeamMember(
   storeId: StoreSlug,
   input: {
     displayName: string;
     staffPin: string;
     adminPassword?: string;
-    permissions: TeamPermission[];
+    accessLevel: AccessLevel;
   },
+  options: { canAssignStoreAdmin: boolean },
 ): Promise<void> {
+  if (!options.canAssignStoreAdmin && input.accessLevel === 'store_admin') {
+    throw new Error('店長無法指派店長權限');
+  }
+  if (input.accessLevel === 'none') {
+    throw new Error('新增人員請至少給予師傅權限');
+  }
+
   const supabase = getSupabaseAdmin();
   const pin = input.staffPin.trim();
 
@@ -177,7 +221,7 @@ export async function createTeamMember(
 
   if (error) throw new Error(error.message);
 
-  if (input.permissions.includes('store_admin')) {
+  if (input.accessLevel === 'store_admin') {
     const password = input.adminPassword?.trim();
     if (!password) throw new Error('店長權限需要管理密碼');
 

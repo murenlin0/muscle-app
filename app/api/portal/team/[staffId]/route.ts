@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { requirePortalSession } from '@/lib/portal-api';
-import { updateTeamMember, type TeamPermission } from '@/lib/team-server';
+import { updateTeamMember, type AccessLevel } from '@/lib/team-server';
 
 export async function PATCH(
   request: Request,
@@ -16,10 +16,9 @@ export async function PATCH(
 
   let body: {
     displayName?: string;
-    isActive?: boolean;
     staffPin?: string;
     adminPassword?: string;
-    permissions?: TeamPermission[];
+    accessLevel?: AccessLevel;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -27,11 +26,23 @@ export async function PATCH(
     return NextResponse.json({ error: 'invalid json' }, { status: 400 });
   }
 
+  if (!body.accessLevel) {
+    return NextResponse.json({ error: '缺少 accessLevel' }, { status: 400 });
+  }
+
   try {
     await updateTeamMember(
       staffId,
-      body,
-      session.role === 'store' ? session.storeId : undefined,
+      {
+        displayName: body.displayName,
+        staffPin: body.staffPin,
+        adminPassword: body.adminPassword,
+        accessLevel: body.accessLevel,
+      },
+      {
+        actorStoreId: session.role === 'store' ? session.storeId : undefined,
+        canAssignStoreAdmin: session.role === 'super',
+      },
     );
     return NextResponse.json({ ok: true });
   } catch (e) {
