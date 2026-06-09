@@ -15,19 +15,182 @@ export interface NotionDailyRow {
   lastEdited: string | null;
 }
 
+const NOTION_KEY_ENV_NAMES = [
+  'NOTION_API_KEY',
+  'NOTION_TOKEN',
+  'NOTION_INTEGRATION_SECRET',
+] as const;
+
+export function sanitizeNotionToken(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^Bearer\s+/i, '')
+    .replace(/^["']|["']$/g, '')
+    .replace(/\s+/g, '');
+}
+
+export function readNotionTokenFromEnv(): string | null {
+  for (const name of NOTION_KEY_ENV_NAMES) {
+    const value = process.env[name];
+    if (!value?.trim()) continue;
+    return sanitizeNotionToken(value);
+  }
+  return null;
+}
+
+export interface NotionKeyDiagnostics {
+  configured: boolean;
+  envVarUsed: string | null;
+  keyPrefix: string | null;
+  keyLength: number;
+  formatOk: boolean;
+  formatHint: string | null;
+}
+
+export function getNotionKeyDiagnostics(): NotionKeyDiagnostics {
+  let envVarUsed: string | null = null;
+  let token: string | null = null;
+
+  for (const name of NOTION_KEY_ENV_NAMES) {
+    const value = process.env[name];
+    if (!value?.trim()) continue;
+    envVarUsed = name;
+    token = sanitizeNotionToken(value);
+    break;
+  }
+
+  if (!token) {
+    return {
+      configured: false,
+      envVarUsed: null,
+      keyPrefix: null,
+      keyLength: 0,
+      formatOk: false,
+      formatHint: `未設定環境變數。請在 Vercel 新增 NOTION_API_KEY（Internal Integration Secret）。`,
+    };
+  }
+
+  const formatOk = token.startsWith('secret_') || token.startsWith('ntn_');
+  let formatHint: string | null = null;
+  if (!formatOk) {
+    if (token.startsWith('oauth_') || token.includes('client')) {
+      formatHint = '這看起來像 OAuth 金鑰。請改用 Internal Integration 的 Secret（secret_ 或 ntn_ 開頭）。';
+    } else if (token.length < 40) {
+      formatHint = '金鑰太短，可能只貼到一部分。請重新複製完整的 Internal Integration Secret。';
+    } else {
+      formatHint = '金鑰格式異常。請到 notion.so/my-integrations 建立「內部整合」，複製 Secret。';
+    }
+  }
+
+  return {
+    configured: true,
+    envVarUsed,
+    keyPrefix: token.slice(0, Math.min(12, token.length)),
+    keyLength: token.length,
+    formatOk,
+    formatHint,
+  };
+}
+
 function notionToken(): string {
-  const raw = process.env.NOTION_API_KEY?.trim().replace(/^["']|["']$/g, '');
+  const raw = readNotionTokenFromEnv();
   if (!raw) {
     throw new Error(
       '缺少 NOTION_API_KEY。請在 Vercel → Environment Variables 設定 Internal Integration 的 secret_... 金鑰，並 Redeploy。',
     );
   }
-  if (!raw.startsWith('secret_') && !raw.startsWith('ntn_')) {
-    throw new Error(
-      'NOTION_API_KEY 格式不正確。請使用 Notion Internal Integration 的 Secret（secret_ 開頭），不是 OAuth Client ID。',
-    );
+  const diag = getNotionKeyDiagnostics();
+  if (!diag.formatOk) {
+    throw new Error(diag.formatHint ?? 'NOTION_API_KEY 格式不正確。');
   }
   return raw;
+}
+
+export interface NotionProbeResult {
+  ok: boolean;
+  diagnostics: NotionKeyDiagnostics;
+  databaseId: string;
+  databaseTitle?: string;
+  notionStatus?: number;
+  notionCode?: string;
+  notionMessage?: string;
+  hint?: string;
+}
+
+export async function probeNotionConnection(
+  databaseId = NOTION_STORE1_DAILY_DB_ID,
+): Promise<NotionProbeResult> {
+  const diagnostics = getNotionKeyDiagnostics();
+  const base = {
+    diagnostics,
+    databaseId,
+  };
+
+  if (!diagnostics.configured) {
+    return {
+      ...base,
+      ok: false,
+      hint: 'Vercel 尚未設定 NOTION_API_KEY，或設定後尚未 Redeploy。',
+    };
+  }
+
+  if (!diagnostics.formatOk) {
+    return {
+      ...base,
+      ok: false,
+      hint: diagnostics.formatHint ?? '金鑰格式不正確。',
+    };
+  }
+
+  const token = notionToken();
+
+  const res = await fetch(`https://api.notion.com/v1/databases/${databaseId}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Notion-Version': NOTION_VERSION,
+    },
+  });
+
+  if (res.ok) {
+    const data = (await res.json()) as {
+      title?: { plain_text: string }[];
+    };
+    const databaseTitle = (data.title ?? []).map((t) => t.plain_text).join('');
+    return {
+      ...base,
+      ok: true,
+      databaseTitle: databaseTitle || undefined,
+    };
+  }
+
+  let notionCode: string | undefined;
+  let notionMessage: string | undefined;
+  try {
+    const err = (await res.json()) as { code?: string; message?: string };
+    notionCode = err.code;
+    notionMessage = err.message;
+  } catch {
+    notionMessage = await res.text();
+  }
+
+  let hint = '請檢查 Notion 設定。';
+  if (res.status === 401) {
+    hint =
+      '金鑰被 Notion 拒絕。請到 notion.so/my-integrations → 你的整合 → 重新複製 Internal Integration Secret，覆蓋 Vercel 的 NOTION_API_KEY，然後 Redeploy。若曾按「重新產生」，舊金鑰會立即失效。';
+  } else if (res.status === 404) {
+    hint =
+      '金鑰有效但找不到資料庫。請在 Notion「新版筋棧1店每日紀錄」→ ⋯ → Connect to → 選同一個 Integration。';
+  }
+
+  return {
+    ...base,
+    ok: false,
+    notionStatus: res.status,
+    notionCode,
+    notionMessage,
+    hint,
+  };
 }
 
 function wrapNotionError(status: number, body: string): Error {

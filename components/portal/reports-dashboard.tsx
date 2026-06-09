@@ -73,8 +73,10 @@ export function ReportsDashboard({
   const [report, setReport] = useState<ReportList | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [notionStatus, setNotionStatus] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -98,6 +100,52 @@ export function ReportsDashboard({
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function handleTestNotion() {
+    setTesting(true);
+    setNotionStatus(null);
+    setError(null);
+    const res = await fetch('/api/portal/reports/notion-status');
+    const data = (await res.json()) as {
+      ok?: boolean;
+      hint?: string;
+      databaseTitle?: string;
+      diagnostics?: {
+        configured: boolean;
+        envVarUsed: string | null;
+        keyPrefix: string | null;
+        keyLength: number;
+        formatOk: boolean;
+        formatHint: string | null;
+      };
+      notionStatus?: number;
+      notionCode?: string;
+      notionMessage?: string;
+      vercelEnv?: string;
+      error?: string;
+    };
+    setTesting(false);
+    if (!res.ok) {
+      setError(data.error ?? '無法測試 Notion 連線');
+      return;
+    }
+    const d = data.diagnostics;
+    if (data.ok) {
+      setNotionStatus(
+        `連線成功（${data.vercelEnv}）。資料庫：${data.databaseTitle ?? '新版筋棧1店每日紀錄'}。金鑰：${d?.envVarUsed} ${d?.keyPrefix}…`,
+      );
+      return;
+    }
+    const parts = [
+      data.hint,
+      d?.formatHint,
+      data.notionMessage ? `Notion：${data.notionCode ?? data.notionStatus} ${data.notionMessage}` : null,
+      d?.configured
+        ? `已讀到 ${d.envVarUsed}（${d.keyPrefix}…，長度 ${d.keyLength}）`
+        : 'Vercel 未讀到 NOTION_API_KEY',
+    ].filter(Boolean);
+    setError(parts.join(' '));
+  }
 
   async function handleSync() {
     setSyncing(true);
@@ -141,11 +189,17 @@ export function ReportsDashboard({
               一次匯入「新版筋棧1店每日紀錄」全部資料，不受下方日期篩選影響。
             </p>
           </div>
-          <Button type="button" disabled={syncing} onClick={() => void handleSync()}>
-            {syncing ? '匯入中…' : '一鍵匯入全部'}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" disabled={testing} onClick={() => void handleTestNotion()}>
+              {testing ? '測試中…' : '測試 Notion 連線'}
+            </Button>
+            <Button type="button" disabled={syncing} onClick={() => void handleSync()}>
+              {syncing ? '匯入中…' : '一鍵匯入全部'}
+            </Button>
+          </div>
         </div>
       ) : null}
+      {notionStatus ? <StatusBanner variant="success">{notionStatus}</StatusBanner> : null}
 
       <div className="glass-card flex flex-wrap items-end gap-3 p-4">
         <div className="space-y-1.5">
