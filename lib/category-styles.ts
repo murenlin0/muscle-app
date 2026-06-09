@@ -1,15 +1,30 @@
 import type { TransactionCategory } from '@/lib/transaction-category';
 
-/** Notion 風格類型標籤色 */
+/** v0 風格：透明底 + 彩色描邊標籤（類型／結帳方式） */
 export const CATEGORY_NOTION_STYLE: Record<TransactionCategory, string> = {
-  一般消費: 'bg-[#4a3b2f] text-[#e8d5c4] border border-[#5c4a3a]',
-  會員儲值: 'bg-[#5c2d3a] text-[#f0c4d0] border border-[#6e3a4a]',
-  會員使用: 'bg-[#44325c] text-[#d8c4f0] border border-[#553d70]',
-  會員補差額: 'bg-[#3d3550] text-[#cfc4e8] border border-[#4d4560]',
-  轉出: 'bg-[#2d4a38] text-[#b8e0c8] border border-[#3a5c48]',
-  轉入: 'bg-[#2a4a42] text-[#c8f0d8] border border-[#3a6a52]',
-  支出: 'bg-[#2a3d52] text-[#b8d4f0] border border-[#3a5068]',
-  工資: 'bg-[#3a3a3a] text-[#d4d4d4] border border-[#4a4a4a]',
-  收入: 'bg-[#4a3f2a] text-[#f0e0b8] border border-[#5c5035]',
-  分紅: 'bg-[#522a2a] text-[#f0b8b8] border border-[#683535]',
+  一般消費: 'bg-transparent text-amber-300/95 border border-amber-400/55 rounded-full',
+  會員儲值: 'bg-transparent text-rose-300/95 border border-rose-400/50 rounded-full',
+  會員使用: 'bg-transparent text-violet-300/95 border border-violet-400/50 rounded-full',
+  會員補差額: 'bg-transparent text-purple-300/90 border border-purple-400/45 rounded-full',
+  轉出: 'bg-transparent text-emerald-300/90 border border-emerald-500/45 rounded-full',
+  轉入: 'bg-transparent text-teal-300/90 border border-teal-400/50 rounded-full',
+  支出: 'bg-transparent text-sky-300/90 border border-sky-400/50 rounded-full',
+  工資: 'bg-transparent text-zinc-300/90 border border-zinc-500/50 rounded-full',
+  收入: 'bg-transparent text-yellow-200/90 border border-yellow-500/45 rounded-full',
+  分紅: 'bg-transparent text-red-300/90 border border-red-400/50 rounded-full',
 };
+
+/** 流水帳金額正負色 */
+export function ledgerAmountClass(amount: number): string {
+  if (amount > 0) return 'text-[#4fd1c5]';
+  if (amount < 0) return 'text-[#f56565]';
+  return 'text-[#888]';
+}
+
+export function formatSignedAmount(amount: number): string {
+  const n = Math.round(amount);
+  const abs = Math.abs(n).toLocaleString('zh-TW');
+  if (n > 0) return `+$${abs}`;
+  if (n < 0) return `-$${abs}`;
+  return '$0';
+}

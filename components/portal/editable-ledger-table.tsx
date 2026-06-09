@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CATEGORY_NOTION_STYLE } from '@/lib/category-styles';
+import { CATEGORY_NOTION_STYLE, ledgerAmountClass } from '@/lib/category-styles';
 import { LEDGER_ACCOUNTS, primaryLedgerAccount } from '@/lib/ledger-accounts';
 import {
   normalizeLedgerAmount,
@@ -415,7 +415,11 @@ export function EditableLedgerTable({
                           updateRow(row.id, { amount: Number(e.target.value) || 0 })
                         }
                         onBlur={() => void saveRowById(row.id)}
-                        className={cn(cellInput, 'text-right tabular-nums text-[#ebebeb]')}
+                        className={cn(
+                          cellInput,
+                          'text-right tabular-nums font-medium',
+                          ledgerAmountClass(row.amount),
+                        )}
                       />
                     </td>
                     <td className="p-0 align-middle">
@@ -427,7 +431,7 @@ export function EditableLedgerTable({
                           void saveRowById(row.id);
                         }}
                         className={cn(
-                          'mx-1 my-1 w-[calc(100%-8px)] rounded px-2 py-1 text-xs font-medium transition-opacity',
+                          'mx-1 my-1 w-[calc(100%-8px)] px-2.5 py-1 text-xs font-medium transition-opacity',
                           CATEGORY_NOTION_STYLE[row.category],
                           status === 'saving' && 'opacity-60',
                         )}

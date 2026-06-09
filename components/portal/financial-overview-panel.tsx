@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { displayMoney } from '@/lib/financial-display';
 import type { FinancialOverview } from '@/lib/financial-summary-server';
 import { cn } from '@/lib/utils';
@@ -9,10 +9,29 @@ function fmt(n: number) {
   return displayMoney(n).toLocaleString('zh-TW');
 }
 
-function Money({ value, className }: { value: number; className?: string }) {
+function SignedMoney({
+  value,
+  className,
+  showSign = false,
+}: {
+  value: number;
+  className?: string;
+  showSign?: boolean;
+}) {
+  const abs = fmt(Math.abs(value));
+  const positive = value >= 0;
+  const text = showSign ? `${positive ? '+' : '-'}$${abs}` : `$${abs}`;
   return (
-    <span className={cn('tabular-nums', className)}>
-      ${fmt(value)}
+    <span
+      className={cn(
+        'tabular-nums font-semibold tracking-tight',
+        showSign && positive && 'text-[#4fd1c5]',
+        showSign && !positive && value !== 0 && 'text-[#f56565]',
+        !showSign && 'text-[#e8e8e8]',
+        className,
+      )}
+    >
+      {text}
     </span>
   );
 }
@@ -29,14 +48,14 @@ function PanelCard({
   return (
     <div
       className={cn(
-        'flex min-h-[280px] flex-col rounded-md border border-[#333] bg-[#1c1c1c]',
+        'flex min-h-[280px] flex-col rounded-lg border border-[#2a2a2a] bg-[#1c1c1c]/80',
         className,
       )}
     >
-      <div className="border-b border-[#333] px-4 py-2.5 text-sm font-semibold text-[#e8e8e8]">
+      <div className="border-b border-[#2a2a2a] px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#888]">
         {title}
       </div>
-      <div className="flex flex-1 flex-col p-3">{children}</div>
+      <div className="flex flex-1 flex-col p-4">{children}</div>
     </div>
   );
 }
@@ -47,17 +66,29 @@ function LineItem({
   onClick,
   active,
   bold,
+  muted,
 }: {
   label: string;
   value: number;
   onClick?: () => void;
   active?: boolean;
   bold?: boolean;
+  muted?: boolean;
 }) {
   const inner = (
     <>
-      <span className={cn('text-[#aaa]', bold && 'font-medium text-[#ddd]')}>{label}</span>
-      <Money value={value} className={cn(bold ? 'text-[#f0f0f0] font-semibold' : 'text-[#ccc]')} />
+      <span
+        className={cn(
+          'text-sm',
+          muted ? 'text-[#777]' : bold ? 'font-medium text-[#ccc]' : 'text-[#999]',
+        )}
+      >
+        {label}
+      </span>
+      <SignedMoney
+        value={value}
+        className={cn(bold ? 'text-base' : 'text-sm font-medium text-[#d4d4d4]')}
+      />
     </>
   );
 
@@ -67,56 +98,87 @@ function LineItem({
         type="button"
         onClick={onClick}
         className={cn(
-          'flex w-full items-center justify-between rounded px-2 py-2 text-left text-sm transition',
-          active ? 'bg-[#2a2a2a] ring-1 ring-[#444]' : 'hover:bg-[#262626]',
+          'group flex w-full items-center gap-2 rounded-md px-2 py-2.5 text-left transition',
+          active ? 'bg-[#252525] ring-1 ring-[#3a3a3a]' : 'hover:bg-[#222]',
         )}
       >
-        {inner}
+        <span className="flex min-w-0 flex-1 items-center justify-between">{inner}</span>
+        <span className="shrink-0 text-xs text-[#555] group-hover:text-[#888]" aria-hidden>
+          ›
+        </span>
       </button>
     );
   }
 
   return (
-    <div className={cn('flex items-center justify-between px-2 py-1.5 text-sm', bold && 'pt-2')}>
+    <div className={cn('flex items-center justify-between px-2 py-2', bold && 'py-2.5')}>
       {inner}
     </div>
   );
 }
 
-function Flyout({
+function DetailDrawer({
+  open,
   title,
   items,
   onClose,
 }: {
+  open: boolean;
   title: string;
   items: { label: string; value: number }[];
   onClose: () => void;
 }) {
+  useEffect(() => {
+    if (!open) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
   return (
-    <div className="absolute left-full top-0 z-20 ml-2 w-56 rounded-md border border-[#404040] bg-[#252525] shadow-xl">
-      <div className="flex items-center justify-between border-b border-[#333] px-3 py-2">
-        <span className="text-xs font-medium text-[#ccc]">{title}</span>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-[#666] hover:text-[#aaa]"
-          aria-label="關閉"
-        >
-          ×
-        </button>
-      </div>
-      <div className="space-y-0.5 p-2">
-        {items.map((item) => (
-          <div
-            key={item.label}
-            className="flex items-center justify-between rounded px-2 py-1.5 text-sm hover:bg-[#2f2f2f]"
+    <>
+      <button
+        type="button"
+        aria-label="關閉"
+        className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      <aside
+        className="fixed inset-y-0 right-0 z-50 flex w-full max-w-md flex-col border-l border-[#333] bg-[#161616]/98 shadow-2xl animate-in slide-in-from-right duration-200"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+      >
+        <div className="flex items-center justify-between border-b border-[#2a2a2a] px-5 py-4">
+          <h3 className="text-sm font-semibold text-[#e0e0e0]">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md px-2 py-1 text-lg leading-none text-[#666] hover:bg-[#252525] hover:text-[#aaa]"
+            aria-label="關閉"
           >
-            <span className="text-[#aaa]">{item.label}</span>
-            <Money value={item.value} />
+            ×
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-3">
+          <div className="space-y-0.5">
+            {items.map((item) => (
+              <div
+                key={item.label}
+                className="flex items-center justify-between rounded-md px-3 py-3 hover:bg-[#1f1f1f]"
+              >
+                <span className="text-sm text-[#999]">{item.label}</span>
+                <SignedMoney value={item.value} className="text-sm" />
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-    </div>
+        </div>
+      </aside>
+    </>
   );
 }
 
@@ -127,13 +189,13 @@ export function FinancialOverviewPanel({
   overview: FinancialOverview | null;
   loading: boolean;
 }) {
-  const [expand, setExpand] = useState<'income' | 'expense' | null>(null);
+  const [drawer, setDrawer] = useState<'income' | 'expense' | null>(null);
 
   if (loading && !overview) {
     return (
       <div className="grid gap-3 lg:grid-cols-3">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-[280px] animate-pulse rounded-md bg-[#252525]" />
+          <div key={i} className="h-[280px] animate-pulse rounded-lg bg-[#252525]" />
         ))}
       </div>
     );
@@ -145,109 +207,117 @@ export function FinancialOverviewPanel({
   const exp = incomeStatement.expenseBreakdown;
 
   return (
-    <div className="grid gap-3 lg:grid-cols-3">
-      <PanelCard title="資產">
-        <LineItem label="總資產" value={assets.total} bold />
-        <div className="mt-1 space-y-0.5 border-t border-[#333] pt-2">
-          <LineItem label="店內現金庫存" value={assets.cashOnHand} />
-          <LineItem label="銀行帳戶" value={assets.bankAccounts} />
-          <LineItem label="應收帳款" value={assets.accountsReceivable} />
-        </div>
-        <p className="mt-auto pt-3 text-[10px] leading-relaxed text-[#666]">
-          總資產＝現金＋銀行－會員儲值餘額；應收帳款為會員尚未使用完的儲值金。
-        </p>
-      </PanelCard>
+    <>
+      <div className="grid gap-3 lg:grid-cols-3">
+        <PanelCard title="資產">
+          <div className="mb-3 flex items-baseline justify-between border-b border-[#2a2a2a] pb-3">
+            <span className="text-sm font-medium text-[#aaa]">總資產</span>
+            <SignedMoney value={assets.total} className="text-xl" />
+          </div>
+          <div className="space-y-0.5">
+            <LineItem label="店內現金庫存" value={assets.cashOnHand} />
+            <LineItem label="銀行帳戶" value={assets.bankAccounts} />
+            <LineItem label="預收未服務" value={assets.deferredRevenue} />
+            <LineItem label="應收帳款" value={assets.accountsReceivable} muted />
+          </div>
+          <p className="mt-auto pt-3 text-[10px] leading-relaxed text-[#555]">
+            總資產＝現金＋銀行＋預收未服務；應收帳款（已服務未收款）僅供參考，不計入總資產。
+          </p>
+        </PanelCard>
 
-      <PanelCard title="收支" className="relative overflow-visible">
-        <div className="relative space-y-1">
-          <LineItem
-            label="收入"
-            value={incomeStatement.totalIncome}
-            bold
-            onClick={() => setExpand(expand === 'income' ? null : 'income')}
-            active={expand === 'income'}
-          />
-          {expand === 'income' ? (
-            <Flyout
-              title="收入明細"
-              onClose={() => setExpand(null)}
-              items={[
-                { label: '服務收入', value: incomeStatement.serviceIncome },
-                { label: '分租收入', value: incomeStatement.subleaseIncome },
-              ]}
-            />
-          ) : null}
-
-          <LineItem
-            label="支出"
-            value={incomeStatement.totalExpense}
-            bold
-            onClick={() => setExpand(expand === 'expense' ? null : 'expense')}
-            active={expand === 'expense'}
-          />
-          {expand === 'expense' ? (
-            <Flyout
-              title="支出明細"
-              onClose={() => setExpand(null)}
-              items={[
-                { label: '添購', value: exp.添購 },
-                { label: '房租', value: exp.房租 },
-                { label: '水電', value: exp.水電 },
-                { label: '廣告', value: exp.廣告 },
-                { label: '師傅薪水', value: exp.師傅薪水 },
-                ...(exp.其他 > 0 ? [{ label: '其他', value: exp.其他 }] : []),
-              ]}
-            />
-          ) : null}
-
-          <div className="border-t border-[#333] pt-2">
+        <PanelCard title="收支">
+          <div className="space-y-0.5">
             <LineItem
-              label={incomeStatement.netProfit >= 0 ? '淨利' : '淨損'}
-              value={incomeStatement.netProfit}
+              label="收入"
+              value={incomeStatement.totalIncome}
               bold
+              onClick={() => setDrawer('income')}
+              active={drawer === 'income'}
             />
+            <LineItem
+              label="支出"
+              value={incomeStatement.totalExpense}
+              bold
+              onClick={() => setDrawer('expense')}
+              active={drawer === 'expense'}
+            />
+            <div className="border-t border-[#2a2a2a] pt-2 mt-1">
+              <div className="flex items-center justify-between px-2 py-2.5">
+                <span className="text-sm font-medium text-[#ccc]">
+                  {incomeStatement.netProfit >= 0 ? '淨利' : '淨損'}
+                </span>
+                <SignedMoney
+                  value={incomeStatement.netProfit}
+                  showSign
+                  className="text-base"
+                />
+              </div>
+            </div>
           </div>
-        </div>
-        <p className="mt-auto pt-3 text-[10px] text-[#666]">
-          收支為區間損益；收入－支出＝淨利（此區金額均顯示正數）。
-        </p>
-      </PanelCard>
+          <p className="mt-auto pt-3 text-[10px] text-[#555]">
+            收支為區間損益；點收入或支出可查看明細。
+          </p>
+        </PanelCard>
 
-      <PanelCard title="股東權益">
-        {shareholders.length === 0 ? (
-          <p className="text-sm text-[#888]">尚無股東資料，請在 Supabase shareholders 表新增。</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="text-[#777]">
-                  <th className="pb-2 pr-2 font-medium">股東</th>
-                  <th className="pb-2 pr-2 text-right font-medium">持股</th>
-                  <th className="pb-2 pr-2 text-right font-medium">應領</th>
-                  <th className="pb-2 pr-2 text-right font-medium">已發放</th>
-                  <th className="pb-2 text-right font-medium">未領</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shareholders.map((sh) => (
-                  <tr key={sh.id} className="border-t border-[#2a2a2a] text-[#ccc]">
-                    <td className="py-2 pr-2">{sh.name}</td>
-                    <td className="py-2 pr-2 text-right tabular-nums">
-                      {(sh.ownershipPercent * 100).toFixed(1)}%
-                    </td>
-                    <td className="py-2 pr-2 text-right tabular-nums">${fmt(sh.dividendDue)}</td>
-                    <td className="py-2 pr-2 text-right tabular-nums">${fmt(sh.dividendPaid)}</td>
-                    <td className="py-2 text-right tabular-nums">${fmt(sh.dividendUnpaid)}</td>
+        <PanelCard title="股東權益">
+          {shareholders.length === 0 ? (
+            <p className="text-sm text-[#888]">尚無股東資料，請在 Supabase shareholders 表新增。</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="text-[#666]">
+                    <th className="pb-2 pr-2 font-medium">股東</th>
+                    <th className="pb-2 pr-2 text-right font-medium">持股</th>
+                    <th className="pb-2 pr-2 text-right font-medium">應領</th>
+                    <th className="pb-2 pr-2 text-right font-medium">已發放</th>
+                    <th className="pb-2 text-right font-medium">未領</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        <p className="mt-auto pt-3 text-[10px] text-[#666]">
-          應領＝區間淨利 × 持股；已發放取自「分紅」流水；未領＝應領－已發放。
-        </p>
-      </PanelCard>
-    </div>
+                </thead>
+                <tbody>
+                  {shareholders.map((sh) => (
+                    <tr key={sh.id} className="border-t border-[#252525] text-[#bbb]">
+                      <td className="py-2.5 pr-2">{sh.name}</td>
+                      <td className="py-2.5 pr-2 text-right tabular-nums">
+                        {(sh.ownershipPercent * 100).toFixed(1)}%
+                      </td>
+                      <td className="py-2.5 pr-2 text-right tabular-nums">${fmt(sh.dividendDue)}</td>
+                      <td className="py-2.5 pr-2 text-right tabular-nums">${fmt(sh.dividendPaid)}</td>
+                      <td className="py-2.5 text-right tabular-nums">${fmt(sh.dividendUnpaid)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          <p className="mt-auto pt-3 text-[10px] text-[#555]">
+            應領＝區間淨利 × 持股；已發放取自「分紅」流水；未領＝應領－已發放。
+          </p>
+        </PanelCard>
+      </div>
+
+      <DetailDrawer
+        open={drawer === 'income'}
+        title="收入明細"
+        onClose={() => setDrawer(null)}
+        items={[
+          { label: '服務收入', value: incomeStatement.serviceIncome },
+          { label: '分租收入', value: incomeStatement.subleaseIncome },
+        ]}
+      />
+      <DetailDrawer
+        open={drawer === 'expense'}
+        title="支出明細"
+        onClose={() => setDrawer(null)}
+        items={[
+          { label: '添購', value: exp.添購 },
+          { label: '房租', value: exp.房租 },
+          { label: '水電', value: exp.水電 },
+          { label: '廣告', value: exp.廣告 },
+          { label: '師傅薪水', value: exp.師傅薪水 },
+          ...(exp.其他 > 0 ? [{ label: '其他', value: exp.其他 }] : []),
+        ]}
+      />
+    </>
   );
 }

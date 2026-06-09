@@ -26,6 +26,9 @@ export interface FinancialOverview {
     total: number;
     cashOnHand: number;
     bankAccounts: number;
+    /** 會員儲值尚未使用完的金額（預收未服務） */
+    deferredRevenue: number;
+    /** 已服務但尚未收款（不計入總資產） */
     accountsReceivable: number;
   };
   incomeStatement: {
@@ -98,14 +101,22 @@ export async function getFinancialOverview(
 
   let cashOnHand = 0;
   let bankAccounts = 0;
-  let memberPrepaid = 0;
+  let deferredRevenue = 0;
+  let accountsReceivable = 0;
 
   for (const row of all) {
     const cat = row.category as TransactionCategory;
     const amt = row.amount ?? 0;
 
-    if (cat === '會員儲值') memberPrepaid += Math.abs(amt);
-    if (cat === '會員使用') memberPrepaid -= Math.abs(amt);
+    if (cat === '會員儲值') deferredRevenue += Math.abs(amt);
+    if (cat === '會員使用') deferredRevenue -= Math.abs(amt);
+
+    if (
+      (cat === '一般消費' || cat === '會員補差額') &&
+      !primaryLedgerAccount(row.payment_methods ?? [], cat)
+    ) {
+      accountsReceivable += Math.abs(amt);
+    }
 
     if (!affectsAccountBalance(cat) || isTransferCategory(cat)) continue;
 
@@ -114,9 +125,9 @@ export async function getFinancialOverview(
     else if (acc === '富邦') bankAccounts += amt;
   }
 
-  const accountsReceivable = Math.max(0, memberPrepaid);
-  // 總資產＝現金＋銀行－會員儲值餘額（儲值金為負債，不算店內自有資金）
-  const totalAssets = cashOnHand + bankAccounts - accountsReceivable;
+  deferredRevenue = Math.max(0, deferredRevenue);
+  // 總資產＝現金＋銀行＋預收未服務；應收帳款僅顯示不計入
+  const totalAssets = cashOnHand + bankAccounts + deferredRevenue;
 
   let serviceIncome = 0;
   let subleaseIncome = 0;
@@ -194,6 +205,7 @@ export async function getFinancialOverview(
       total: totalAssets,
       cashOnHand,
       bankAccounts,
+      deferredRevenue,
       accountsReceivable,
     },
     incomeStatement: {
