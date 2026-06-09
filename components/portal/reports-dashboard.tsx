@@ -195,6 +195,7 @@ export function ReportsDashboard({
       report?: {
         scanned: number;
         updated: number;
+        deduped?: number;
         splitTransfers: number;
         splitMultiStaff: number;
         issues: string[];
@@ -209,7 +210,7 @@ export function ReportsDashboard({
     const issueNote =
       r && r.issues.length > 0 ? `（${r.issues.length} 筆需手動處理）` : '';
     setSyncMsg(
-      `已正規化：掃描 ${r?.scanned ?? 0} 筆、更新 ${r?.updated ?? 0} 筆、拆分轉移 ${r?.splitTransfers ?? 0} 筆、拆分多人合寫 ${r?.splitMultiStaff ?? 0} 組${issueNote}`,
+      `已正規化：掃描 ${r?.scanned ?? 0} 筆、去重 ${r?.deduped ?? 0} 筆、更新 ${r?.updated ?? 0} 筆、拆分轉移 ${r?.splitTransfers ?? 0} 筆、拆分多人合寫 ${r?.splitMultiStaff ?? 0} 組${issueNote}`,
     );
     if (r?.issues.length) {
       setError(r.issues.slice(0, 3).join('；'));
