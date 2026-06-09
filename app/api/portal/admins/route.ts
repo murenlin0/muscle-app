@@ -49,6 +49,7 @@ export async function POST(request: Request) {
       store_id: body.storeId,
       display_name: body.displayName.trim(),
       password_hash: hashPortalPassword(body.password),
+      password_plain: body.password,
       is_active: true,
     })
     .select('id, display_name, store_id')

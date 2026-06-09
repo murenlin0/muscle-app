@@ -57,8 +57,8 @@ export default function AdminHubPage() {
         <AdminHubCard
           href={`${adminBase}/team`}
           icon={Users}
-          title="師傅管理"
-          description="本店師傅名單與 PIN（即將上線）"
+          title="人員與權限"
+          description="師傅 PIN、店長權限與啟用狀態"
         />
       </div>
     </PortalShell>

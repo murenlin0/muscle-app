@@ -38,7 +38,8 @@ from (
     ('錦', 0.7000::numeric, '{"tier": "7成"}'::jsonb),
     ('約翰', 0.6000::numeric, '{"tier": "6成"}'::jsonb),
     ('湘', 0.7000::numeric, '{"tier": "7成"}'::jsonb),
-    ('杰恩', 0.7000::numeric, '{"tier": "7成"}'::jsonb)
+    ('杰恩', 0.7000::numeric, '{"tier": "7成"}'::jsonb),
+    ('寶', 0.6000::numeric, '{"tier": "6成"}'::jsonb)
 ) as v(display_name, commission_rate, bonus_formula)
 where not exists (
   select 1

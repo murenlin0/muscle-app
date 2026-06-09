@@ -2,29 +2,26 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { KeyRound, Shield, Users } from 'lucide-react';
+import { Shield, Users } from 'lucide-react';
 import { PortalShell } from '@/app/components/portal-shell';
 import { StatusBanner } from '@/components/portal/status-banner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { STORE_LIST } from '@/lib/stores';
 import { cn } from '@/lib/utils';
 
 const PORTAL_API = '/api/portal';
 
-type LoginMode = 'staff' | 'store' | 'super';
+type LoginMode = 'staff' | 'admin';
 
 interface StaffOption {
   id: string;
   display_name: string;
-  store_name: string;
 }
 
 const MODES: { id: LoginMode; label: string; icon: typeof Users }[] = [
   { id: 'staff', label: '師傅', icon: Users },
-  { id: 'store', label: '店長', icon: KeyRound },
-  { id: 'super', label: '總管理', icon: Shield },
+  { id: 'admin', label: '管理', icon: Shield },
 ];
 
 export default function LoginPage() {
@@ -32,7 +29,6 @@ export default function LoginPage() {
   const [mode, setMode] = useState<LoginMode>('staff');
   const [roster, setRoster] = useState<StaffOption[]>([]);
   const [staffId, setStaffId] = useState('');
-  const [storeId, setStoreId] = useState('store1');
   const [pin, setPin] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -52,7 +48,7 @@ export default function LoginPage() {
 
       const rosterRes = await fetch('/api/staff/roster');
       const rosterData = (await rosterRes.json()) as {
-        staff?: StaffOption[];
+        staff?: { id: string; display_name: string }[];
       };
       if (!cancelled) {
         setRoster(rosterData.staff ?? []);
@@ -72,11 +68,7 @@ export default function LoginPage() {
     setError(null);
 
     const body =
-      mode === 'staff'
-        ? { mode, staffId, pin }
-        : mode === 'store'
-          ? { mode, storeId, password }
-          : { mode, password };
+      mode === 'staff' ? { mode, staffId, pin } : { mode, password };
 
     const res = await fetch(`${PORTAL_API}/login`, {
       method: 'POST',
@@ -95,7 +87,7 @@ export default function LoginPage() {
   }
 
   return (
-    <PortalShell title="筋棧登入" subtitle="師傅 · 店長 · 總管理" size="lg">
+    <PortalShell title="筋棧登入" subtitle="師傅 · 管理" size="lg">
       <div className="mb-6 flex rounded-lg border border-primary/20 bg-card/40 p-1">
         {MODES.map((m) => {
           const Icon = m.icon;
@@ -140,7 +132,7 @@ export default function LoginPage() {
                     <option value="">請選擇</option>
                     {roster.map((s) => (
                       <option key={s.id} value={s.id}>
-                        {s.display_name} · {s.store_name}
+                        {s.display_name}
                       </option>
                     ))}
                   </select>
@@ -158,44 +150,11 @@ export default function LoginPage() {
                   />
                 </div>
               </>
-            ) : null}
-
-            {mode === 'store' ? (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="store">分店</Label>
-                  <select
-                    id="store"
-                    value={storeId}
-                    onChange={(e) => setStoreId(e.target.value)}
-                    className="input-neon flex h-11 w-full rounded-lg border border-input bg-input px-3 text-sm"
-                  >
-                    {STORE_LIST.map((s) => (
-                      <option key={s.slug} value={s.slug}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="store-password">店長密碼</Label>
-                  <Input
-                    id="store-password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="input-neon h-11"
-                    required
-                  />
-                </div>
-              </>
-            ) : null}
-
-            {mode === 'super' ? (
+            ) : (
               <div className="space-y-2">
-                <Label htmlFor="super-password">總管理密碼</Label>
+                <Label htmlFor="admin-password">管理密碼</Label>
                 <Input
-                  id="super-password"
+                  id="admin-password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -203,7 +162,7 @@ export default function LoginPage() {
                   required
                 />
               </div>
-            ) : null}
+            )}
 
             <Button
               type="submit"
@@ -225,9 +184,7 @@ export default function LoginPage() {
       <p className="mt-6 text-center text-xs leading-relaxed text-muted-foreground">
         {mode === 'staff'
           ? '師傅登入後可貼 LINE 訊息建預約，無法查看報表。'
-          : mode === 'store'
-            ? '店長可管理本店師傅與查看本店報表。'
-            : '總管理可指派店長、管理全店師傅與查看所有報表。'}
+          : '總管理與店長使用同一欄位；系統依密碼自動判斷權限。'}
       </p>
     </PortalShell>
   );

@@ -1,20 +1,14 @@
 import { NextResponse } from 'next/server';
-import {
-  loginStaff,
-  loginStoreAdmin,
-  loginSuperAdmin,
-} from '@/lib/portal-auth-server';
+import { loginAdmin, loginStaff } from '@/lib/portal-auth-server';
 import {
   createPortalSessionToken,
   portalHomePath,
   setPortalSessionCookie,
 } from '@/lib/portal-session';
-import { isStoreSlug } from '@/lib/stores';
 
 type LoginBody =
   | { mode: 'staff'; staffId?: string; pin?: string }
-  | { mode: 'store'; storeId?: string; password?: string }
-  | { mode: 'super'; password?: string };
+  | { mode: 'admin'; password?: string };
 
 export async function POST(request: Request) {
   let body: LoginBody;
@@ -31,19 +25,11 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: '請選擇師傅並輸入 PIN' }, { status: 400 });
       }
       session = await loginStaff(body.staffId, body.pin);
-    } else if (body.mode === 'store') {
-      if (!body.storeId || !body.password) {
-        return NextResponse.json({ error: '請選擇分店並輸入密碼' }, { status: 400 });
-      }
-      if (!isStoreSlug(body.storeId)) {
-        return NextResponse.json({ error: '無效分店' }, { status: 400 });
-      }
-      session = await loginStoreAdmin(body.storeId, body.password);
-    } else if (body.mode === 'super') {
+    } else if (body.mode === 'admin') {
       if (!body.password) {
-        return NextResponse.json({ error: '請輸入總管理密碼' }, { status: 400 });
+        return NextResponse.json({ error: '請輸入管理密碼' }, { status: 400 });
       }
-      session = await loginSuperAdmin(body.password);
+      session = await loginAdmin(body.password);
     } else {
       return NextResponse.json({ error: '無效的登入模式' }, { status: 400 });
     }

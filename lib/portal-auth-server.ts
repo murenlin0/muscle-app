@@ -7,7 +7,7 @@ import {
 } from '@/lib/portal-session';
 import { verifyStaffPin } from '@/lib/staff-pin';
 import { findStaffForLogin, listActiveStaffForRoster } from '@/lib/staff-auth-server';
-import { getStore, isStoreSlug, type StoreSlug } from '@/lib/stores';
+import { getStore, type StoreSlug } from '@/lib/stores';
 
 export { listActiveStaffForRoster };
 
@@ -26,56 +26,18 @@ export async function loginStaff(staffId: string, pin: string): Promise<PortalSe
   };
 }
 
-export async function loginStoreAdmin(
-  storeId: string,
-  password: string,
-): Promise<PortalSession> {
-  if (!isStoreSlug(storeId) || !getStore(storeId)) {
-    throw new Error('無效分店');
-  }
-
+/** 總管理／店長同一入口，依密碼判斷角色 */
+export async function loginAdmin(password: string): Promise<PortalSession> {
   const supabase = getSupabaseAdmin();
-  const { data: accounts, error: accountsError } = await supabase
+
+  const { data: superAccounts, error: superError } = await supabase
     .from('portal_accounts')
-    .select('display_name, password_hash, is_active')
-    .eq('role', 'store')
-    .eq('store_id', storeId)
-    .eq('is_active', true);
-
-  if (!accountsError) {
-  for (const account of accounts ?? []) {
-    if (verifyPortalPassword(password, account.password_hash)) {
-      return {
-        role: 'store',
-        storeId,
-        displayName: account.display_name,
-      };
-    }
-  }
-  }
-
-  if (verifyBootstrapStorePassword(password)) {
-    const store = getStore(storeId)!;
-    return {
-      role: 'store',
-      storeId,
-      displayName: `${store.name} 管理員`,
-    };
-  }
-
-  throw new Error('店長密碼錯誤');
-}
-
-export async function loginSuperAdmin(password: string): Promise<PortalSession> {
-  const supabase = getSupabaseAdmin();
-  const { data: accounts, error: accountsError } = await supabase
-    .from('portal_accounts')
-    .select('display_name, password_hash, is_active')
+    .select('display_name, password_hash')
     .eq('role', 'super')
     .eq('is_active', true);
 
-  if (!accountsError) {
-    for (const account of accounts ?? []) {
+  if (!superError) {
+    for (const account of superAccounts ?? []) {
       if (verifyPortalPassword(password, account.password_hash)) {
         return { role: 'super', displayName: account.display_name };
       }
@@ -86,5 +48,32 @@ export async function loginSuperAdmin(password: string): Promise<PortalSession> 
     return { role: 'super', displayName: '總管理員' };
   }
 
-  throw new Error('總管理密碼錯誤');
+  const { data: storeAccounts, error: storeError } = await supabase
+    .from('portal_accounts')
+    .select('display_name, password_hash, store_id')
+    .eq('role', 'store')
+    .eq('is_active', true);
+
+  if (!storeError) {
+    for (const account of storeAccounts ?? []) {
+      if (verifyPortalPassword(password, account.password_hash)) {
+        return {
+          role: 'store',
+          storeId: account.store_id as StoreSlug,
+          displayName: account.display_name,
+        };
+      }
+    }
+  }
+
+  if (verifyBootstrapStorePassword(password)) {
+    const store = getStore('store1');
+    return {
+      role: 'store',
+      storeId: 'store1',
+      displayName: store ? `${store.name} 管理員` : '店長',
+    };
+  }
+
+  throw new Error('管理密碼錯誤');
 }
