@@ -215,13 +215,13 @@ export function FinancialOverviewPanel({
             <SignedMoney value={assets.total} className="text-xl" />
           </div>
           <div className="space-y-0.5">
-            <LineItem label="店內現金庫存" value={assets.cashOnHand} />
+            <LineItem label="店內現金" value={assets.cashOnHand} />
             <LineItem label="銀行帳戶" value={assets.bankAccounts} />
             <LineItem label="預收未服務" value={assets.deferredRevenue} />
             <LineItem label="應收帳款" value={assets.accountsReceivable} muted />
           </div>
           <p className="mt-auto pt-3 text-[10px] leading-relaxed text-[#555]">
-            總資產＝現金＋銀行＋預收未服務；應收帳款（已服務未收款）僅供參考，不計入總資產。
+            總資產＝店內現金＋銀行帳戶（各帳戶流水金額加總）；預收未服務、應收帳款僅供參考。
           </p>
         </PanelCard>
 

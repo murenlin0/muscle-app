@@ -1,8 +1,8 @@
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { fetchAllPages } from '@/lib/supabase-paginate';
 import { primaryLedgerAccount } from '@/lib/ledger-accounts';
+import { sumLedgerAccountBalances } from '@/lib/ledger-balances';
 import type { StoreSlug } from '@/lib/stores';
-import { isTransferCategory } from '@/lib/ledger-amount';
 import {
   isPnlExpenseCategory,
   isPnlIncomeCategory,
@@ -57,11 +57,6 @@ interface TxRow {
   title: string;
 }
 
-/** 會員使用不動帳戶；其餘依簽帳金額累計帳戶餘額 */
-function affectsAccountBalance(category: TransactionCategory): boolean {
-  return category !== '會員使用';
-}
-
 function classifyExpense(title: string, category: string): keyof ExpenseBreakdown {
   if (category === '工資') return '師傅薪水';
   const t = title;
@@ -99,8 +94,8 @@ export async function getFinancialOverview(
   const all = await fetchAllRows(storeId, to);
   const period = all.filter((r) => r.occurred_on >= from && r.occurred_on <= to);
 
-  let cashOnHand = 0;
-  let bankAccounts = 0;
+  const { cashOnHand, bankAccounts } = sumLedgerAccountBalances(all);
+
   let deferredRevenue = 0;
   let accountsReceivable = 0;
 
@@ -117,17 +112,10 @@ export async function getFinancialOverview(
     ) {
       accountsReceivable += Math.abs(amt);
     }
-
-    if (!affectsAccountBalance(cat) || isTransferCategory(cat)) continue;
-
-    const acc = primaryLedgerAccount(row.payment_methods ?? [], cat);
-    if (acc === '現金') cashOnHand += amt;
-    else if (acc === '富邦') bankAccounts += amt;
   }
 
   deferredRevenue = Math.max(0, deferredRevenue);
-  // 總資產＝現金＋銀行＋預收未服務；應收帳款僅顯示不計入
-  const totalAssets = cashOnHand + bankAccounts + deferredRevenue;
+  const totalAssets = cashOnHand + bankAccounts;
 
   let serviceIncome = 0;
   let subleaseIncome = 0;

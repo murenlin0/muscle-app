@@ -1,6 +1,6 @@
 import type { TransactionCategory } from '@/lib/transaction-category';
 
-const NEGATIVE_CATEGORIES = new Set<TransactionCategory>(['支出', '分紅', '轉出']);
+const NEGATIVE_CATEGORIES = new Set<TransactionCategory>(['支出', '工資', '分紅', '轉出']);
 const POSITIVE_CATEGORIES = new Set<TransactionCategory>(['轉入']);
 
 /** 依類型正規化金額正負號 */
