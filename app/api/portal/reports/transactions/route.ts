@@ -14,6 +14,9 @@ export async function GET(request: Request) {
   const to = url.searchParams.get('to');
   const storeParam = url.searchParams.get('store') as StoreSlug | null;
   const categoryParam = url.searchParams.get('category');
+  const pageParam = url.searchParams.get('page');
+  const pageSizeParam = url.searchParams.get('pageSize');
+  const mode = pageParam !== null ? 'page' as const : 'all' as const;
 
   if (!from || !to) {
     return NextResponse.json({ error: '請提供 from、to（YYYY-MM-DD）' }, { status: 400 });
@@ -36,7 +39,11 @@ export async function GET(request: Request) {
       : undefined;
 
   try {
-    const report = await listDailyTransactions(from, to, storeId, category);
+    const report = await listDailyTransactions(from, to, storeId, category, {
+      mode,
+      page: pageParam !== null ? Number(pageParam) : undefined,
+      pageSize: pageSizeParam ? Number(pageSizeParam) : undefined,
+    });
     return portalJson({ report });
   } catch (e) {
     const message = e instanceof Error ? e.message : '無法載入報表';

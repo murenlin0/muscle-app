@@ -14,8 +14,12 @@ import { TRANSACTION_CATEGORIES, type TransactionCategory } from '@/lib/transact
 interface ReportList {
   rows: LedgerRow[];
   totalRows: number;
+  totalCount: number;
   totalAmount: number;
   latestRecordDate: string | null;
+  earliestInRange: string | null;
+  hasMore: boolean;
+  apiVersion: number;
 }
 
 function fmt(n: number) {
@@ -62,6 +66,7 @@ export function ReportsDashboard({
   const [error, setError] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [notionStatus, setNotionStatus] = useState<string | null>(null);
+  const [ledgerMeta, setLedgerMeta] = useState<{ totalCount: number; apiVersion: number } | null>(null);
 
   const activeStore = storeFilter ?? store;
 
@@ -72,50 +77,101 @@ export function ReportsDashboard({
   }, [report?.rows, sortOrder]);
 
   const rangeBounds = useMemo(() => {
+    if (report?.earliestInRange && report.rows[0]) {
+      return { oldest: report.earliestInRange, newest: report.rows[0].occurredOn };
+    }
     const rows = report?.rows ?? [];
     if (!rows.length) return null;
-    const oldest = rows[rows.length - 1]?.occurredOn;
-    const newest = rows[0]?.occurredOn;
-    return { oldest, newest };
-  }, [report?.rows]);
+    return {
+      oldest: rows[rows.length - 1]?.occurredOn,
+      newest: rows[0]?.occurredOn,
+    };
+  }, [report?.rows, report?.earliestInRange]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setOverviewLoading(true);
     setError(null);
-    const qs = new URLSearchParams({ from, to });
-    qs.set('store', activeStore);
-    if (category) qs.set('category', category);
-    const [txRes, ovRes] = await Promise.all([
-      fetch(`/api/portal/reports/transactions?${qs}`, { cache: 'no-store' }),
-      fetch(
-        `/api/portal/reports/overview?${new URLSearchParams({ from, to, store: activeStore })}`,
-        { cache: 'no-store' },
-      ),
-    ]);
+    const baseQs = new URLSearchParams({ from, to });
+    baseQs.set('store', activeStore);
+    if (category) baseQs.set('category', category);
 
-    const txData = (await txRes.json()) as { report?: ReportList; error?: string };
-    const ovData = (await ovRes.json()) as { overview?: FinancialOverview; error?: string };
+    const ovPromise = fetch(
+      `/api/portal/reports/overview?${new URLSearchParams({ from, to, store: activeStore })}`,
+      { cache: 'no-store' },
+    );
 
-    setLoading(false);
-    setOverviewLoading(false);
+    try {
+      const allRows: LedgerRow[] = [];
+      let page = 0;
+      let totalCount = 0;
+      let apiVersion = 0;
+      let latestRecordDate: string | null = null;
+      let earliestInRange: string | null = null;
+      let hasMore = true;
 
-    if (!txRes.ok) {
-      setError(txData.error ?? '無法載入流水帳');
+      while (hasMore && page < 50) {
+        const qs = new URLSearchParams(baseQs);
+        qs.set('page', String(page));
+        qs.set('pageSize', '1000');
+        const txRes = await fetch(`/api/portal/reports/transactions?${qs}`, { cache: 'no-store' });
+        const txData = (await txRes.json()) as { report?: ReportList; error?: string };
+        if (!txRes.ok) {
+          throw new Error(txData.error ?? '無法載入流水帳');
+        }
+        const chunk = txData.report;
+        if (!chunk) break;
+
+        apiVersion = chunk.apiVersion ?? 0;
+        totalCount = chunk.totalCount ?? chunk.rows.length;
+        latestRecordDate = chunk.latestRecordDate;
+        if (chunk.earliestInRange) earliestInRange = chunk.earliestInRange;
+        allRows.push(...chunk.rows);
+        hasMore = chunk.hasMore;
+        page += 1;
+
+        if (chunk.apiVersion < 4 && page === 1 && !chunk.hasMore && chunk.totalCount > chunk.rows.length) {
+          throw new Error('伺服器版本過舊，請稍後再試或聯絡管理員重新部署');
+        }
+      }
+
+      const ovRes = await ovPromise;
+      const ovData = (await ovRes.json()) as { overview?: FinancialOverview; error?: string };
+      if (!ovRes.ok) {
+        setError(ovData.error ?? '無法載入財務總覽');
+        setOverview(null);
+      } else {
+        setOverview(ovData.overview ?? null);
+      }
+
+      const totalAmount = allRows.reduce((sum, r) => sum + r.amount, 0);
+      const mergedEarliest = allRows.length ? allRows[allRows.length - 1]?.occurredOn ?? null : null;
+      const merged: ReportList = {
+        rows: allRows,
+        totalRows: allRows.length,
+        totalCount,
+        totalAmount,
+        latestRecordDate,
+        earliestInRange: mergedEarliest ?? earliestInRange,
+        hasMore: false,
+        apiVersion,
+      };
+
+      setReport(merged);
+      setLedgerMeta({ totalCount, apiVersion });
+      setDataGeneration((g) => g + 1);
+      setStats({ totalRows: allRows.length, totalAmount });
+
+      if (allRows.length < totalCount) {
+        setError(`僅載入 ${allRows.length} / ${totalCount} 筆，請再按「更新報表」`);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '無法載入報表');
       setReport(null);
-      return;
-    }
-    if (!ovRes.ok) {
-      setError(ovData.error ?? '無法載入財務總覽');
-    } else {
-      setOverview(ovData.overview ?? null);
-    }
-
-    const r = txData.report ?? null;
-    setReport(r);
-    setDataGeneration((g) => g + 1);
-    if (r) {
-      setStats({ totalRows: r.totalRows, totalAmount: r.totalAmount });
+      setLedgerMeta(null);
+    } finally {
+      setLoading(false);
+      setOverviewLoading(false);
     }
   }, [from, to, activeStore, category]);
 
@@ -335,7 +391,7 @@ export function ReportsDashboard({
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#888]">
           <span>
             {stats.totalRows > 0 || report
-              ? `共 ${fmt(stats.totalRows)} 筆 · 金額合計 $${fmt(stats.totalAmount)}`
+              ? `共 ${fmt(stats.totalRows)} 筆${ledgerMeta && ledgerMeta.totalCount !== stats.totalRows ? ` / ${fmt(ledgerMeta.totalCount)}` : ''} · 金額合計 $${fmt(stats.totalAmount)}${ledgerMeta ? ` · API v${ledgerMeta.apiVersion}` : ''}`
               : ' '}
           </span>
           <span>

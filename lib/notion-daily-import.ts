@@ -91,6 +91,7 @@ function expandRows(rows: DailyTransactionRow[]): DailyTransactionRow[] {
             finalizeRow({
               ...row,
               ...s,
+              store_id: row.store_id,
               notion_page_id: s.notion_page_id ?? row.notion_page_id,
               category: s.category as TransactionCategory,
             }),

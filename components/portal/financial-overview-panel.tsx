@@ -154,7 +154,7 @@ export function FinancialOverviewPanel({
           <LineItem label="應收帳款" value={assets.accountsReceivable} />
         </div>
         <p className="mt-auto pt-3 text-[10px] leading-relaxed text-[#666]">
-          資產為截至迄日的現金／富邦帳戶餘額；應收帳款為會員儲值金餘額（參考用）。
+          總資產＝現金＋銀行－會員儲值餘額；應收帳款為會員尚未使用完的儲值金。
         </p>
       </PanelCard>
 

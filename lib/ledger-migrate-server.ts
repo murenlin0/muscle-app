@@ -1,7 +1,7 @@
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { normalizeLedgerAccounts } from '@/lib/ledger-accounts';
 import { normalizeLedgerAmount } from '@/lib/ledger-amount';
-import { splitLegacyTransferRow } from '@/lib/transfer-split';
+import { splitLegacyTransferRow, type TransferSourceRow } from '@/lib/transfer-split';
 import {
   LEGACY_TRANSFER_CATEGORY,
   type TransactionCategory,
@@ -15,10 +15,29 @@ export interface LedgerMigrateReport {
   issues: string[];
 }
 
-async function fetchAllTransactions(storeId: StoreSlug) {
+interface TxMigrateRow {
+  id: string;
+  store_id: string;
+  notion_page_id: string | null;
+  occurred_on: string;
+  title: string;
+  amount: number;
+  category: string;
+  payment_methods: string[];
+  service_type: string | null;
+  staff_name: string | null;
+  is_designated: boolean | null;
+  member_note: string | null;
+  client_name: string | null;
+  client_phone: string | null;
+  is_vip: boolean | null;
+  source: string | null;
+}
+
+async function fetchAllTransactions(storeId: StoreSlug): Promise<TxMigrateRow[]> {
   const supabase = getSupabaseAdmin();
   const pageSize = 1000;
-  const all: Record<string, unknown>[] = [];
+  const all: TxMigrateRow[] = [];
   let from = 0;
 
   while (true) {
@@ -33,7 +52,7 @@ async function fetchAllTransactions(storeId: StoreSlug) {
 
     if (error) throw new Error(error.message);
     if (!data?.length) break;
-    all.push(...data);
+    all.push(...(data as TxMigrateRow[]));
     if (data.length < pageSize) break;
     from += pageSize;
   }
@@ -86,7 +105,7 @@ export async function migrateLedgerData(storeId: StoreSlug = 'store1'): Promise<
         ...row,
         store_id: storeId,
         payment_methods: methods,
-      });
+      } as TransferSourceRow);
 
       if (split) {
         await supabase.from('daily_transactions').delete().eq('id', row.id);

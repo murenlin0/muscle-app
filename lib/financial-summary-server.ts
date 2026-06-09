@@ -1,6 +1,8 @@
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { fetchAllPages } from '@/lib/supabase-paginate';
 import { primaryLedgerAccount } from '@/lib/ledger-accounts';
 import type { StoreSlug } from '@/lib/stores';
+import { isTransferCategory } from '@/lib/ledger-amount';
 import {
   isPnlExpenseCategory,
   isPnlIncomeCategory,
@@ -74,27 +76,16 @@ function emptyBreakdown(): ExpenseBreakdown {
 
 async function fetchAllRows(storeId: StoreSlug, to: string): Promise<TxRow[]> {
   const supabase = getSupabaseAdmin();
-  const pageSize = 1000;
-  const all: TxRow[] = [];
-  let from = 0;
-
-  while (true) {
-    const { data, error } = await supabase
+  return fetchAllPages<TxRow>(async (offset, pageSize) =>
+    supabase
       .from('daily_transactions')
       .select('occurred_on, amount, category, payment_methods, title')
       .eq('store_id', storeId)
       .lte('occurred_on', to)
       .order('occurred_on', { ascending: true })
-      .range(from, from + pageSize - 1);
-
-    if (error) throw new Error(error.message);
-    if (!data?.length) break;
-    all.push(...(data as TxRow[]));
-    if (data.length < pageSize) break;
-    from += pageSize;
-  }
-
-  return all;
+      .order('id', { ascending: true })
+      .range(offset, offset + pageSize - 1),
+  );
 }
 
 export async function getFinancialOverview(
@@ -116,7 +107,7 @@ export async function getFinancialOverview(
     if (cat === '會員儲值') memberPrepaid += Math.abs(amt);
     if (cat === '會員使用') memberPrepaid -= Math.abs(amt);
 
-    if (!affectsAccountBalance(cat)) continue;
+    if (!affectsAccountBalance(cat) || isTransferCategory(cat)) continue;
 
     const acc = primaryLedgerAccount(row.payment_methods ?? [], cat);
     if (acc === '現金') cashOnHand += amt;
@@ -124,8 +115,8 @@ export async function getFinancialOverview(
   }
 
   const accountsReceivable = Math.max(0, memberPrepaid);
-  // 總資產＝店內現金＋銀行（應收帳款為會員儲值餘額，已含於帳戶現金中）
-  const totalAssets = cashOnHand + bankAccounts;
+  // 總資產＝現金＋銀行－會員儲值餘額（儲值金為負債，不算店內自有資金）
+  const totalAssets = cashOnHand + bankAccounts - accountsReceivable;
 
   let serviceIncome = 0;
   let subleaseIncome = 0;
