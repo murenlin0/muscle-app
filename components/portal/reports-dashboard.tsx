@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { EditableLedgerTable, type LedgerRow } from '@/components/portal/editable-ledger-table';
+import { FinancialOverviewPanel } from '@/components/portal/financial-overview-panel';
 import { StatusBanner } from '@/components/portal/status-banner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import type { FinancialOverview } from '@/lib/financial-summary-server';
 import { STORE_LIST, type StoreSlug } from '@/lib/stores';
 import { TRANSACTION_CATEGORIES, type TransactionCategory } from '@/lib/transaction-category';
 
@@ -50,9 +52,11 @@ export function ReportsDashboard({
   const [store, setStore] = useState<StoreSlug>(storeFilter ?? 'store1');
   const [category, setCategory] = useState<TransactionCategory | ''>('');
   const [report, setReport] = useState<ReportList | null>(null);
+  const [overview, setOverview] = useState<FinancialOverview | null>(null);
   const [stats, setStats] = useState({ totalRows: 0, totalAmount: 0 });
   const [fetchKey, setFetchKey] = useState('');
   const [loading, setLoading] = useState(true);
+  const [overviewLoading, setOverviewLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,21 +67,36 @@ export function ReportsDashboard({
 
   const load = useCallback(async () => {
     setLoading(true);
+    setOverviewLoading(true);
     setError(null);
     const qs = new URLSearchParams({ from, to });
     qs.set('store', activeStore);
     if (category) qs.set('category', category);
     const key = `${from}|${to}|${activeStore}|${category}`;
 
-    const res = await fetch(`/api/portal/reports/transactions?${qs}`);
-    const data = (await res.json()) as { report?: ReportList; error?: string };
+    const [txRes, ovRes] = await Promise.all([
+      fetch(`/api/portal/reports/transactions?${qs}`),
+      fetch(`/api/portal/reports/overview?${new URLSearchParams({ from, to, store: activeStore })}`),
+    ]);
+
+    const txData = (await txRes.json()) as { report?: ReportList; error?: string };
+    const ovData = (await ovRes.json()) as { overview?: FinancialOverview; error?: string };
+
     setLoading(false);
-    if (!res.ok) {
-      setError(data.error ?? '無法載入報表');
+    setOverviewLoading(false);
+
+    if (!txRes.ok) {
+      setError(txData.error ?? '無法載入流水帳');
       setReport(null);
       return;
     }
-    const r = data.report ?? null;
+    if (!ovRes.ok) {
+      setError(ovData.error ?? '無法載入財務總覽');
+    } else {
+      setOverview(ovData.overview ?? null);
+    }
+
+    const r = txData.report ?? null;
     setReport(r);
     setFetchKey(key);
     if (r) {
@@ -165,7 +184,7 @@ export function ReportsDashboard({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-5">
       {error ? <StatusBanner variant="error">{error}</StatusBanner> : null}
       {syncMsg ? <StatusBanner variant="success">{syncMsg}</StatusBanner> : null}
       {notionStatus ? <StatusBanner variant="success">{notionStatus}</StatusBanner> : null}
@@ -174,7 +193,7 @@ export function ReportsDashboard({
         <div className="flex flex-wrap items-center justify-between gap-4 rounded-md border border-[#333] bg-[#1c1c1c] px-4 py-3">
           <div>
             <p className="text-sm font-medium text-[#e0e0e0]">Notion 歷史資料匯入</p>
-            <p className="mt-0.5 text-xs text-[#888]">一次性匯入全部，之後請在本表直接編輯。</p>
+            <p className="mt-0.5 text-xs text-[#888]">一次性匯入全部，之後請在流水帳直接編輯。</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" size="sm" disabled={testing} onClick={() => void handleTestNotion()}>
@@ -200,21 +219,6 @@ export function ReportsDashboard({
           </Label>
           <Input id="to" type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-9 border-[#444] bg-[#252525]" />
         </div>
-        <div className="space-y-1">
-          <Label className="text-xs text-[#888]">類型</Label>
-          <select
-            value={category}
-            onChange={(e) => setCategory(e.target.value as TransactionCategory | '')}
-            className="flex h-9 min-w-[8rem] rounded-md border border-[#444] bg-[#252525] px-2 text-sm"
-          >
-            <option value="">全部</option>
-            {TRANSACTION_CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </div>
         {showStorePicker ? (
           <div className="space-y-1">
             <Label className="text-xs text-[#888]">分店</Label>
@@ -232,32 +236,60 @@ export function ReportsDashboard({
           </div>
         ) : null}
         <Button type="button" size="sm" variant="outline" onClick={() => void load()} disabled={loading}>
-          {loading ? '載入中…' : '篩選'}
+          {loading ? '載入中…' : '更新報表'}
         </Button>
       </div>
 
-      <div className="flex items-center justify-between text-xs text-[#888]">
-        <span>
-          {stats.totalRows > 0 || report
-            ? `共 ${fmt(stats.totalRows)} 筆 · 金額合計 $${fmt(stats.totalAmount)}`
-            : ' '}
-        </span>
-        {report?.latestRecordDate ? (
-          <span>資料最新：{formatDate(report.latestRecordDate)}</span>
-        ) : null}
-      </div>
+      <section className="space-y-3">
+        <h2 className="text-sm font-semibold text-[#ccc]">財務總覽</h2>
+        <FinancialOverviewPanel overview={overview} loading={overviewLoading} />
+      </section>
 
-      <EditableLedgerTable
-        rows={report?.rows ?? []}
-        loading={loading}
-        fetchKey={fetchKey}
-        storeId={activeStore}
-        onStatsChange={setStats}
-      />
+      <section className="space-y-3 border-t border-[#333] pt-5">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <h2 className="text-sm font-semibold text-[#ccc]">流水帳</h2>
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs text-[#888]">類型篩選</Label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value as TransactionCategory | '')}
+                className="flex h-9 min-w-[8rem] rounded-md border border-[#444] bg-[#252525] px-2 text-sm"
+              >
+                <option value="">全部</option>
+                {TRANSACTION_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
 
-      <p className="text-xs text-[#666]">
-        點欄位即可編輯，離開欄位自動儲存（列右側短暫顯示 ✓）。拖曳欄位右側邊線可調整寬度。
-      </p>
+        <div className="flex items-center justify-between text-xs text-[#888]">
+          <span>
+            {stats.totalRows > 0 || report
+              ? `共 ${fmt(stats.totalRows)} 筆 · 金額合計 $${fmt(stats.totalAmount)}`
+              : ' '}
+          </span>
+          {report?.latestRecordDate ? (
+            <span>資料最新：{formatDate(report.latestRecordDate)}</span>
+          ) : null}
+        </div>
+
+        <EditableLedgerTable
+          rows={report?.rows ?? []}
+          loading={loading}
+          fetchKey={fetchKey}
+          storeId={activeStore}
+          onStatsChange={setStats}
+        />
+
+        <p className="text-xs text-[#666]">
+          點欄位即可編輯，離開欄位自動儲存。上方財務數字由流水帳自動彙整。
+        </p>
+      </section>
     </div>
   );
 }
