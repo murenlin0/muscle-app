@@ -28,10 +28,8 @@ function formatDate(iso: string) {
   return `${y}/${m}/${d}`;
 }
 
-function monthStart(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
-}
+/** 民有店 Notion 歷史資料起日 */
+const LEDGER_DEFAULT_FROM = '2024-03-01';
 
 function today(): string {
   const d = new Date();
@@ -47,7 +45,7 @@ export function ReportsDashboard({
   showStorePicker?: boolean;
   canSyncNotion?: boolean;
 }) {
-  const [from, setFrom] = useState(monthStart());
+  const [from, setFrom] = useState(LEDGER_DEFAULT_FROM);
   const [to, setTo] = useState(today());
   const [store, setStore] = useState<StoreSlug>(storeFilter ?? 'store1');
   const [category, setCategory] = useState<TransactionCategory | ''>('');
@@ -313,9 +311,11 @@ export function ReportsDashboard({
               ? `共 ${fmt(stats.totalRows)} 筆 · 金額合計 $${fmt(stats.totalAmount)}`
               : ' '}
           </span>
-          {report?.latestRecordDate ? (
-            <span>資料最新：{formatDate(report.latestRecordDate)}</span>
-          ) : null}
+          <span>
+            {report?.latestRecordDate
+              ? `資料：${formatDate(from)}～${formatDate(to)} · 最新 ${formatDate(report.latestRecordDate)}`
+              : `區間：${formatDate(from)}～${formatDate(to)}`}
+          </span>
         </div>
 
         <EditableLedgerTable

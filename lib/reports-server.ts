@@ -43,6 +43,25 @@ export async function getLatestTransactionDate(
   return data?.occurred_on ?? null;
 }
 
+export async function getEarliestTransactionDate(
+  storeId?: StoreSlug,
+): Promise<string | null> {
+  const supabase = getSupabaseAdmin();
+  let q = supabase
+    .from('daily_transactions')
+    .select('occurred_on')
+    .order('occurred_on', { ascending: true })
+    .limit(1);
+
+  if (storeId) q = q.eq('store_id', storeId);
+
+  const { data, error } = await q.maybeSingle();
+  if (error) throw new Error(error.message);
+  return data?.occurred_on ?? null;
+}
+
+const TX_PAGE_SIZE = 1000;
+
 export async function listDailyTransactions(
   from: string,
   to: string,
@@ -51,24 +70,34 @@ export async function listDailyTransactions(
 ): Promise<ReportListResult> {
   const supabase = getSupabaseAdmin();
 
-  let q = supabase
-    .from('daily_transactions')
-    .select(
-      'id, occurred_on, title, amount, category, payment_methods, staff_name',
-    )
-    .gte('occurred_on', from)
-    .lte('occurred_on', to)
-    .order('occurred_on', { ascending: false })
-    .order('created_at', { ascending: false })
-    .limit(10000);
+  const all: Record<string, unknown>[] = [];
+  let offset = 0;
 
-  if (storeId) q = q.eq('store_id', storeId);
-  if (category) q = q.eq('category', category);
+  while (true) {
+    let q = supabase
+      .from('daily_transactions')
+      .select(
+        'id, occurred_on, title, amount, category, payment_methods, staff_name',
+      )
+      .gte('occurred_on', from)
+      .lte('occurred_on', to)
+      .order('occurred_on', { ascending: false })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + TX_PAGE_SIZE - 1);
 
-  const { data, error } = await q;
-  if (error) throw new Error(error.message);
+    if (storeId) q = q.eq('store_id', storeId);
+    if (category) q = q.eq('category', category);
 
-  const rows: DailyTransactionListItem[] = (data ?? []).map((row) => ({
+    const { data, error } = await q;
+    if (error) throw new Error(error.message);
+    if (!data?.length) break;
+
+    all.push(...data);
+    if (data.length < TX_PAGE_SIZE) break;
+    offset += TX_PAGE_SIZE;
+  }
+
+  const rows: DailyTransactionListItem[] = all.map((row) => ({
     id: row.id as string,
     occurredOn: row.occurred_on as string,
     title: row.title as string,
