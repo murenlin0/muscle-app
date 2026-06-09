@@ -38,16 +38,41 @@ interface Row {
   payment_methods: string[];
 }
 
-async function main() {
-  const { data, error } = await supabase
-    .from('daily_transactions')
-    .select('id, occurred_on, title, amount, category, payment_methods')
-    .eq('store_id', 'store1')
-    .order('occurred_on', { ascending: true });
+async function fetchAllRows(): Promise<Row[]> {
+  const pageSize = 1000;
+  const all: Row[] = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('daily_transactions')
+      .select('id, occurred_on, title, amount, category, payment_methods')
+      .eq('store_id', 'store1')
+      .order('occurred_on', { ascending: true })
+      .range(from, from + pageSize - 1);
+    if (error) throw error;
+    if (!data?.length) break;
+    all.push(...(data as Row[]));
+    if (data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
 
-  if (error) throw error;
-  const rows = (data ?? []) as Row[];
+async function main() {
+  const rows = await fetchAllRows();
   console.log(`Total rows: ${rows.length}\n`);
+
+  const nets = new Map<string, number>();
+  for (const r of rows) {
+    for (const m of r.payment_methods ?? []) {
+      nets.set(m, (nets.get(m) ?? 0) + r.amount);
+    }
+  }
+  console.log('Net by payment method (raw amount sum):');
+  for (const [k, v] of [...nets.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    console.log(`  ${k}: ${v.toLocaleString('zh-TW')}`);
+  }
+  console.log('');
 
   const byCategory = new Map<string, number>();
   for (const r of rows) {
