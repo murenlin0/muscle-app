@@ -11,7 +11,7 @@ where store_id = 'store1'
 
 insert into public.shareholders (store_id, name, ownership_percent, is_active)
 values
-  ('store1', '我', 0.5000, true),
+  ('store1', '仁', 0.5000, true),
   ('store1', '錦', 0.1500, true),
   ('store1', '杰恩', 0.0500, true),
   ('store1', '慶哥', 0.3000, true);
