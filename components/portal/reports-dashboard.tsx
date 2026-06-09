@@ -50,6 +50,8 @@ export function ReportsDashboard({
   const [store, setStore] = useState<StoreSlug>(storeFilter ?? 'store1');
   const [category, setCategory] = useState<TransactionCategory | ''>('');
   const [report, setReport] = useState<ReportList | null>(null);
+  const [stats, setStats] = useState({ totalRows: 0, totalAmount: 0 });
+  const [fetchKey, setFetchKey] = useState('');
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -65,6 +67,7 @@ export function ReportsDashboard({
     const qs = new URLSearchParams({ from, to });
     qs.set('store', activeStore);
     if (category) qs.set('category', category);
+    const key = `${from}|${to}|${activeStore}|${category}`;
 
     const res = await fetch(`/api/portal/reports/transactions?${qs}`);
     const data = (await res.json()) as { report?: ReportList; error?: string };
@@ -74,7 +77,12 @@ export function ReportsDashboard({
       setReport(null);
       return;
     }
-    setReport(data.report ?? null);
+    const r = data.report ?? null;
+    setReport(r);
+    setFetchKey(key);
+    if (r) {
+      setStats({ totalRows: r.totalRows, totalAmount: r.totalAmount });
+    }
   }, [from, to, activeStore, category]);
 
   useEffect(() => {
@@ -230,8 +238,8 @@ export function ReportsDashboard({
 
       <div className="flex items-center justify-between text-xs text-[#888]">
         <span>
-          {report
-            ? `共 ${fmt(report.totalRows)} 筆 · 金額合計 $${fmt(report.totalAmount)}`
+          {stats.totalRows > 0 || report
+            ? `共 ${fmt(stats.totalRows)} 筆 · 金額合計 $${fmt(stats.totalAmount)}`
             : ' '}
         </span>
         {report?.latestRecordDate ? (
@@ -242,12 +250,13 @@ export function ReportsDashboard({
       <EditableLedgerTable
         rows={report?.rows ?? []}
         loading={loading}
+        fetchKey={fetchKey}
         storeId={activeStore}
-        onRefresh={() => void load()}
+        onStatsChange={setStats}
       />
 
       <p className="text-xs text-[#666]">
-        點欄位即可編輯，離開欄位自動儲存。拖曳欄位右側邊線可調整寬度。下方「+ 新增一列」可手動加入紀錄。
+        點欄位即可編輯，離開欄位自動儲存（列右側短暫顯示 ✓）。拖曳欄位右側邊線可調整寬度。
       </p>
     </div>
   );
