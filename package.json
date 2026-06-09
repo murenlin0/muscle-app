@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "import:notion": "tsx scripts/import-notion.ts",
+    "sync:notion": "tsx scripts/sync-notion-daily.ts",
+    "test:notion-title": "tsx scripts/test-notion-title.ts",
     "test:db": "node scripts/test-db.mjs"
   },
   "dependencies": {

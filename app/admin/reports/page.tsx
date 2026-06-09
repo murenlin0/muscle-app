@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { PortalShell } from '@/app/components/portal-shell';
-import { STORE_LIST } from '@/lib/stores';
+import { ReportsDashboard } from '@/components/portal/reports-dashboard';
 
 const PORTAL_API = '/api/portal';
 
@@ -45,15 +45,7 @@ export default function SuperReportsPage() {
 
   return (
     <PortalShell title="全店報表" subtitle="總管理員" variant="admin" size="lg" backHref="/admin">
-      <div className="glass-card space-y-4 p-6 text-sm text-muted-foreground">
-        <p>報表將在 Google Calendar webhook 同步結帳資料後顯示。</p>
-        <ul className="list-disc space-y-1 pl-5">
-          {STORE_LIST.map((s) => (
-            <li key={s.slug}>{s.name}：日營收、師傅業績、月結</li>
-          ))}
-          <li>跨店彙總與股東分潤</li>
-        </ul>
-      </div>
+      <ReportsDashboard showStorePicker canSyncNotion />
     </PortalShell>
   );
 }
