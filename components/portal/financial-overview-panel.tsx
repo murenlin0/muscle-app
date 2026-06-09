@@ -153,7 +153,7 @@ export function FinancialOverviewPanel({
           <LineItem label="應收帳款" value={assets.accountsReceivable} />
         </div>
         <p className="mt-auto pt-3 text-[10px] leading-relaxed text-[#666]">
-          資產為截至區間結束日，依付款方式與會員應收彙整（累計）。
+          資產為截至區間結束日，依更動的帳戶（現金／富邦）與會員儲值餘額彙整。
         </p>
       </PanelCard>
 
@@ -179,7 +179,7 @@ export function FinancialOverviewPanel({
 
           <LineItem
             label="支出"
-            value={incomeStatement.totalExpense}
+            value={Math.abs(incomeStatement.totalExpense)}
             bold
             onClick={() => setExpand(expand === 'expense' ? null : 'expense')}
             active={expand === 'expense'}
@@ -216,8 +216,9 @@ export function FinancialOverviewPanel({
                 <tr className="text-[#777]">
                   <th className="pb-2 pr-2 font-medium">股東</th>
                   <th className="pb-2 pr-2 text-right font-medium">持股</th>
-                  <th className="pb-2 pr-2 text-right font-medium">應領分紅</th>
-                  <th className="pb-2 text-right font-medium">已發放</th>
+                  <th className="pb-2 pr-2 text-right font-medium">應領</th>
+                  <th className="pb-2 pr-2 text-right font-medium">已發放</th>
+                  <th className="pb-2 text-right font-medium">未領</th>
                 </tr>
               </thead>
               <tbody>
@@ -228,7 +229,8 @@ export function FinancialOverviewPanel({
                       {(sh.ownershipPercent * 100).toFixed(1)}%
                     </td>
                     <td className="py-2 pr-2 text-right tabular-nums">${fmt(sh.dividendDue)}</td>
-                    <td className="py-2 text-right tabular-nums">${fmt(sh.dividendPaid)}</td>
+                    <td className="py-2 pr-2 text-right tabular-nums">${fmt(sh.dividendPaid)}</td>
+                    <td className="py-2 text-right tabular-nums">${fmt(sh.dividendUnpaid)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -236,7 +238,7 @@ export function FinancialOverviewPanel({
           </div>
         )}
         <p className="mt-auto pt-3 text-[10px] text-[#666]">
-          應領分紅依區間淨利 × 持股比例；已發放取自「分紅」類流水。
+          應領＝區間淨利 × 持股；已發放取自「分紅」流水；未領＝應領－已發放。
         </p>
       </PanelCard>
     </div>

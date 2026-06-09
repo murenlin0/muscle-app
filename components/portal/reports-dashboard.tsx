@@ -58,6 +58,7 @@ export function ReportsDashboard({
   const [loading, setLoading] = useState(true);
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [normalizing, setNormalizing] = useState(false);
   const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
@@ -183,6 +184,36 @@ export function ReportsDashboard({
     await load();
   }
 
+  async function handleNormalizeLedger() {
+    setNormalizing(true);
+    setSyncMsg(null);
+    setError(null);
+    const res = await fetch('/api/portal/reports/normalize-ledger', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ storeId: activeStore }),
+    });
+    const data = (await res.json()) as {
+      error?: string;
+      report?: { scanned: number; updated: number; splitTransfers: number; issues: string[] };
+    };
+    setNormalizing(false);
+    if (!res.ok) {
+      setError(data.error ?? '正規化失敗');
+      return;
+    }
+    const r = data.report;
+    const issueNote =
+      r && r.issues.length > 0 ? `（${r.issues.length} 筆需手動處理）` : '';
+    setSyncMsg(
+      `已正規化：掃描 ${r?.scanned ?? 0} 筆、更新 ${r?.updated ?? 0} 筆、拆分轉移 ${r?.splitTransfers ?? 0} 筆${issueNote}`,
+    );
+    if (r?.issues.length) {
+      setError(r.issues.slice(0, 3).join('；'));
+    }
+    await load();
+  }
+
   return (
     <div className="flex flex-col gap-5">
       {error ? <StatusBanner variant="error">{error}</StatusBanner> : null}
@@ -238,6 +269,15 @@ export function ReportsDashboard({
         <Button type="button" size="sm" variant="outline" onClick={() => void load()} disabled={loading}>
           {loading ? '載入中…' : '更新報表'}
         </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={normalizing}
+          onClick={() => void handleNormalizeLedger()}
+        >
+          {normalizing ? '正規化中…' : '正規化流水帳'}
+        </Button>
       </div>
 
       <section className="space-y-3">
@@ -287,7 +327,7 @@ export function ReportsDashboard({
         />
 
         <p className="text-xs text-[#666]">
-          點欄位即可編輯，離開欄位自動儲存。上方財務數字由流水帳自動彙整。
+          點欄位即可編輯，離開欄位自動儲存。更動的帳戶僅現金／富邦；會員使用留空；支出／分紅／轉出為負數；轉入為正數。
         </p>
       </section>
     </div>

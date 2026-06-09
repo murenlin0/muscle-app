@@ -1,17 +1,7 @@
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { primaryLedgerAccount } from '@/lib/ledger-accounts';
 import type { StoreSlug } from '@/lib/stores';
-import type { TransactionCategory } from '@/lib/transaction-category';
-
-const CASH_METHODS = new Set(['現金']);
-const BANK_METHODS = new Set(['富邦', 'Line', '街口', '仁中信']);
-const INFLOW_CATEGORIES = new Set<TransactionCategory>([
-  '一般消費',
-  '會員儲值',
-  '會員使用',
-  '會員補差額',
-  '收入',
-]);
-const OUTFLOW_CATEGORIES = new Set<TransactionCategory>(['支出', '工資', '分紅']);
+import { isPnlExpenseCategory, type TransactionCategory } from '@/lib/transaction-category';
 
 export interface ExpenseBreakdown {
   添購: number;
@@ -46,6 +36,7 @@ export interface FinancialOverview {
     ownershipPercent: number;
     dividendDue: number;
     dividendPaid: number;
+    dividendUnpaid: number;
   }>;
 }
 
@@ -55,10 +46,6 @@ interface TxRow {
   category: string;
   payment_methods: string[];
   title: string;
-}
-
-function hasMethod(methods: string[], set: Set<string>): boolean {
-  return methods.some((m) => set.has(m));
 }
 
 function classifyExpense(title: string, category: string): keyof ExpenseBreakdown {
@@ -74,6 +61,17 @@ function classifyExpense(title: string, category: string): keyof ExpenseBreakdow
 
 function emptyBreakdown(): ExpenseBreakdown {
   return { 添購: 0, 房租: 0, 水電: 0, 廣告: 0, 師傅薪水: 0, 其他: 0 };
+}
+
+function accountDelta(row: TxRow): { cash: number; bank: number } {
+  const cat = row.category as TransactionCategory;
+  if (cat === '會員使用') return { cash: 0, bank: 0 };
+
+  const acc = primaryLedgerAccount(row.payment_methods ?? [], cat);
+  const amt = row.amount ?? 0;
+  if (acc === '現金') return { cash: amt, bank: 0 };
+  if (acc === '富邦') return { cash: 0, bank: amt };
+  return { cash: 0, bank: 0 };
 }
 
 export async function getFinancialOverview(
@@ -96,23 +94,19 @@ export async function getFinancialOverview(
 
   let cashOnHand = 0;
   let bankAccounts = 0;
-  let accountsReceivable = 0;
+  let memberPrepaid = 0;
 
   for (const row of all) {
-    const methods = row.payment_methods ?? [];
     const cat = row.category as TransactionCategory;
-    const amt = row.amount ?? 0;
-    const sign = OUTFLOW_CATEGORIES.has(cat) ? -1 : INFLOW_CATEGORIES.has(cat) ? 1 : 0;
-    if (sign === 0) continue;
+    const { cash, bank } = accountDelta(row);
+    cashOnHand += cash;
+    bankAccounts += bank;
 
-    if (hasMethod(methods, CASH_METHODS)) cashOnHand += amt * sign;
-    if (hasMethod(methods, BANK_METHODS)) bankAccounts += amt * sign;
-    if (cat === '會員使用' && methods.includes('會員使用')) {
-      accountsReceivable += amt;
-    }
+    if (cat === '會員儲值') memberPrepaid += Math.abs(row.amount ?? 0);
+    if (cat === '會員使用') memberPrepaid -= Math.abs(row.amount ?? 0);
   }
 
-  accountsReceivable = Math.max(0, accountsReceivable);
+  const accountsReceivable = Math.max(0, memberPrepaid);
 
   let serviceIncome = 0;
   let subleaseIncome = 0;
@@ -124,13 +118,16 @@ export async function getFinancialOverview(
 
     if (cat === '收入') {
       subleaseIncome += amt;
-    } else if (cat === '一般消費' || cat === '會員使用' || cat === '會員補差額') {
+    } else if (cat === '一般消費' || cat === '會員補差額' || cat === '會員儲值') {
       serviceIncome += amt;
-    } else if (cat === '會員儲值') {
-      serviceIncome += amt;
-    } else if (cat === '支出' || cat === '工資') {
-      const key = classifyExpense(row.title, cat);
-      breakdown[key] += amt;
+    } else if (isPnlExpenseCategory(cat)) {
+      const expenseAmt = Math.abs(amt);
+      if (cat === '支出' || cat === '工資') {
+        const key = classifyExpense(row.title, cat);
+        breakdown[key] += expenseAmt;
+      } else if (cat === '分紅') {
+        breakdown.其他 += expenseAmt;
+      }
     }
   }
 
@@ -156,24 +153,25 @@ export async function getFinancialOverview(
   const dividendPaidByName = new Map<string, number>();
   for (const row of period) {
     if ((row.category as TransactionCategory) !== '分紅') continue;
+    const paid = Math.abs(row.amount ?? 0);
     for (const sh of shareholderRows ?? []) {
       if (row.title.includes(sh.name)) {
-        dividendPaidByName.set(
-          sh.name,
-          (dividendPaidByName.get(sh.name) ?? 0) + row.amount,
-        );
+        dividendPaidByName.set(sh.name, (dividendPaidByName.get(sh.name) ?? 0) + paid);
       }
     }
   }
 
   const shareholders = (shareholderRows ?? []).map((sh) => {
     const pct = Number(sh.ownership_percent) || 0;
+    const dividendDue = Math.round(netProfit * pct);
+    const dividendPaid = dividendPaidByName.get(sh.name as string) ?? 0;
     return {
       id: sh.id as string,
       name: sh.name as string,
       ownershipPercent: pct,
-      dividendDue: Math.round(netProfit * pct),
-      dividendPaid: dividendPaidByName.get(sh.name as string) ?? 0,
+      dividendDue,
+      dividendPaid,
+      dividendUnpaid: dividendDue - dividendPaid,
     };
   });
 

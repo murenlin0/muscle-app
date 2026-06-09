@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CATEGORY_NOTION_STYLE } from '@/lib/category-styles';
+import { LEDGER_ACCOUNTS, primaryLedgerAccount } from '@/lib/ledger-accounts';
 import {
-  formatPaymentMethods,
-  parsePaymentMethodsInput,
-  PAYMENT_METHODS,
-} from '@/lib/payment-methods';
+  normalizeLedgerAmount,
+  shouldShowLedgerAccount,
+} from '@/lib/ledger-amount';
 import type { StoreSlug } from '@/lib/stores';
 import {
   TRANSACTION_CATEGORIES,
@@ -31,7 +31,7 @@ const COL_LABELS: Record<ColKey, string> = {
   title: '標題',
   amount: '金額數字',
   category: '類型',
-  payment: '付款方式',
+  payment: '更動的帳戶',
 };
 
 const DEFAULT_WIDTHS: Record<ColKey, number> = {
@@ -39,7 +39,7 @@ const DEFAULT_WIDTHS: Record<ColKey, number> = {
   title: 480,
   amount: 108,
   category: 132,
-  payment: 180,
+  payment: 120,
 };
 
 const WIDTHS_STORAGE_KEY = 'muscle-ledger-col-widths';
@@ -71,13 +71,23 @@ function newDraftRow(): LedgerRow {
   };
 }
 
+function normalizeRow(row: LedgerRow): LedgerRow {
+  const paymentMethods = row.category === '會員使用' ? [] : row.paymentMethods;
+  return {
+    ...row,
+    paymentMethods,
+    amount: normalizeLedgerAmount(row.category, row.amount),
+  };
+}
+
 function rowSnapshot(row: LedgerRow): string {
+  const n = normalizeRow(row);
   return JSON.stringify({
-    occurredOn: row.occurredOn,
-    title: row.title.trim(),
-    amount: row.amount,
-    category: row.category,
-    paymentMethods: row.paymentMethods,
+    occurredOn: n.occurredOn,
+    title: n.title.trim(),
+    amount: n.amount,
+    category: n.category,
+    paymentMethods: n.paymentMethods,
   });
 }
 
@@ -189,7 +199,10 @@ export function EditableLedgerTable({
   }
 
   function updateRow(id: string, patch: Partial<LedgerRow>) {
-    const next = rowsRef.current.map((r) => (r.id === id ? { ...r, ...patch } : r));
+    const current = rowsRef.current.find((r) => r.id === id);
+    if (!current) return;
+    const merged = normalizeRow({ ...current, ...patch });
+    const next = rowsRef.current.map((r) => (r.id === id ? merged : r));
     rowsRef.current = next;
     setRows(next);
     onStatsChange?.(computeTotals(next));
@@ -199,7 +212,8 @@ export function EditableLedgerTable({
     const row = rowsRef.current.find((r) => r.id === id);
     if (!row || !row.title.trim()) return;
 
-    const snap = rowSnapshot(row);
+    const normalized = normalizeRow(row);
+    const snap = rowSnapshot(normalized);
     if (!id.startsWith('new-') && lastSavedRef.current.get(id) === snap) return;
 
     setStatus(id, 'saving');
@@ -207,11 +221,11 @@ export function EditableLedgerTable({
 
     const payload = {
       storeId,
-      occurredOn: row.occurredOn,
-      title: row.title,
-      amount: row.amount,
-      category: row.category,
-      paymentMethods: row.paymentMethods,
+      occurredOn: normalized.occurredOn,
+      title: normalized.title,
+      amount: normalized.amount,
+      category: normalized.category,
+      paymentMethods: normalized.paymentMethods,
     };
 
     const isNew = id.startsWith('new-');
@@ -231,6 +245,13 @@ export function EditableLedgerTable({
       return;
     }
 
+    if (normalized.amount !== row.amount || normalized.paymentMethods !== row.paymentMethods) {
+      updateRow(id, {
+        amount: normalized.amount,
+        paymentMethods: normalized.paymentMethods,
+      });
+    }
+
     const persistedId = isNew && data.id ? data.id : id;
     if (isNew && data.id) {
       const next = rowsRef.current.map((r) =>
@@ -238,7 +259,6 @@ export function EditableLedgerTable({
       );
       rowsRef.current = next;
       setRows(next);
-      const oldSnap = lastSavedRef.current.get(id);
       lastSavedRef.current.delete(id);
       lastSavedRef.current.set(persistedId, snap);
       setRowStatus((prev) => {
@@ -246,7 +266,6 @@ export function EditableLedgerTable({
         delete next[id];
         return next;
       });
-      if (oldSnap) lastSavedRef.current.set(persistedId, snap);
     } else {
       lastSavedRef.current.set(persistedId, snap);
     }
@@ -359,6 +378,9 @@ export function EditableLedgerTable({
             ) : (
               rows.map((row) => {
                 const status = rowStatus[row.id];
+                const showAccount = shouldShowLedgerAccount(row.category);
+                const account = primaryLedgerAccount(row.paymentMethods, row.category);
+
                 return (
                   <tr
                     key={row.id}
@@ -421,19 +443,28 @@ export function EditableLedgerTable({
                       </select>
                     </td>
                     <td className="p-0 align-middle">
-                      <input
-                        type="text"
-                        list="payment-methods-list"
-                        value={formatPaymentMethods(row.paymentMethods)}
-                        onChange={(e) =>
-                          updateRow(row.id, {
-                            paymentMethods: parsePaymentMethodsInput(e.target.value),
-                          })
-                        }
-                        onBlur={() => void saveRowById(row.id)}
-                        placeholder="現金、Line…"
-                        className={cn(cellInput, 'text-[#bbb]')}
-                      />
+                      {showAccount ? (
+                        <select
+                          value={account}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            updateRow(row.id, {
+                              paymentMethods: v ? [v] : [],
+                            });
+                            void saveRowById(row.id);
+                          }}
+                          className={cn(cellInput, 'text-[#bbb]')}
+                        >
+                          <option value="">—</option>
+                          {LEDGER_ACCOUNTS.map((a) => (
+                            <option key={a} value={a}>
+                              {a}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="block px-2 py-1.5 text-[#555]">—</span>
+                      )}
                     </td>
                     <td className="p-0 align-middle text-center">
                       <span className="inline-flex w-8 items-center justify-center text-[10px] text-[#666]">
@@ -459,12 +490,6 @@ export function EditableLedgerTable({
           </tbody>
         </table>
       </div>
-
-      <datalist id="payment-methods-list">
-        {PAYMENT_METHODS.map((p) => (
-          <option key={p} value={p} />
-        ))}
-      </datalist>
 
       <button
         type="button"

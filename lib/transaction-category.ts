@@ -4,7 +4,8 @@ export const TRANSACTION_CATEGORIES = [
   '會員儲值',
   '會員使用',
   '會員補差額',
-  '轉移',
+  '轉出',
+  '轉入',
   '支出',
   '工資',
   '收入',
@@ -13,7 +14,10 @@ export const TRANSACTION_CATEGORIES = [
 
 export type TransactionCategory = (typeof TRANSACTION_CATEGORIES)[number];
 
-const NOTION_TYPE_TO_CATEGORY: Record<string, TransactionCategory> = {
+/** @deprecated 舊資料遷移用 */
+export const LEGACY_TRANSFER_CATEGORY = '轉移';
+
+const NOTION_TYPE_TO_CATEGORY: Record<string, TransactionCategory | typeof LEGACY_TRANSFER_CATEGORY> = {
   '30分': '一般消費',
   '60分': '一般消費',
   '90分': '一般消費',
@@ -29,7 +33,7 @@ const NOTION_TYPE_TO_CATEGORY: Record<string, TransactionCategory> = {
   'VIP 180分': '會員使用',
   'VIP 結清': '會員補差額',
   'VIP 活動': '會員補差額',
-  轉移: '轉移',
+  轉移: LEGACY_TRANSFER_CATEGORY,
   支出: '支出',
   工資: '工資',
   收入: '收入',
@@ -39,7 +43,7 @@ const NOTION_TYPE_TO_CATEGORY: Record<string, TransactionCategory> = {
 export function mapNotionServiceTypeToCategory(
   serviceType: string | null | undefined,
   paymentMethods: string[] = [],
-): TransactionCategory {
+): TransactionCategory | typeof LEGACY_TRANSFER_CATEGORY {
   const raw = serviceType?.trim();
   if (raw && NOTION_TYPE_TO_CATEGORY[raw]) {
     return NOTION_TYPE_TO_CATEGORY[raw];
@@ -55,11 +59,23 @@ export function mapNotionServiceTypeToCategory(
 const REVENUE_CATEGORIES = new Set<TransactionCategory>([
   '一般消費',
   '會員儲值',
-  '會員使用',
   '會員補差額',
   '收入',
 ]);
 
 export function isRevenueCategory(category: TransactionCategory): boolean {
   return REVENUE_CATEGORIES.has(category);
+}
+
+export function isPnlIncomeCategory(category: TransactionCategory): boolean {
+  return (
+    category === '一般消費' ||
+    category === '會員儲值' ||
+    category === '會員補差額' ||
+    category === '收入'
+  );
+}
+
+export function isPnlExpenseCategory(category: TransactionCategory): boolean {
+  return category === '支出' || category === '工資' || category === '分紅';
 }

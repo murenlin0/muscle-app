@@ -5,8 +5,12 @@ import {
 } from '@/lib/notion-title-normalize';
 import type { NotionDailyRow } from '@/lib/notion-api';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { normalizeLedgerAccounts } from '@/lib/ledger-accounts';
+import { normalizeLedgerAmount } from '@/lib/ledger-amount';
 import type { StoreSlug } from '@/lib/stores';
+import { splitLegacyTransferRow } from '@/lib/transfer-split';
 import {
+  LEGACY_TRANSFER_CATEGORY,
   mapNotionServiceTypeToCategory,
   type TransactionCategory,
 } from '@/lib/transaction-category';
@@ -18,7 +22,7 @@ export interface DailyTransactionRow {
   title: string;
   amount: number;
   service_type: string | null;
-  category: TransactionCategory;
+  category: TransactionCategory | typeof LEGACY_TRANSFER_CATEGORY;
   payment_methods: string[];
   staff_name: string | null;
   is_designated: boolean;
@@ -37,6 +41,17 @@ function parseOccurredOn(dateStart: string | null, fallbackIso: string | null): 
   return '1970-01-01';
 }
 
+function finalizeRow(row: DailyTransactionRow): DailyTransactionRow {
+  const category = row.category as TransactionCategory;
+  if (row.category === LEGACY_TRANSFER_CATEGORY) return row;
+
+  return {
+    ...row,
+    amount: normalizeLedgerAmount(category, row.amount),
+    payment_methods: normalizeLedgerAccounts(row.payment_methods, category),
+  };
+}
+
 export function mapNotionRowToTransaction(
   row: NotionDailyRow,
   storeId: StoreSlug,
@@ -44,15 +59,16 @@ export function mapNotionRowToTransaction(
   const title = normalizeNotionTitle(row.title);
   const parsed = parseNotionNamePhone(title);
   const staff = normalizeStaffName(row.staffName);
+  const category = mapNotionServiceTypeToCategory(row.serviceType, row.paymentMethods);
 
-  return {
+  return finalizeRow({
     store_id: storeId,
     notion_page_id: row.pageId,
     occurred_on: parseOccurredOn(row.dateStart, row.lastEdited),
     title,
     amount: row.amount,
     service_type: row.serviceType,
-    category: mapNotionServiceTypeToCategory(row.serviceType, row.paymentMethods),
+    category,
     payment_methods: row.paymentMethods,
     staff_name: staff,
     is_designated: row.isDesignated,
@@ -60,18 +76,45 @@ export function mapNotionRowToTransaction(
     client_name: parsed?.name ?? null,
     client_phone: parsed?.phone ?? null,
     is_vip: Boolean(parsed?.isVip),
-  };
+  });
+}
+
+function expandRows(rows: DailyTransactionRow[]): DailyTransactionRow[] {
+  const out: DailyTransactionRow[] = [];
+
+  for (const row of rows) {
+    if (row.category === LEGACY_TRANSFER_CATEGORY) {
+      const split = splitLegacyTransferRow(row);
+      if (split) {
+        for (const s of split.rows) {
+          out.push(
+            finalizeRow({
+              ...row,
+              ...s,
+              notion_page_id: s.notion_page_id ?? row.notion_page_id,
+              category: s.category as TransactionCategory,
+            }),
+          );
+        }
+        continue;
+      }
+    }
+    out.push(row);
+  }
+
+  return out;
 }
 
 export async function upsertDailyTransactions(
   rows: DailyTransactionRow[],
 ): Promise<{ upserted: number }> {
   const supabase = getSupabaseAdmin();
+  const expanded = expandRows(rows);
   const chunkSize = 200;
   let upserted = 0;
 
-  for (let i = 0; i < rows.length; i += chunkSize) {
-    const chunk = rows.slice(i, i + chunkSize);
+  for (let i = 0; i < expanded.length; i += chunkSize) {
+    const chunk = expanded.slice(i, i + chunkSize);
     const { error } = await supabase.from('daily_transactions').upsert(chunk, {
       onConflict: 'notion_page_id',
     });
