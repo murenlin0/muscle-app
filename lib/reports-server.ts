@@ -281,18 +281,15 @@ export async function listDailyTransactions(
     mode?: 'all' | 'page';
     clientPhone?: string;
     includeVipPhones?: boolean;
+    /** 翻頁時略過統計查詢（count／sum／VIP／最新日期），只抓當頁列 */
+    skipMeta?: boolean;
   },
 ): Promise<ReportListResult> {
   const pageSize = options?.pageSize ?? TX_PAGE_SIZE;
   const mode = options?.mode ?? 'all';
   const clientPhone = options?.clientPhone;
-  const totalCount = await countTransactions(from, to, storeId, category, clientPhone);
-  const totalAmount = await sumTransactionAmounts(from, to, storeId, category, clientPhone);
 
-  const vipMemberPhones =
-    options?.includeVipPhones && storeId ? await getVipMemberPhones(storeId) : undefined;
-
-  if (mode === 'page') {
+  if (mode === 'page' && options?.skipMeta) {
     const page = options?.page ?? 0;
     const rows = await fetchTransactionPage(
       from,
@@ -303,6 +300,37 @@ export async function listDailyTransactions(
       pageSize,
       clientPhone,
     );
+    return {
+      from,
+      to,
+      storeId: storeId ?? 'all',
+      rows,
+      totalRows: rows.length,
+      totalCount: -1,
+      totalAmount: 0,
+      latestRecordDate: null,
+      earliestInRange: rows.length ? rows[rows.length - 1]?.occurredOn ?? null : null,
+      page,
+      pageSize,
+      hasMore: rows.length === pageSize,
+      apiVersion: LEDGER_API_VERSION,
+    };
+  }
+
+  const page = options?.page ?? 0;
+  const [totalCount, totalAmount, vipMemberPhones, latestRecordDate, rows] = await Promise.all([
+    countTransactions(from, to, storeId, category, clientPhone),
+    sumTransactionAmounts(from, to, storeId, category, clientPhone),
+    options?.includeVipPhones && storeId
+      ? getVipMemberPhones(storeId)
+      : Promise.resolve(undefined),
+    getLatestTransactionDate(storeId),
+    mode === 'page'
+      ? fetchTransactionPage(from, to, storeId, category, page, pageSize, clientPhone)
+      : fetchTransactionRows(from, to, storeId, category, clientPhone),
+  ]);
+
+  if (mode === 'page') {
     const start = page * pageSize;
     return buildReportListResult({
       from,
@@ -311,6 +339,7 @@ export async function listDailyTransactions(
       rows,
       totalCount,
       totalAmount,
+      latestRecordDate,
       page,
       pageSize,
       hasMore: start + rows.length < totalCount,
@@ -318,7 +347,6 @@ export async function listDailyTransactions(
     });
   }
 
-  const rows = await fetchTransactionRows(from, to, storeId, category, clientPhone);
   return buildReportListResult({
     from,
     to,
@@ -326,6 +354,7 @@ export async function listDailyTransactions(
     rows,
     totalCount,
     totalAmount,
+    latestRecordDate,
     page: 0,
     pageSize: rows.length || pageSize,
     hasMore: false,
@@ -333,21 +362,32 @@ export async function listDailyTransactions(
   });
 }
 
-async function buildReportListResult(input: {
+function buildReportListResult(input: {
   from: string;
   to: string;
   storeId?: StoreSlug;
   rows: DailyTransactionListItem[];
   totalCount: number;
   totalAmount: number;
+  latestRecordDate: string | null;
   page: number;
   pageSize: number;
   hasMore: boolean;
   vipMemberPhones?: string[];
-}): Promise<ReportListResult> {
-  const { from, to, storeId, rows, totalCount, totalAmount, page, pageSize, hasMore, vipMemberPhones } =
-    input;
-  const latestRecordDate = await getLatestTransactionDate(storeId);
+}): ReportListResult {
+  const {
+    from,
+    to,
+    storeId,
+    rows,
+    totalCount,
+    totalAmount,
+    latestRecordDate,
+    page,
+    pageSize,
+    hasMore,
+    vipMemberPhones,
+  } = input;
   const earliestInRange = rows.length ? rows[rows.length - 1]?.occurredOn ?? null : null;
 
   return {

@@ -97,31 +97,76 @@ export function ReportsDashboard({
     };
   }, [report?.rows, report?.earliestInRange]);
 
-  const load = useCallback(async (page: number) => {
-    setLoading(true);
-    setOverviewLoading(true);
-    setError(null);
-    const baseQs = new URLSearchParams({ from, to });
-    baseQs.set('store', activeStore);
-    baseQs.set('page', String(page));
-    baseQs.set('pageSize', String(LEDGER_UI_PAGE_SIZE));
-    if (category) baseQs.set('category', category);
+  /** 抓一頁流水帳；withMeta=true 時同時更新統計（筆數／合計／VIP 名單） */
+  const loadLedgerPage = useCallback(
+    async (page: number, withMeta: boolean) => {
+      setLoading(true);
+      setError(null);
+      const qs = new URLSearchParams({ from, to });
+      qs.set('store', activeStore);
+      qs.set('page', String(page));
+      qs.set('pageSize', String(LEDGER_UI_PAGE_SIZE));
+      if (!withMeta) qs.set('meta', '0');
+      if (category) qs.set('category', category);
 
-    const ovPromise = fetch(
-      `/api/portal/reports/overview?${new URLSearchParams({ from, to, store: activeStore })}`,
-      { cache: 'no-store' },
-    );
+      try {
+        const txRes = await fetch(`/api/portal/reports/transactions?${qs}`, { cache: 'no-store' });
+        const txData = (await txRes.json()) as { report?: ReportList; error?: string };
+        if (!txRes.ok) {
+          throw new Error(txData.error ?? '無法載入流水帳');
+        }
+        const chunk = txData.report;
+        if (!chunk) throw new Error('無法載入流水帳');
 
-    try {
-      const txRes = await fetch(`/api/portal/reports/transactions?${baseQs}`, { cache: 'no-store' });
-      const txData = (await txRes.json()) as { report?: ReportList; error?: string };
-      if (!txRes.ok) {
-        throw new Error(txData.error ?? '無法載入流水帳');
+        const rows = chunk.rows.map((r) => ({
+          ...r,
+          staffName: r.staffName ?? null,
+          clientName: r.clientName ?? null,
+          clientPhone: r.clientPhone ?? null,
+        }));
+
+        setReport((prev) => ({
+          rows,
+          totalRows: rows.length,
+          totalCount: withMeta ? chunk.totalCount : prev?.totalCount ?? rows.length,
+          totalAmount: withMeta ? chunk.totalAmount : prev?.totalAmount ?? 0,
+          latestRecordDate: withMeta ? chunk.latestRecordDate : prev?.latestRecordDate ?? null,
+          earliestInRange: chunk.earliestInRange,
+          hasMore: chunk.hasMore,
+          apiVersion: chunk.apiVersion ?? 0,
+        }));
+        if (withMeta) {
+          if (chunk.vipMemberPhones?.length) {
+            setVipMemberPhones(new Set(chunk.vipMemberPhones));
+          }
+          setLedgerMeta({
+            totalCount: chunk.totalCount,
+            totalAmount: chunk.totalAmount,
+            apiVersion: chunk.apiVersion ?? 0,
+            hasMore: chunk.hasMore,
+          });
+          setStats({ totalRows: chunk.totalCount, totalAmount: chunk.totalAmount });
+        }
+        setLedgerPage(page);
+        setDataGeneration((g) => g + 1);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : '無法載入報表');
+        setReport(null);
+        setLedgerMeta(null);
+      } finally {
+        setLoading(false);
       }
-      const chunk = txData.report;
-      if (!chunk) throw new Error('無法載入流水帳');
+    },
+    [from, to, activeStore, category],
+  );
 
-      const ovRes = await ovPromise;
+  const loadOverview = useCallback(async () => {
+    setOverviewLoading(true);
+    try {
+      const ovRes = await fetch(
+        `/api/portal/reports/overview?${new URLSearchParams({ from, to, store: activeStore })}`,
+        { cache: 'no-store' },
+      );
       const ovData = (await ovRes.json()) as { overview?: FinancialOverview; error?: string };
       if (!ovRes.ok) {
         setError(ovData.error ?? '無法載入財務總覽');
@@ -129,54 +174,32 @@ export function ReportsDashboard({
       } else {
         setOverview(ovData.overview ?? null);
       }
-
-      const rows = chunk.rows.map((r) => ({
-        ...r,
-        staffName: r.staffName ?? null,
-        clientName: r.clientName ?? null,
-        clientPhone: r.clientPhone ?? null,
-      }));
-
-      setReport({
-        rows,
-        totalRows: rows.length,
-        totalCount: chunk.totalCount,
-        totalAmount: chunk.totalAmount,
-        latestRecordDate: chunk.latestRecordDate,
-        earliestInRange: chunk.earliestInRange,
-        hasMore: chunk.hasMore,
-        apiVersion: chunk.apiVersion ?? 0,
-      });
-      if (chunk.vipMemberPhones?.length) {
-        setVipMemberPhones(new Set(chunk.vipMemberPhones));
-      }
-      setLedgerMeta({
-        totalCount: chunk.totalCount,
-        totalAmount: chunk.totalAmount,
-        apiVersion: chunk.apiVersion ?? 0,
-        hasMore: chunk.hasMore,
-      });
-      setLedgerPage(page);
-      setDataGeneration((g) => g + 1);
-      setStats({ totalRows: chunk.totalCount, totalAmount: chunk.totalAmount });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '無法載入報表');
-      setReport(null);
-      setLedgerMeta(null);
+    } catch {
+      setOverview(null);
     } finally {
-      setLoading(false);
       setOverviewLoading(false);
     }
+  }, [from, to, activeStore]);
+
+  /** 完整重載：統計 + 第一頁 + 財務總覽 */
+  const load = useCallback(
+    async (page = 0) => {
+      setSortOrder('desc');
+      await Promise.all([loadLedgerPage(page, true), loadOverview()]);
+    },
+    [loadLedgerPage, loadOverview],
+  );
+
+  // 篩選條件變更 → 完整重載第一頁
+  useEffect(() => {
+    void load(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [from, to, activeStore, category]);
 
-  useEffect(() => {
-    setLedgerPage(0);
-    setSortOrder('desc');
-  }, [from, to, activeStore, category]);
-
-  useEffect(() => {
-    void load(ledgerPage);
-  }, [ledgerPage, load]);
+  /** 翻頁：只抓當頁列，不重抓統計與財務總覽 */
+  function goToPage(page: number) {
+    void loadLedgerPage(page, false);
+  }
 
   async function handleNormalizeLedger() {
     setNormalizing(true);
@@ -338,7 +361,7 @@ export function ReportsDashboard({
               size="sm"
               variant="outline"
               disabled={loading || ledgerPage <= 0}
-              onClick={() => setLedgerPage((p) => Math.max(0, p - 1))}
+              onClick={() => goToPage(ledgerPage - 1)}
             >
               上一頁
             </Button>
@@ -349,8 +372,8 @@ export function ReportsDashboard({
               type="button"
               size="sm"
               variant="outline"
-              disabled={loading || !ledgerMeta.hasMore}
-              onClick={() => setLedgerPage((p) => p + 1)}
+              disabled={loading || ledgerPage + 1 >= totalPages}
+              onClick={() => goToPage(ledgerPage + 1)}
             >
               下一頁
             </Button>
