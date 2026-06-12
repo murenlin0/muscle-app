@@ -80,8 +80,9 @@ export function ReportsDashboard({
 
   const displayRows = useMemo(() => {
     const rows = report?.rows ?? [];
-    if (sortOrder === 'desc') return rows;
-    return [...rows].reverse();
+    // API 固定新→舊；僅在使用者選「舊→新」時反轉
+    if (sortOrder === 'asc') return [...rows].reverse();
+    return rows;
   }, [report?.rows, sortOrder]);
 
   const rangeBounds = useMemo(() => {
@@ -170,6 +171,7 @@ export function ReportsDashboard({
 
   useEffect(() => {
     setLedgerPage(0);
+    setSortOrder('desc');
   }, [from, to, activeStore, category]);
 
   useEffect(() => {
@@ -298,8 +300,8 @@ export function ReportsDashboard({
                 onChange={(e) => setSortOrder(e.target.value as 'desc' | 'asc')}
                 className="flex h-9 min-w-[8rem] rounded-md border border-[#444] bg-[#252525] px-2 text-sm"
               >
-                <option value="asc">舊 → 新</option>
                 <option value="desc">新 → 舊</option>
+                <option value="asc">舊 → 新</option>
               </select>
             </div>
           </div>

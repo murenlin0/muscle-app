@@ -252,14 +252,15 @@ async function fetchTransactionPage(
       'id, occurred_on, title, amount, category, payment_methods, staff_name, client_name, client_phone',
     )
     .gte('occurred_on', from)
-    .lte('occurred_on', to)
+    .lte('occurred_on', to);
+  if (storeId) q = q.eq('store_id', storeId);
+  if (category) q = q.eq('category', category);
+  if (clientPhone) q = applyClientPhoneQuery(q, clientPhone);
+  q = q
     .order('occurred_on', { ascending: false })
     .order('created_at', { ascending: false })
     .order('id', { ascending: false })
     .range(offset, offset + pageSize - 1);
-  if (storeId) q = q.eq('store_id', storeId);
-  if (category) q = q.eq('category', category);
-  if (clientPhone) q = applyClientPhoneQuery(q, clientPhone);
   const { data, error } = await q;
 
   if (error) throw new Error(error.message);
