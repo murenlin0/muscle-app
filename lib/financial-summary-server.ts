@@ -105,6 +105,7 @@ async function fetchUnusedBalanceRows(storeId: StoreSlug, to: string): Promise<T
       .select('id, occurred_on, title, client_name, client_phone')
       .eq('store_id', storeId)
       .lte('occurred_on', to)
+      .in('category', ['會員儲值', '會員使用', '會員補差額'])
       .like('title', '%、%')
       .order('occurred_on', { ascending: true })
       .order('id', { ascending: true })

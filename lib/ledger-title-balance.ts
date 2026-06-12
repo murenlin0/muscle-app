@@ -1,4 +1,4 @@
-import { parseNotionNamePhone } from '@/lib/phone';
+import { parseNotionNamePhone, stripVipPrefix } from '@/lib/phone';
 
 /** 標題頓號後、VIP 前的數字＝該筆交易完成後的客人餘額 */
 export function parseBalanceAfter顿号(title: string): number | null {
@@ -38,32 +38,54 @@ function clientPhoneKey(row: TitleBalanceRow): string | null {
   return parsed?.phone ?? null;
 }
 
+/** 名字（無電話列的歸戶用）：欄位優先，否則取標題最後一個 VIP 後的名字 */
+function clientNameKey(row: TitleBalanceRow): string | null {
+  if (row.client_name) {
+    const n = stripVipPrefix(row.client_name).trim();
+    if (n) return n;
+  }
+  const matches = [...row.title.matchAll(/VIP\s*([\u4e00-\u9fffA-Za-z]{2,12})/gi)];
+  const last = matches[matches.length - 1];
+  return last?.[1] ?? null;
+}
+
 /**
- * 餘額未使用：每位客人取最新一筆含頓號餘額的標題，加總其頓號後數字。
+ * 餘額未使用：每位客人（電話歸戶，無電話時用名字歸戶）只取最新一筆
+ * 含頓號餘額的標題，加總其頓號後數字。
  */
 export function sumUnusedBalancesFromTitles(rows: TitleBalanceRow[]): number {
-  const latestByPhone = new Map<string, { date: string; balance: number; id: string }>();
+  // 名字 → 電話 對照：讓「許芳榮老婆/VIP許芳榮」這類無電話列歸到本人帳上
+  const nameToPhone = new Map<string, string>();
+  for (const row of rows) {
+    const phone = clientPhoneKey(row);
+    const name = clientNameKey(row);
+    if (phone && name && !nameToPhone.has(name)) nameToPhone.set(name, phone);
+  }
+
+  const latestByClient = new Map<string, { date: string; balance: number; id: string }>();
 
   for (const row of rows) {
     const balance = parseBalanceAfter顿号(row.title);
     if (balance === null) continue;
 
     const phone = clientPhoneKey(row);
-    if (!phone) continue;
+    const name = clientNameKey(row);
+    const key = phone ?? (name ? nameToPhone.get(name) ?? `name:${name}` : null);
+    if (!key) continue;
 
     const id = row.id ?? '';
-    const existing = latestByPhone.get(phone);
+    const existing = latestByClient.get(key);
     if (
       !existing ||
       row.occurred_on > existing.date ||
       (row.occurred_on === existing.date && id > existing.id)
     ) {
-      latestByPhone.set(phone, { date: row.occurred_on, balance, id });
+      latestByClient.set(key, { date: row.occurred_on, balance, id });
     }
   }
 
   let sum = 0;
-  for (const { balance } of latestByPhone.values()) {
+  for (const { balance } of latestByClient.values()) {
     sum += balance;
   }
   return sum;
