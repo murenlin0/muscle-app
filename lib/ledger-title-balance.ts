@@ -15,10 +15,7 @@ export function parseBalanceAfter顿号(title: string): number | null {
     return Math.max(0, stored - used);
   }
 
-  const beforeVip = tail.match(/^(\d+)VIP/i);
-  if (beforeVip) return Number(beforeVip[1]);
-
-  const numOnly = tail.match(/^(\d+)/);
+  const numOnly = tail.match(/^(-?\d+)/);
   if (numOnly) return Number(numOnly[1]);
 
   return null;
