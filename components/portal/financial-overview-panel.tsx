@@ -217,11 +217,11 @@ export function FinancialOverviewPanel({
           <div className="space-y-0.5">
             <LineItem label="店內現金" value={assets.cashOnHand} />
             <LineItem label="銀行帳戶" value={assets.bankAccounts} />
-            <LineItem label="預收未服務" value={assets.deferredRevenue} />
+            <LineItem label="餘額未使用" value={assets.unusedMemberBalance} />
             <LineItem label="應收帳款" value={assets.accountsReceivable} muted />
           </div>
           <p className="mt-auto pt-3 text-[10px] leading-relaxed text-[#555]">
-            總資產＝店內現金＋銀行帳戶（各帳戶流水金額加總）；預收未服務、應收帳款僅供參考。
+            總資產＝店內現金＋銀行帳戶（各帳戶流水金額加總）；餘額未使用＝標題頓號後餘額（每位客人取最新一筆加總）；應收帳款僅供參考。
           </p>
         </PanelCard>
 

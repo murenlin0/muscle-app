@@ -108,6 +108,22 @@ export function parseNotionNamePhone(raw: string): ParsedNamePhone | null {
   if (!phone) return null;
 
   const beforePhone = compact.slice(0, lastPhone.index ?? 0);
+
+  const compactTail = compact.match(/([\u4e00-\u9fffA-Za-z]{2,12})(09\d{8})$/);
+  if (compactTail) {
+    const tailName = stripVipPrefix(compactTail[1]).trim();
+    const tailPhone = normalizePhone(compactTail[2]);
+    if (tailName && tailPhone && !INVALID_NAME_CHARS.test(tailName) && tailName.length <= 12) {
+      const hadVip = /VIP/i.test(beforePhone);
+      return {
+        name: tailName,
+        phone: tailPhone,
+        titleSegment: `${tailName}${tailPhone}`,
+        isVip: hadVip,
+      };
+    }
+  }
+
   const tailSegment = (beforePhone.split('、').pop() ?? beforePhone).replace(/^\d+/, '');
   const hadVip = /VIP/i.test(tailSegment) || /VIP/i.test(beforePhone);
 

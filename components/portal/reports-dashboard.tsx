@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ClientLedgerDrawer } from '@/components/portal/client-ledger-drawer';
 import { EditableLedgerTable, type LedgerRow } from '@/components/portal/editable-ledger-table';
 import { FinancialOverviewPanel } from '@/components/portal/financial-overview-panel';
 import { StatusBanner } from '@/components/portal/status-banner';
@@ -20,6 +21,7 @@ interface ReportList {
   earliestInRange: string | null;
   hasMore: boolean;
   apiVersion: number;
+  vipMemberPhones?: string[];
 }
 
 function fmt(n: number) {
@@ -55,13 +57,17 @@ export function ReportsDashboard({
   const [overview, setOverview] = useState<FinancialOverview | null>(null);
   const [stats, setStats] = useState({ totalRows: 0, totalAmount: 0 });
   const [dataGeneration, setDataGeneration] = useState(0);
-  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('asc');
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
   const [loading, setLoading] = useState(true);
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [normalizing, setNormalizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [ledgerMeta, setLedgerMeta] = useState<{ totalCount: number; apiVersion: number } | null>(null);
+  const [vipMemberPhones, setVipMemberPhones] = useState<Set<string>>(new Set());
+  const [selectedClient, setSelectedClient] = useState<{ name: string; phone: string } | null>(
+    null,
+  );
 
   const activeStore = storeFilter ?? store;
 
@@ -104,6 +110,7 @@ export function ReportsDashboard({
       let latestRecordDate: string | null = null;
       let earliestInRange: string | null = null;
       let hasMore = true;
+      let vipPhones: string[] = [];
 
       while (hasMore && page < 50) {
         const qs = new URLSearchParams(baseQs);
@@ -118,6 +125,7 @@ export function ReportsDashboard({
         if (!chunk) break;
 
         apiVersion = chunk.apiVersion ?? 0;
+        if (chunk.vipMemberPhones?.length) vipPhones = chunk.vipMemberPhones;
         totalCount = chunk.totalCount ?? chunk.rows.length;
         latestRecordDate = chunk.latestRecordDate;
         if (chunk.earliestInRange) earliestInRange = chunk.earliestInRange;
@@ -160,6 +168,7 @@ export function ReportsDashboard({
       };
 
       setReport(merged);
+      setVipMemberPhones(new Set(vipPhones));
       setLedgerMeta({ totalCount, apiVersion });
       setDataGeneration((g) => g + 1);
       setStats({ totalRows: allRows.length, totalAmount });
@@ -324,13 +333,25 @@ export function ReportsDashboard({
           loading={loading}
           dataGeneration={dataGeneration}
           storeId={activeStore}
+          vipMemberPhones={vipMemberPhones}
+          onClientClick={setSelectedClient}
           onStatsChange={setStats}
         />
 
         <p className="text-xs text-[#666]">
-          點欄位即可編輯，離開欄位自動儲存。更動的帳戶僅現金／富邦；會員使用留空；支出／分紅／轉出為負數；轉入為正數。
+          點欄位即可編輯，離開欄位自動儲存；點「客人」可查看該客人消費紀錄。更動的帳戶僅現金／富邦；會員使用留空；支出／分紅／轉出為負數；轉入為正數。
         </p>
       </section>
+
+      <ClientLedgerDrawer
+        open={selectedClient !== null}
+        client={selectedClient}
+        storeId={activeStore}
+        from={from}
+        to={to}
+        vipMemberPhones={vipMemberPhones}
+        onClose={() => setSelectedClient(null)}
+      />
     </div>
   );
 }

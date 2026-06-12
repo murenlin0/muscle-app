@@ -16,6 +16,7 @@ export async function GET(request: Request) {
   const categoryParam = url.searchParams.get('category');
   const pageParam = url.searchParams.get('page');
   const pageSizeParam = url.searchParams.get('pageSize');
+  const clientPhoneParam = url.searchParams.get('clientPhone');
   const mode = pageParam !== null ? 'page' as const : 'all' as const;
 
   if (!from || !to) {
@@ -43,6 +44,8 @@ export async function GET(request: Request) {
       mode,
       page: pageParam !== null ? Number(pageParam) : undefined,
       pageSize: pageSizeParam ? Number(pageSizeParam) : undefined,
+      clientPhone: clientPhoneParam ?? undefined,
+      includeVipPhones: true,
     });
     return portalJson({ report });
   } catch (e) {

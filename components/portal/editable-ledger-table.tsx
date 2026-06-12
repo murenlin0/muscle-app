@@ -6,6 +6,10 @@ import {
   categoryShowsClient,
   syncClientFieldsFromTitle,
 } from '@/lib/ledger-client-detect';
+import {
+  formatClientKeyLabel,
+  resolveClientFromFields,
+} from '@/lib/ledger-client-display';
 import { LEDGER_ACCOUNTS, primaryLedgerAccount } from '@/lib/ledger-accounts';
 import {
   normalizeLedgerAmount,
@@ -108,10 +112,18 @@ function rowSnapshot(row: LedgerRow): string {
   });
 }
 
-function clientDisplay(row: LedgerRow): string {
-  if (!categoryShowsClient(row.category)) return '';
-  if (row.clientName && row.clientPhone) return `${row.clientName} ${row.clientPhone}`;
-  return row.clientName ?? row.clientPhone ?? '';
+function clientDisplay(
+  row: LedgerRow,
+  vipMemberPhones: Set<string>,
+): string {
+  const identity = resolveClientFromFields(
+    row.title,
+    row.category,
+    row.clientName,
+    row.clientPhone,
+  );
+  if (!identity) return '';
+  return formatClientKeyLabel(identity, vipMemberPhones.has(identity.phone));
 }
 
 function computeTotals(rows: LedgerRow[]) {
@@ -129,12 +141,16 @@ export function EditableLedgerTable({
   loading,
   dataGeneration,
   storeId,
+  vipMemberPhones = new Set(),
+  onClientClick,
   onStatsChange,
 }: {
   rows: LedgerRow[];
   loading: boolean;
   dataGeneration: number;
   storeId: StoreSlug;
+  vipMemberPhones?: Set<string>;
+  onClientClick?: (client: { name: string; phone: string }) => void;
   onStatsChange?: (stats: { totalRows: number; totalAmount: number }) => void;
 }) {
   const [rows, setRows] = useState<LedgerRow[]>(initialRows);
@@ -545,21 +561,36 @@ export function EditableLedgerTable({
                       </select>
                     </td>
                     <td className="p-0 align-middle">
-                      {categoryShowsClient(row.category) ? (
-                        <input
-                          type="text"
-                          value={clientDisplay(row)}
-                          readOnly
-                          title={
-                            row.clientPhone
-                              ? `${row.clientName ?? ''} ${row.clientPhone}`
-                              : '從標題自動偵測'
-                          }
-                          className={cn(cellInput, 'text-[#999] cursor-default')}
-                        />
-                      ) : (
-                        <span className="block px-2 py-1.5 text-[#555]">—</span>
-                      )}
+                      {(() => {
+                        const identity = resolveClientFromFields(
+                          row.title,
+                          row.category,
+                          row.clientName,
+                          row.clientPhone,
+                        );
+                        if (!identity) {
+                          return <span className="block px-2 py-1.5 text-[#555]">—</span>;
+                        }
+                        const label = clientDisplay(row, vipMemberPhones);
+                        return (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              onClientClick?.(identity);
+                            }}
+                            title="查看此客人消費紀錄"
+                            className={cn(
+                              cellInput,
+                              'relative z-[1] text-left text-[#9ec5ff] hover:bg-[#2a2a2a] hover:underline',
+                              !onClientClick && 'cursor-default text-[#999] hover:no-underline',
+                            )}
+                          >
+                            {label}
+                          </button>
+                        );
+                      })()}
                     </td>
                     <td className="p-0 align-middle">
                       {showAccount ? (

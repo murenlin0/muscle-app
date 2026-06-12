@@ -2,6 +2,7 @@ import { getSupabaseAdmin } from '@/lib/supabase';
 import { fetchAllPages } from '@/lib/supabase-paginate';
 import { primaryLedgerAccount } from '@/lib/ledger-accounts';
 import { sumLedgerAccountBalances } from '@/lib/ledger-balances';
+import { sumUnusedBalancesFromTitles } from '@/lib/ledger-title-balance';
 import type { StoreSlug } from '@/lib/stores';
 import {
   isPnlExpenseCategory,
@@ -26,7 +27,9 @@ export interface FinancialOverview {
     total: number;
     cashOnHand: number;
     bankAccounts: number;
-    /** 會員儲值尚未使用完的金額（預收未服務） */
+    /** 標題頓號後餘額加總（每位客人取最新一筆） */
+    unusedMemberBalance: number;
+    /** @deprecated 使用 unusedMemberBalance */
     deferredRevenue: number;
     /** 已服務但尚未收款（不計入總資產） */
     accountsReceivable: number;
@@ -50,11 +53,14 @@ export interface FinancialOverview {
 }
 
 interface TxRow {
+  id: string;
   occurred_on: string;
   amount: number;
   category: string;
   payment_methods: string[];
   title: string;
+  client_name: string | null;
+  client_phone: string | null;
 }
 
 function classifyExpense(title: string, category: string): keyof ExpenseBreakdown {
@@ -77,7 +83,9 @@ async function fetchAllRows(storeId: StoreSlug, to: string): Promise<TxRow[]> {
   return fetchAllPages<TxRow>(async (offset, pageSize) =>
     supabase
       .from('daily_transactions')
-      .select('occurred_on, amount, category, payment_methods, title')
+      .select(
+        'id, occurred_on, amount, category, payment_methods, title, client_name, client_phone',
+      )
       .eq('store_id', storeId)
       .lte('occurred_on', to)
       .order('occurred_on', { ascending: true })
@@ -96,15 +104,12 @@ export async function getFinancialOverview(
 
   const { cashOnHand, bankAccounts } = sumLedgerAccountBalances(all);
 
-  let deferredRevenue = 0;
+  const unusedMemberBalance = sumUnusedBalancesFromTitles(all);
   let accountsReceivable = 0;
 
   for (const row of all) {
     const cat = row.category as TransactionCategory;
     const amt = row.amount ?? 0;
-
-    if (cat === '會員儲值') deferredRevenue += Math.abs(amt);
-    if (cat === '會員使用') deferredRevenue -= Math.abs(amt);
 
     if (
       (cat === '一般消費' || cat === '會員補差額') &&
@@ -113,8 +118,6 @@ export async function getFinancialOverview(
       accountsReceivable += Math.abs(amt);
     }
   }
-
-  deferredRevenue = Math.max(0, deferredRevenue);
   const totalAssets = cashOnHand + bankAccounts;
 
   let serviceIncome = 0;
@@ -193,7 +196,8 @@ export async function getFinancialOverview(
       total: totalAssets,
       cashOnHand,
       bankAccounts,
-      deferredRevenue,
+      unusedMemberBalance,
+      deferredRevenue: unusedMemberBalance,
       accountsReceivable,
     },
     incomeStatement: {
