@@ -55,12 +55,15 @@ export interface FinancialOverview {
 interface TxRow {
   id: string;
   occurred_on: string;
-  amount: number;
-  category: string;
-  payment_methods: string[];
   title: string;
   client_name: string | null;
   client_phone: string | null;
+}
+
+interface ReceivableRow {
+  amount: number;
+  category: string;
+  payment_methods: string[];
 }
 
 function classifyExpense(title: string, category: string): keyof ExpenseBreakdown {
@@ -78,18 +81,51 @@ function emptyBreakdown(): ExpenseBreakdown {
   return { 添購: 0, 房租: 0, 水電: 0, 廣告: 0, 師傅薪水: 0, 其他: 0 };
 }
 
-async function fetchAllRows(storeId: StoreSlug, to: string): Promise<TxRow[]> {
+async function fetchBalanceRows(storeId: StoreSlug, to: string): Promise<
+  { amount: number; category: string; payment_methods: string[] }[]
+> {
   const supabase = getSupabaseAdmin();
-  return fetchAllPages<TxRow>(async (offset, pageSize) =>
+  return fetchAllPages(async (offset, pageSize) =>
     supabase
       .from('daily_transactions')
-      .select(
-        'id, occurred_on, amount, category, payment_methods, title, client_name, client_phone',
-      )
+      .select('amount, category, payment_methods')
       .eq('store_id', storeId)
       .lte('occurred_on', to)
       .order('occurred_on', { ascending: true })
       .order('id', { ascending: true })
+      .range(offset, offset + pageSize - 1),
+  );
+}
+
+async function fetchUnusedBalanceRows(storeId: StoreSlug, to: string): Promise<TxRow[]> {
+  const supabase = getSupabaseAdmin();
+  return fetchAllPages<TxRow>(async (offset, pageSize) =>
+    supabase
+      .from('daily_transactions')
+      .select('id, occurred_on, title, client_name, client_phone')
+      .eq('store_id', storeId)
+      .lte('occurred_on', to)
+      .like('title', '%、%')
+      .order('occurred_on', { ascending: true })
+      .order('id', { ascending: true })
+      .range(offset, offset + pageSize - 1),
+  );
+}
+
+async function fetchPeriodPnlRows(
+  storeId: StoreSlug,
+  from: string,
+  to: string,
+): Promise<{ occurred_on: string; amount: number; category: string; title: string }[]> {
+  const supabase = getSupabaseAdmin();
+  return fetchAllPages(async (offset, pageSize) =>
+    supabase
+      .from('daily_transactions')
+      .select('occurred_on, amount, category, title')
+      .eq('store_id', storeId)
+      .gte('occurred_on', from)
+      .lte('occurred_on', to)
+      .order('occurred_on', { ascending: true })
       .range(offset, offset + pageSize - 1),
   );
 }
@@ -99,15 +135,18 @@ export async function getFinancialOverview(
   to: string,
   storeId: StoreSlug,
 ): Promise<FinancialOverview> {
-  const all = await fetchAllRows(storeId, to);
-  const period = all.filter((r) => r.occurred_on >= from && r.occurred_on <= to);
+  const [balanceRows, unusedRows, periodRows] = await Promise.all([
+    fetchBalanceRows(storeId, to),
+    fetchUnusedBalanceRows(storeId, to),
+    fetchPeriodPnlRows(storeId, from, to),
+  ]);
 
-  const { cashOnHand, bankAccounts } = sumLedgerAccountBalances(all);
+  const { cashOnHand, bankAccounts } = sumLedgerAccountBalances(balanceRows);
 
-  const unusedMemberBalance = sumUnusedBalancesFromTitles(all);
+  const unusedMemberBalance = sumUnusedBalancesFromTitles(unusedRows);
   let accountsReceivable = 0;
 
-  for (const row of all) {
+  for (const row of balanceRows as ReceivableRow[]) {
     const cat = row.category as TransactionCategory;
     const amt = row.amount ?? 0;
 
@@ -124,7 +163,7 @@ export async function getFinancialOverview(
   let subleaseIncome = 0;
   const breakdown = emptyBreakdown();
 
-  for (const row of period) {
+  for (const row of periodRows) {
     const cat = row.category as TransactionCategory;
     const amt = row.amount ?? 0;
 
@@ -164,7 +203,7 @@ export async function getFinancialOverview(
   if (shError) throw new Error(shError.message);
 
   const dividendPaidByName = new Map<string, number>();
-  for (const row of period) {
+  for (const row of periodRows) {
     if ((row.category as TransactionCategory) !== '分紅') continue;
     const paid = Math.abs(row.amount ?? 0);
     for (const sh of shareholderRows ?? []) {

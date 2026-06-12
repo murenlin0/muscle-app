@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { FinancialOverview } from '@/lib/financial-summary-server';
+import { LEDGER_UI_PAGE_SIZE } from '@/lib/ledger-pagination';
 import { STORE_LIST, type StoreSlug } from '@/lib/stores';
 import { TRANSACTION_CATEGORIES, type TransactionCategory } from '@/lib/transaction-category';
 
@@ -63,7 +64,13 @@ export function ReportsDashboard({
   const [normalizing, setNormalizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
-  const [ledgerMeta, setLedgerMeta] = useState<{ totalCount: number; apiVersion: number } | null>(null);
+  const [ledgerPage, setLedgerPage] = useState(0);
+  const [ledgerMeta, setLedgerMeta] = useState<{
+    totalCount: number;
+    totalAmount: number;
+    apiVersion: number;
+    hasMore: boolean;
+  } | null>(null);
   const [vipMemberPhones, setVipMemberPhones] = useState<Set<string>>(new Set());
   const [selectedClient, setSelectedClient] = useState<{ name: string; phone: string } | null>(
     null,
@@ -89,12 +96,14 @@ export function ReportsDashboard({
     };
   }, [report?.rows, report?.earliestInRange]);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (page: number) => {
     setLoading(true);
     setOverviewLoading(true);
     setError(null);
     const baseQs = new URLSearchParams({ from, to });
     baseQs.set('store', activeStore);
+    baseQs.set('page', String(page));
+    baseQs.set('pageSize', String(LEDGER_UI_PAGE_SIZE));
     if (category) baseQs.set('category', category);
 
     const ovPromise = fetch(
@@ -103,47 +112,13 @@ export function ReportsDashboard({
     );
 
     try {
-      const allRows: LedgerRow[] = [];
-      let page = 0;
-      let totalCount = 0;
-      let apiVersion = 0;
-      let latestRecordDate: string | null = null;
-      let earliestInRange: string | null = null;
-      let hasMore = true;
-      let vipPhones: string[] = [];
-
-      while (hasMore && page < 50) {
-        const qs = new URLSearchParams(baseQs);
-        qs.set('page', String(page));
-        qs.set('pageSize', '1000');
-        const txRes = await fetch(`/api/portal/reports/transactions?${qs}`, { cache: 'no-store' });
-        const txData = (await txRes.json()) as { report?: ReportList; error?: string };
-        if (!txRes.ok) {
-          throw new Error(txData.error ?? '無法載入流水帳');
-        }
-        const chunk = txData.report;
-        if (!chunk) break;
-
-        apiVersion = chunk.apiVersion ?? 0;
-        if (chunk.vipMemberPhones?.length) vipPhones = chunk.vipMemberPhones;
-        totalCount = chunk.totalCount ?? chunk.rows.length;
-        latestRecordDate = chunk.latestRecordDate;
-        if (chunk.earliestInRange) earliestInRange = chunk.earliestInRange;
-        allRows.push(
-          ...chunk.rows.map((r) => ({
-            ...r,
-            staffName: r.staffName ?? null,
-            clientName: r.clientName ?? null,
-            clientPhone: r.clientPhone ?? null,
-          })),
-        );
-        hasMore = chunk.hasMore;
-        page += 1;
-
-        if (chunk.apiVersion < 4 && page === 1 && !chunk.hasMore && chunk.totalCount > chunk.rows.length) {
-          throw new Error('伺服器版本過舊，請稍後再試或聯絡管理員重新部署');
-        }
+      const txRes = await fetch(`/api/portal/reports/transactions?${baseQs}`, { cache: 'no-store' });
+      const txData = (await txRes.json()) as { report?: ReportList; error?: string };
+      if (!txRes.ok) {
+        throw new Error(txData.error ?? '無法載入流水帳');
       }
+      const chunk = txData.report;
+      if (!chunk) throw new Error('無法載入流水帳');
 
       const ovRes = await ovPromise;
       const ovData = (await ovRes.json()) as { overview?: FinancialOverview; error?: string };
@@ -154,28 +129,35 @@ export function ReportsDashboard({
         setOverview(ovData.overview ?? null);
       }
 
-      const totalAmount = allRows.reduce((sum, r) => sum + r.amount, 0);
-      const mergedEarliest = allRows.length ? allRows[allRows.length - 1]?.occurredOn ?? null : null;
-      const merged: ReportList = {
-        rows: allRows,
-        totalRows: allRows.length,
-        totalCount,
-        totalAmount,
-        latestRecordDate,
-        earliestInRange: mergedEarliest ?? earliestInRange,
-        hasMore: false,
-        apiVersion,
-      };
+      const rows = chunk.rows.map((r) => ({
+        ...r,
+        staffName: r.staffName ?? null,
+        clientName: r.clientName ?? null,
+        clientPhone: r.clientPhone ?? null,
+      }));
 
-      setReport(merged);
-      setVipMemberPhones(new Set(vipPhones));
-      setLedgerMeta({ totalCount, apiVersion });
-      setDataGeneration((g) => g + 1);
-      setStats({ totalRows: allRows.length, totalAmount });
-
-      if (allRows.length < totalCount) {
-        setError(`僅載入 ${allRows.length} / ${totalCount} 筆，請再按「更新報表」`);
+      setReport({
+        rows,
+        totalRows: rows.length,
+        totalCount: chunk.totalCount,
+        totalAmount: chunk.totalAmount,
+        latestRecordDate: chunk.latestRecordDate,
+        earliestInRange: chunk.earliestInRange,
+        hasMore: chunk.hasMore,
+        apiVersion: chunk.apiVersion ?? 0,
+      });
+      if (chunk.vipMemberPhones?.length) {
+        setVipMemberPhones(new Set(chunk.vipMemberPhones));
       }
+      setLedgerMeta({
+        totalCount: chunk.totalCount,
+        totalAmount: chunk.totalAmount,
+        apiVersion: chunk.apiVersion ?? 0,
+        hasMore: chunk.hasMore,
+      });
+      setLedgerPage(page);
+      setDataGeneration((g) => g + 1);
+      setStats({ totalRows: chunk.totalCount, totalAmount: chunk.totalAmount });
     } catch (e) {
       setError(e instanceof Error ? e.message : '無法載入報表');
       setReport(null);
@@ -187,8 +169,12 @@ export function ReportsDashboard({
   }, [from, to, activeStore, category]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    setLedgerPage(0);
+  }, [from, to, activeStore, category]);
+
+  useEffect(() => {
+    void load(ledgerPage);
+  }, [ledgerPage, load]);
 
   async function handleNormalizeLedger() {
     setNormalizing(true);
@@ -224,8 +210,14 @@ export function ReportsDashboard({
     if (r?.issues.length) {
       setError(r.issues.slice(0, 3).join('；'));
     }
-    await load();
+    await load(0);
   }
+
+  const totalPages = ledgerMeta
+    ? Math.max(1, Math.ceil(ledgerMeta.totalCount / LEDGER_UI_PAGE_SIZE))
+    : 1;
+  const pageStart = ledgerPage * LEDGER_UI_PAGE_SIZE + 1;
+  const pageEnd = Math.min((ledgerPage + 1) * LEDGER_UI_PAGE_SIZE, ledgerMeta?.totalCount ?? 0);
 
   return (
     <div className="flex flex-col gap-5">
@@ -261,7 +253,7 @@ export function ReportsDashboard({
             </select>
           </div>
         ) : null}
-        <Button type="button" size="sm" variant="outline" onClick={() => void load()} disabled={loading}>
+        <Button type="button" size="sm" variant="outline" onClick={() => void load(ledgerPage)} disabled={loading}>
           {loading ? '載入中…' : '更新報表'}
         </Button>
         <Button
@@ -316,7 +308,7 @@ export function ReportsDashboard({
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#888]">
           <span>
             {stats.totalRows > 0 || report
-              ? `共 ${fmt(stats.totalRows)} 筆${ledgerMeta && ledgerMeta.totalCount !== stats.totalRows ? ` / ${fmt(ledgerMeta.totalCount)}` : ''} · 金額合計 $${fmt(stats.totalAmount)}${ledgerMeta ? ` · API v${ledgerMeta.apiVersion}` : ''}`
+              ? `共 ${fmt(stats.totalRows)} 筆 · 金額合計 $${fmt(stats.totalAmount)}${ledgerMeta ? ` · 第 ${ledgerPage + 1}/${totalPages} 頁（${fmt(pageStart)}–${fmt(pageEnd)}）` : ''}`
               : ' '}
           </span>
           <span>
@@ -328,15 +320,40 @@ export function ReportsDashboard({
         </div>
 
         <EditableLedgerTable
-          key={`${dataGeneration}-${sortOrder}`}
+          key={dataGeneration}
           rows={displayRows}
           loading={loading}
           dataGeneration={dataGeneration}
           storeId={activeStore}
           vipMemberPhones={vipMemberPhones}
           onClientClick={setSelectedClient}
-          onStatsChange={setStats}
         />
+
+        {ledgerMeta && totalPages > 1 ? (
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={loading || ledgerPage <= 0}
+              onClick={() => setLedgerPage((p) => Math.max(0, p - 1))}
+            >
+              上一頁
+            </Button>
+            <span className="text-xs text-[#888]">
+              {ledgerPage + 1} / {totalPages}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={loading || !ledgerMeta.hasMore}
+              onClick={() => setLedgerPage((p) => p + 1)}
+            >
+              下一頁
+            </Button>
+          </div>
+        ) : null}
 
         <p className="text-xs text-[#666]">
           點欄位即可編輯，離開欄位自動儲存；點「客人」可查看該客人消費紀錄。更動的帳戶僅現金／富邦；會員使用留空；支出／分紅／轉出為負數；轉入為正數。

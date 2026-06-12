@@ -1,4 +1,4 @@
-import { collectVipMemberPhones, resolveClientFromFields } from '@/lib/ledger-client-display';
+import { resolveClientFromFields } from '@/lib/ledger-client-display';
 import { parseNotionNamePhone } from '@/lib/phone';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { fetchAllPages } from '@/lib/supabase-paginate';
@@ -76,6 +76,30 @@ export async function getEarliestTransactionDate(
 }
 
 const TX_PAGE_SIZE = 1000;
+import { LEDGER_UI_PAGE_SIZE } from '@/lib/ledger-pagination';
+
+async function sumTransactionAmounts(
+  from: string,
+  to: string,
+  storeId?: StoreSlug,
+  category?: TransactionCategory,
+  clientPhone?: string,
+): Promise<number> {
+  const supabase = getSupabaseAdmin();
+  const amounts = await fetchAllPages<{ amount: number }>(async (offset, pageSize) => {
+    let q = supabase
+      .from('daily_transactions')
+      .select('amount')
+      .gte('occurred_on', from)
+      .lte('occurred_on', to)
+      .range(offset, offset + pageSize - 1);
+    if (storeId) q = q.eq('store_id', storeId);
+    if (category) q = q.eq('category', category);
+    if (clientPhone) q = applyClientPhoneQuery(q, clientPhone);
+    return q;
+  });
+  return amounts.reduce((sum, r) => sum + (r.amount ?? 0), 0);
+}
 
 type TxDbRow = {
   id: string;
@@ -104,12 +128,18 @@ function applyClientPhoneQuery<T extends { or: (filters: string) => T }>(
 
 function mapTxRow(row: TxDbRow): DailyTransactionListItem {
   const category = (row.category as TransactionCategory) ?? '一般消費';
-  const identity = resolveClientFromFields(
-    row.title,
-    category,
-    row.client_name,
-    row.client_phone,
-  );
+  let clientName = row.client_name;
+  let clientPhone = row.client_phone;
+  if (!clientName || !clientPhone) {
+    const identity = resolveClientFromFields(
+      row.title,
+      category,
+      row.client_name,
+      row.client_phone,
+    );
+    clientName = identity?.name ?? clientName;
+    clientPhone = identity?.phone ?? clientPhone;
+  }
   return {
     id: row.id,
     occurredOn: row.occurred_on,
@@ -118,26 +148,40 @@ function mapTxRow(row: TxDbRow): DailyTransactionListItem {
     category,
     paymentMethods: row.payment_methods ?? [],
     staffName: row.staff_name ?? null,
-    clientName: identity?.name ?? row.client_name ?? null,
-    clientPhone: identity?.phone ?? row.client_phone ?? null,
+    clientName,
+    clientPhone,
   };
 }
 
 export async function getVipMemberPhones(storeId: StoreSlug): Promise<string[]> {
   const supabase = getSupabaseAdmin();
-  const rows = await fetchAllPages<{
-    category: string;
-    client_phone: string | null;
-    title: string;
-  }>(async (offset, pageSize) =>
-    supabase
-      .from('daily_transactions')
-      .select('category, client_phone, title')
-      .eq('store_id', storeId)
-      .eq('category', '會員儲值')
-      .range(offset, offset + pageSize - 1),
-  );
-  return [...collectVipMemberPhones(rows)];
+  const phones = new Set<string>();
+
+  const { data: withPhone } = await supabase
+    .from('daily_transactions')
+    .select('client_phone')
+    .eq('store_id', storeId)
+    .eq('category', '會員儲值')
+    .not('client_phone', 'is', null);
+
+  for (const row of withPhone ?? []) {
+    if (row.client_phone) phones.add(row.client_phone as string);
+  }
+
+  const { data: titleOnly } = await supabase
+    .from('daily_transactions')
+    .select('title')
+    .eq('store_id', storeId)
+    .eq('category', '會員儲值')
+    .is('client_phone', null)
+    .limit(2000);
+
+  for (const row of titleOnly ?? []) {
+    const parsed = parseNotionNamePhone(row.title as string);
+    if (parsed?.phone) phones.add(parsed.phone);
+  }
+
+  return [...phones];
 }
 
 async function countTransactions(
@@ -242,6 +286,7 @@ export async function listDailyTransactions(
   const mode = options?.mode ?? 'all';
   const clientPhone = options?.clientPhone;
   const totalCount = await countTransactions(from, to, storeId, category, clientPhone);
+  const totalAmount = await sumTransactionAmounts(from, to, storeId, category, clientPhone);
 
   const vipMemberPhones =
     options?.includeVipPhones && storeId ? await getVipMemberPhones(storeId) : undefined;
@@ -264,6 +309,7 @@ export async function listDailyTransactions(
       storeId,
       rows,
       totalCount,
+      totalAmount,
       page,
       pageSize,
       hasMore: start + rows.length < totalCount,
@@ -278,6 +324,7 @@ export async function listDailyTransactions(
     storeId,
     rows,
     totalCount,
+    totalAmount,
     page: 0,
     pageSize: rows.length || pageSize,
     hasMore: false,
@@ -291,13 +338,14 @@ async function buildReportListResult(input: {
   storeId?: StoreSlug;
   rows: DailyTransactionListItem[];
   totalCount: number;
+  totalAmount: number;
   page: number;
   pageSize: number;
   hasMore: boolean;
   vipMemberPhones?: string[];
 }): Promise<ReportListResult> {
-  const { from, to, storeId, rows, totalCount, page, pageSize, hasMore, vipMemberPhones } = input;
-  const totalAmount = rows.reduce((sum, r) => sum + r.amount, 0);
+  const { from, to, storeId, rows, totalCount, totalAmount, page, pageSize, hasMore, vipMemberPhones } =
+    input;
   const latestRecordDate = await getLatestTransactionDate(storeId);
   const earliestInRange = rows.length ? rows[rows.length - 1]?.occurredOn ?? null : null;
 
