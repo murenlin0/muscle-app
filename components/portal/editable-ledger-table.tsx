@@ -52,8 +52,8 @@ const DEFAULT_WIDTHS: Record<ColKey, number> = {
   date: 132,
   title: 340,
   amount: 96,
-  category: 112,
-  payment: 88,
+  category: 120,
+  payment: 80,
   staff: 88,
   client: 140,
 };
@@ -62,13 +62,13 @@ const MIN_WIDTHS: Record<ColKey, number> = {
   date: 112,
   title: 160,
   amount: 80,
-  category: 96,
-  payment: 72,
+  category: 108,
+  payment: 76,
   staff: 64,
   client: 96,
 };
 
-const WIDTHS_STORAGE_KEY = 'muscle-ledger-col-widths-v2';
+const WIDTHS_STORAGE_KEY = 'muscle-ledger-col-widths-v3';
 
 function loadWidths(): Record<ColKey, number> {
   if (typeof window === 'undefined') return DEFAULT_WIDTHS;
@@ -87,14 +87,11 @@ function loadWidths(): Record<ColKey, number> {
 }
 
 const badgeSelect =
-  'inline-block cursor-pointer border bg-transparent px-2.5 py-0.5 text-xs font-medium leading-snug outline-none transition-opacity rounded-full appearance-none text-center';
+  'cursor-pointer border bg-transparent px-2.5 py-0.5 text-xs font-medium leading-snug whitespace-nowrap outline-none transition-opacity rounded-full appearance-none';
 
-/** 框寬 = 目前顯示文字長度 + 左右留白 + 下拉箭頭 */
-function badgeFitWidthCh(label: string): string {
-  const len = Math.max([...label].length, 1);
-  return `${len + 2.5}ch`;
-}
-
+/**
+ * 用隱藏鏡像文字量寬（ch 對中文不準，1ch≈「0」寬度，會把 CJK 擠掉）。
+ */
 function LedgerBadgeSelect({
   value,
   onChange,
@@ -109,14 +106,22 @@ function LedgerBadgeSelect({
   disabled?: boolean;
 }) {
   const selected = options.find((o) => o.value === value)?.label ?? (value || '—');
+  const sharedClass = cn(badgeSelect, badgeClass, 'pr-5');
+
   return (
-    <label className="relative mx-1.5 my-1 inline-flex w-fit max-w-full">
+    <label className="relative mx-1.5 my-1 inline-grid w-fit max-w-full align-middle">
+      <span className={cn(sharedClass, 'invisible col-start-1 row-start-1')} aria-hidden>
+        {selected}
+      </span>
       <select
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className={cn(badgeSelect, badgeClass, 'pr-5', disabled && 'opacity-60')}
-        style={{ width: badgeFitWidthCh(selected) }}
+        className={cn(
+          sharedClass,
+          'col-start-1 row-start-1 w-full min-w-0',
+          disabled && 'opacity-60',
+        )}
         title={selected}
       >
         {options.map((o) => (
@@ -126,7 +131,7 @@ function LedgerBadgeSelect({
         ))}
       </select>
       <span
-        className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] text-current/45"
+        className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-current/45"
         aria-hidden
       >
         ▾
@@ -583,7 +588,7 @@ export function EditableLedgerTable({
                         )}
                       />
                     </td>
-                    <td className="p-0 align-middle whitespace-nowrap w-[1%]">
+                    <td className="overflow-visible p-0 align-middle whitespace-nowrap w-[1%]">
                       <LedgerBadgeSelect
                         value={row.category}
                         badgeClass={CATEGORY_NOTION_STYLE[row.category]}
@@ -604,7 +609,7 @@ export function EditableLedgerTable({
                         }}
                       />
                     </td>
-                    <td className="p-0 align-middle whitespace-nowrap w-[1%]">
+                    <td className="overflow-visible p-0 align-middle whitespace-nowrap w-[1%]">
                       {showAccount ? (
                         <LedgerBadgeSelect
                           value={account}
