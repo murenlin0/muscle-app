@@ -8,6 +8,7 @@ import { StatusBanner } from '@/components/portal/status-banner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { CATEGORY_NOTION_STYLE } from '@/lib/category-styles';
 import type { FinancialOverview } from '@/lib/financial-summary-server';
 import { LEDGER_UI_PAGE_SIZE } from '@/lib/ledger-pagination';
 import { REPORTS_UI_VERSION } from '@/lib/reports-ui-version';
@@ -20,6 +21,20 @@ import {
   type LedgerPresetFilter,
   type TransactionCategory,
 } from '@/lib/transaction-category';
+import { cn } from '@/lib/utils';
+
+function CategoryFilterBadge({ category }: { category: TransactionCategory }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex shrink-0 px-2.5 py-0.5 text-xs font-medium rounded-full border',
+        CATEGORY_NOTION_STYLE[category],
+      )}
+    >
+      {category}
+    </span>
+  );
+}
 
 interface ReportList {
   rows: LedgerRow[];
@@ -94,16 +109,19 @@ export function ReportsDashboard({
     return null;
   }, [ledgerPresetFilter, category]);
 
-  const filterDescription = useMemo(() => {
-    if (ledgerPresetFilter === 'income') {
-      return `類型：${OVERVIEW_INCOME_CATEGORIES.join('、')}`;
-    }
-    if (ledgerPresetFilter === 'expense') {
-      return `類型：${OVERVIEW_EXPENSE_CATEGORIES.join('、')}`;
-    }
-    if (category) return `類型：${category}`;
+  const filterCategories = useMemo((): TransactionCategory[] | null => {
+    if (ledgerPresetFilter === 'income') return [...OVERVIEW_INCOME_CATEGORIES];
+    if (ledgerPresetFilter === 'expense') return [...OVERVIEW_EXPENSE_CATEGORIES];
+    if (category) return [category];
     return null;
   }, [ledgerPresetFilter, category]);
+
+  const filterPresetLabel =
+    ledgerPresetFilter === 'income'
+      ? '營業額(不含儲值)'
+      : ledgerPresetFilter === 'expense'
+        ? '成本'
+        : null;
 
   const displayRows = useMemo(() => {
     const rows = report?.rows ?? [];
@@ -386,19 +404,19 @@ export function ReportsDashboard({
           </div>
         </div>
 
-        {filterDescription ? (
-          <div className="flex flex-wrap items-center gap-2 rounded-md border border-[#3a4a5a] bg-[#1a2430] px-3 py-2 text-sm text-[#9ec5ff]">
-            <span>
-              篩選條件：{filterDescription}
-              {ledgerPresetFilter === 'income'
-                ? '（收入）'
-                : ledgerPresetFilter === 'expense'
-                  ? '（支出）'
-                  : ''}
-            </span>
+        {filterCategories ? (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-2 rounded-md border border-[#333] bg-[#1a1a1a] px-3 py-2.5">
+            <span className="text-sm text-[#888]">篩選條件</span>
+            <span className="text-sm text-[#666]">類型</span>
+            {filterCategories.map((cat) => (
+              <CategoryFilterBadge key={cat} category={cat} />
+            ))}
+            {filterPresetLabel ? (
+              <span className="text-xs text-[#666]">（{filterPresetLabel}）</span>
+            ) : null}
             <button
               type="button"
-              className="rounded px-2 py-0.5 text-[#888] hover:bg-[#252525] hover:text-[#ccc]"
+              className="ml-auto rounded px-2 py-0.5 text-xs text-[#888] hover:bg-[#252525] hover:text-[#ccc]"
               onClick={() => {
                 setLedgerPresetFilter(null);
                 setCategory('');

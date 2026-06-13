@@ -63,54 +63,93 @@ function PanelCard({
 function LineItem({
   label,
   value,
-  onClick,
-  active,
-  bold,
   muted,
 }: {
   label: string;
   value: number;
-  onClick?: () => void;
-  active?: boolean;
-  bold?: boolean;
   muted?: boolean;
 }) {
-  const inner = (
-    <>
-      <span
-        className={cn(
-          'text-sm',
-          muted ? 'text-[#777]' : bold ? 'font-medium text-[#ccc]' : 'text-[#999]',
-        )}
-      >
-        {label}
-      </span>
-      <SignedMoney
-        value={value}
-        className={cn(bold ? 'text-base' : 'text-sm font-medium text-[#d4d4d4]')}
-      />
-    </>
+  return (
+    <div className="flex items-center justify-between px-2 py-2">
+      <span className={cn('text-sm', muted ? 'text-[#777]' : 'text-[#999]')}>{label}</span>
+      <SignedMoney value={value} className="text-sm font-medium text-[#d4d4d4]" />
+    </div>
   );
+}
 
-  if (onClick) {
-    return (
-      <button
-        type="button"
-        onClick={onClick}
-        className={cn(
-          'flex w-full items-center justify-between rounded-md px-2 py-2.5 text-left transition',
-          active ? 'bg-[#252525] ring-1 ring-[#4a6fa5]' : 'hover:bg-[#222]',
-        )}
-      >
-        {inner}
-      </button>
-    );
-  }
+function PnlFilterCard({
+  variant,
+  label,
+  value,
+  active,
+  onClick,
+}: {
+  variant: 'revenue' | 'cost';
+  label: string;
+  value: number;
+  active?: boolean;
+  onClick: () => void;
+}) {
+  const isRevenue = variant === 'revenue';
+  const abs = fmt(Math.abs(value));
 
   return (
-    <div className={cn('flex items-center justify-between px-2 py-2', bold && 'py-2.5')}>
-      {inner}
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex w-full items-center gap-3 rounded-full border px-3 py-2.5 text-left transition',
+        isRevenue
+          ? 'border-[#1e3a5f]/90 bg-[#0c1829]/95 hover:bg-[#122038]'
+          : 'border-[#5f2438]/90 bg-[#1f0c14]/95 hover:bg-[#2a1018]',
+        active &&
+          (isRevenue
+            ? 'ring-1 ring-[#3b82f6]/70 shadow-[0_0_0_1px_rgba(59,130,246,0.15)]'
+            : 'ring-1 ring-[#ef4444]/70 shadow-[0_0_0_1px_rgba(239,68,68,0.15)]'),
+      )}
+    >
+      <span
+        className={cn(
+          'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white',
+          isRevenue ? 'bg-[#2563eb]' : 'bg-[#dc2626]',
+        )}
+        aria-hidden
+      >
+        {isRevenue ? (
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path
+              d="M8 12V4M8 4L5 7M8 4l3 3"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        ) : (
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path
+              d="M8 4v8M8 12l-3-3M8 12l3-3"
+              stroke="currentColor"
+              strokeWidth="1.75"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        )}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-sm font-medium text-white">{label}</span>
+      <span
+        className={cn(
+          'shrink-0 tabular-nums text-base font-semibold tracking-tight',
+          isRevenue ? 'text-[#4da3ff]' : 'text-[#ff6b8a]',
+        )}
+      >
+        {isRevenue ? '+' : '-'}${abs}
+      </span>
+      <span className="shrink-0 text-sm text-[#666]" aria-hidden>
+        ›
+      </span>
+    </button>
   );
 }
 
@@ -162,22 +201,22 @@ export function FinancialOverviewPanel({
       </PanelCard>
 
       <PanelCard title="收支">
-        <div className="space-y-0.5">
-          <LineItem
-            label="收入"
+        <div className="space-y-2.5">
+          <PnlFilterCard
+            variant="revenue"
+            label="營業額(不含儲值)"
             value={incomeStatement.totalIncome}
-            bold
-            onClick={() => togglePreset('income')}
             active={ledgerPresetFilter === 'income'}
+            onClick={() => togglePreset('income')}
           />
-          <LineItem
-            label="支出"
+          <PnlFilterCard
+            variant="cost"
+            label="成本"
             value={incomeStatement.totalExpense}
-            bold
-            onClick={() => togglePreset('expense')}
             active={ledgerPresetFilter === 'expense'}
+            onClick={() => togglePreset('expense')}
           />
-          <div className="mt-1 border-t border-[#2a2a2a] pt-2">
+          <div className="border-t border-[#2a2a2a] pt-2">
             <div className="flex items-center justify-between px-2 py-2.5">
               <span className="text-sm font-medium text-[#ccc]">
                 {incomeStatement.netProfit >= 0 ? '淨利' : '淨損'}
@@ -191,7 +230,7 @@ export function FinancialOverviewPanel({
           </div>
         </div>
         <p className="mt-auto pt-3 text-[10px] text-[#555]">
-          收入＝會員儲值＋一般消費＋會員補差額＋店租收入；支出＝支出＋工資。點收入或支出可篩選下方流水帳。
+          營業額＝一般消費＋會員補差額＋店租收入；成本＝支出＋工資。點擊可篩選下方流水帳。
         </p>
       </PanelCard>
 
