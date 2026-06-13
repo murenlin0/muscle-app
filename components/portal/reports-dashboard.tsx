@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ClientLedgerDrawer } from '@/components/portal/client-ledger-drawer';
 import { EditableLedgerTable, type LedgerRow } from '@/components/portal/editable-ledger-table';
 import { FinancialOverviewPanel } from '@/components/portal/financial-overview-panel';
@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import type { FinancialOverview } from '@/lib/financial-summary-server';
 import { LEDGER_UI_PAGE_SIZE } from '@/lib/ledger-pagination';
+import { REPORTS_UI_VERSION } from '@/lib/reports-ui-version';
 import { STORE_LIST, type StoreSlug } from '@/lib/stores';
 import {
   categoriesForLedgerPreset,
@@ -83,6 +84,7 @@ export function ReportsDashboard({
   const [selectedClient, setSelectedClient] = useState<{ name: string; phone: string } | null>(
     null,
   );
+  const ledgerSectionRef = useRef<HTMLElement>(null);
 
   const activeStore = storeFilter ?? store;
 
@@ -225,6 +227,11 @@ export function ReportsDashboard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [from, to, activeStore, activeCategories]);
 
+  useEffect(() => {
+    if (!ledgerPresetFilter) return;
+    ledgerSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [ledgerPresetFilter]);
+
   /** 翻頁：只抓當頁列，不重抓統計與財務總覽 */
   function goToPage(page: number) {
     void loadLedgerPage(page, false);
@@ -322,7 +329,12 @@ export function ReportsDashboard({
       </div>
 
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold text-[#ccc]">財務總覽</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-[#ccc]">財務總覽</h2>
+          <span className="rounded border border-[#333] bg-[#1a1a1a] px-2 py-0.5 text-[10px] tabular-nums text-[#666]">
+            UI {REPORTS_UI_VERSION}
+          </span>
+        </div>
         <FinancialOverviewPanel
           overview={overview}
           loading={overviewLoading}
@@ -334,7 +346,7 @@ export function ReportsDashboard({
         />
       </section>
 
-      <section className="space-y-3 border-t border-[#333] pt-5">
+      <section ref={ledgerSectionRef} className="space-y-3 border-t border-[#333] pt-5 scroll-mt-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <h2 className="text-sm font-semibold text-[#ccc]">流水帳</h2>
           <div className="flex flex-wrap items-end gap-3">
