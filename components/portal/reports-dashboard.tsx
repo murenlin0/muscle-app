@@ -317,6 +317,9 @@ export function ReportsDashboard({
         <Button type="button" size="sm" variant="outline" onClick={() => void load(ledgerPage)} disabled={loading}>
           {loading ? '載入中…' : '更新報表'}
         </Button>
+        <span className="self-center rounded border border-[#444] bg-[#252525] px-2 py-1 text-[11px] tabular-nums text-[#aaa]">
+          報表 {REPORTS_UI_VERSION}
+        </span>
         <Button
           type="button"
           size="sm"
@@ -457,7 +460,7 @@ export function ReportsDashboard({
         ) : null}
 
         <p className="text-xs text-[#666]">
-          點欄位即可編輯，離開欄位自動儲存；點「客人」可查看該客人消費紀錄。更動的帳戶僅現金／富邦；會員使用留空；支出／分紅／轉出為負數；轉入為正數。
+          表頭欄位右緣可拖曳調整寬度（會記住設定）。點欄位即可編輯，離開欄位自動儲存；點「客人」可查看該客人消費紀錄。更動的帳戶僅現金／富邦；會員使用留空；支出／分紅／轉出為負數；轉入為正數。
         </p>
       </section>
 

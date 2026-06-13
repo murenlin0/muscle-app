@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CATEGORY_NOTION_STYLE, LEDGER_ACCOUNT_STYLE, ledgerAmountClass } from '@/lib/category-styles';
 import {
   syncClientFieldsFromTitle,
@@ -48,22 +48,49 @@ const COL_LABELS: Record<ColKey, string> = {
 
 const colOrder: ColKey[] = ['date', 'title', 'amount', 'category', 'payment', 'staff', 'client'];
 
-/** 欄寬依內容；標題欄可伸縮 */
-const COL_HEADER_CLASS: Record<ColKey, string> = {
-  date: 'whitespace-nowrap',
-  title: '',
-  amount: 'whitespace-nowrap',
-  category: 'whitespace-nowrap w-[1%]',
-  payment: 'whitespace-nowrap w-[1%]',
-  staff: 'whitespace-nowrap',
-  client: 'whitespace-nowrap',
+const DEFAULT_WIDTHS: Record<ColKey, number> = {
+  date: 132,
+  title: 340,
+  amount: 96,
+  category: 112,
+  payment: 88,
+  staff: 88,
+  client: 140,
 };
+
+const MIN_WIDTHS: Record<ColKey, number> = {
+  date: 112,
+  title: 160,
+  amount: 80,
+  category: 96,
+  payment: 72,
+  staff: 64,
+  client: 96,
+};
+
+const WIDTHS_STORAGE_KEY = 'muscle-ledger-col-widths-v2';
+
+function loadWidths(): Record<ColKey, number> {
+  if (typeof window === 'undefined') return DEFAULT_WIDTHS;
+  try {
+    const raw = localStorage.getItem(WIDTHS_STORAGE_KEY);
+    if (!raw) return DEFAULT_WIDTHS;
+    const saved = JSON.parse(raw) as Partial<Record<ColKey, number>>;
+    const merged = { ...DEFAULT_WIDTHS, ...saved };
+    for (const col of colOrder) {
+      merged[col] = Math.max(MIN_WIDTHS[col], merged[col] ?? DEFAULT_WIDTHS[col]);
+    }
+    return merged;
+  } catch {
+    return DEFAULT_WIDTHS;
+  }
+}
 
 const badgeSelect =
   'cursor-pointer border bg-transparent px-2 py-1 text-xs font-medium outline-none transition-opacity rounded-md appearance-none';
 
-function badgeSelectWidth(label: string): string {
-  return `${Math.max(label.length + 2, 4)}ch`;
+function badgeSelectMinCh(labels: string[]): number {
+  return Math.max(4, ...labels.map((l) => l.length)) + 3;
 }
 
 function LedgerBadgeSelect({
@@ -80,14 +107,16 @@ function LedgerBadgeSelect({
   disabled?: boolean;
 }) {
   const selected = options.find((o) => o.value === value)?.label ?? (value || '—');
+  const minCh = badgeSelectMinCh(options.map((o) => o.label));
   return (
-    <label className="relative mx-1 my-1 inline-flex items-center">
+    <label className="relative mx-1 my-1 flex w-[calc(100%-8px)] min-w-0">
       <select
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className={cn(badgeSelect, badgeClass, 'pr-5', disabled && 'opacity-60')}
-        style={{ width: badgeSelectWidth(selected) }}
+        className={cn(badgeSelect, badgeClass, 'w-full min-w-0 truncate pr-5', disabled && 'opacity-60')}
+        style={{ minWidth: `${minCh}ch` }}
+        title={selected}
       >
         {options.map((o) => (
           <option key={o.value || '__empty'} value={o.value} className="bg-[#252525] text-white">
@@ -95,7 +124,7 @@ function LedgerBadgeSelect({
           </option>
         ))}
       </select>
-      <span className="pointer-events-none absolute right-1.5 text-[10px] text-current/50" aria-hidden>
+      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-current/50" aria-hidden>
         ▾
       </span>
     </label>
@@ -166,7 +195,7 @@ function computeTotals(rows: LedgerRow[]) {
 }
 
 const cellInput =
-  'min-w-0 border-0 bg-transparent px-2 py-1.5 text-sm outline-none ring-0 focus:bg-[#2a2a2a] focus:ring-1 focus:ring-[#4a4a4a] rounded-sm transition-colors duration-150';
+  'w-full min-w-0 border-0 bg-transparent px-2 py-1.5 text-sm outline-none ring-0 focus:bg-[#2a2a2a] focus:ring-1 focus:ring-[#4a4a4a] rounded-sm transition-colors duration-150';
 
 export function EditableLedgerTable({
   rows: initialRows,
@@ -186,12 +215,16 @@ export function EditableLedgerTable({
   onStatsChange?: (stats: { totalRows: number; totalAmount: number }) => void;
 }) {
   const [rows, setRows] = useState<LedgerRow[]>(initialRows);
+  const [widths, setWidths] = useState<Record<ColKey, number>>(DEFAULT_WIDTHS);
   const [rowStatus, setRowStatus] = useState<Record<string, RowStatus>>({});
   const [rowError, setRowError] = useState<string | null>(null);
   const [staffOptions, setStaffOptions] = useState<string[]>([]);
 
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
+  const widthsRef = useRef(widths);
+  widthsRef.current = widths;
+  const resizeRef = useRef<{ col: ColKey; startX: number; startW: number } | null>(null);
   const lastSavedRef = useRef<Map<string, string>>(new Map());
   const savedTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const prevDataGenerationRef = useRef(0);
@@ -204,6 +237,41 @@ export function EditableLedgerTable({
     lastSavedRef.current = new Map(initialRows.map((r) => [r.id, rowSnapshot(r)]));
     onStatsChange?.(computeTotals(initialRows));
   }, [dataGeneration, initialRows, onStatsChange]);
+
+  useEffect(() => {
+    setWidths(loadWidths());
+  }, []);
+
+  const persistWidths = useCallback((next: Record<ColKey, number>) => {
+    setWidths(next);
+    localStorage.setItem(WIDTHS_STORAGE_KEY, JSON.stringify(next));
+  }, []);
+
+  useEffect(() => {
+    function onMove(e: MouseEvent) {
+      const r = resizeRef.current;
+      if (!r) return;
+      const delta = e.clientX - r.startX;
+      const next = {
+        ...widthsRef.current,
+        [r.col]: Math.max(MIN_WIDTHS[r.col], r.startW + delta),
+      };
+      widthsRef.current = next;
+      setWidths(next);
+    }
+    function onUp() {
+      if (resizeRef.current) {
+        persistWidths(widthsRef.current);
+        resizeRef.current = null;
+      }
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [persistWidths]);
 
   useEffect(() => {
     let cancelled = false;
@@ -366,6 +434,14 @@ export function EditableLedgerTable({
 
   const showInitialEmpty = loading && rows.length === 0;
 
+  function startResize(col: ColKey, e: React.MouseEvent) {
+    e.preventDefault();
+    resizeRef.current = { col, startX: e.clientX, startW: widths[col] };
+  }
+
+  const tableMinWidth =
+    colOrder.reduce((sum, col) => sum + widths[col], 0) + 48;
+
   return (
     <div className="overflow-hidden rounded-md border border-[#333] bg-[#1c1c1c] shadow-sm">
       {rowError ? (
@@ -389,18 +465,39 @@ export function EditableLedgerTable({
           />
         ) : null}
 
-        <table className="w-max min-w-full border-collapse text-sm table-auto">
+        <table
+          className="w-full table-fixed border-collapse text-sm"
+          style={{ minWidth: tableMinWidth }}
+        >
+          <colgroup>
+            {colOrder.map((col) => (
+              <col key={col} style={{ width: widths[col] }} />
+            ))}
+            <col style={{ width: 48 }} />
+          </colgroup>
           <thead>
             <tr className="border-b border-[#333] bg-[#252525] text-[11px] font-medium tracking-wide text-[#8a8a8a]">
               {colOrder.map((col) => (
                 <th
                   key={col}
-                  className={cn('px-2 py-2 text-left font-medium', COL_HEADER_CLASS[col])}
+                  className={cn(
+                    'relative select-none px-0 py-0 font-medium',
+                    col === 'amount' ? 'text-right' : 'text-left',
+                  )}
                 >
-                  {COL_LABELS[col]}
+                  <div className={cn('flex h-9 items-center px-2', col === 'amount' && 'justify-end')}>
+                    {COL_LABELS[col]}
+                  </div>
+                  <div
+                    role="separator"
+                    aria-orientation="vertical"
+                    title="拖曳調整欄寬"
+                    onMouseDown={(e) => startResize(col, e)}
+                    className="absolute right-0 top-0 z-10 h-full w-1.5 cursor-col-resize hover:bg-[#5c8aff]/40"
+                  />
                 </th>
               ))}
-              <th className="w-12 px-1" />
+              <th className="px-1" />
             </tr>
           </thead>
           <tbody>
@@ -432,7 +529,7 @@ export function EditableLedgerTable({
                       status !== 'saved' && status !== 'error' && 'hover:bg-[#262626]',
                     )}
                   >
-                    <td className={cn('p-0 align-middle', COL_HEADER_CLASS.date)}>
+                    <td className="p-0 align-middle">
                       <input
                         type="date"
                         value={row.occurredOn}
@@ -445,7 +542,6 @@ export function EditableLedgerTable({
                       <input
                         type="text"
                         value={row.title}
-                        size={Math.max(16, Math.min(row.title.length || 16, 72))}
                         onChange={(e) => updateRow(row.id, { title: e.target.value })}
                         onBlur={() => {
                           const current = rowsRef.current.find((r) => r.id === row.id);
@@ -465,10 +561,10 @@ export function EditableLedgerTable({
                           void saveRowById(row.id);
                         }}
                         placeholder="師傅、時長、金額、客人…"
-                        className={cn(cellInput, 'w-auto min-w-[12rem] text-[#ebebeb]')}
+                        className={cn(cellInput, 'text-[#ebebeb]')}
                       />
                     </td>
-                    <td className={cn('p-0 align-middle', COL_HEADER_CLASS.amount)}>
+                    <td className="p-0 align-middle">
                       <input
                         type="number"
                         value={row.amount || ''}
@@ -483,7 +579,7 @@ export function EditableLedgerTable({
                         )}
                       />
                     </td>
-                    <td className={cn('p-0 align-middle', COL_HEADER_CLASS.category)}>
+                    <td className="p-0 align-middle">
                       <LedgerBadgeSelect
                         value={row.category}
                         badgeClass={CATEGORY_NOTION_STYLE[row.category]}
@@ -504,7 +600,7 @@ export function EditableLedgerTable({
                         }}
                       />
                     </td>
-                    <td className={cn('p-0 align-middle', COL_HEADER_CLASS.payment)}>
+                    <td className="p-0 align-middle">
                       {showAccount ? (
                         <LedgerBadgeSelect
                           value={account}
@@ -527,7 +623,7 @@ export function EditableLedgerTable({
                         <span className="block px-2 py-1.5 text-[#555]">—</span>
                       )}
                     </td>
-                    <td className={cn('p-0 align-middle', COL_HEADER_CLASS.staff)}>
+                    <td className="p-0 align-middle">
                       <select
                         value={row.staffName ?? ''}
                         onChange={(e) => {
@@ -549,7 +645,7 @@ export function EditableLedgerTable({
                         ) : null}
                       </select>
                     </td>
-                    <td className={cn('p-0 align-middle', COL_HEADER_CLASS.client)}>
+                    <td className="p-0 align-middle">
                       {(() => {
                         const identity = resolveClientFromFields(
                           row.title,
