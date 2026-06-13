@@ -1,19 +1,26 @@
-/** 流水帳 — 更動的帳戶（僅現金、富邦） */
-export const LEDGER_ACCOUNTS = ['現金', '富邦'] as const;
+/** 流水帳 — 更動的帳戶（現金、富邦，及已停用的 仁中信／街口／Line） */
+export const LEDGER_ACCOUNTS = ['現金', '富邦', '仁中信', '街口', 'Line'] as const;
 
 export type LedgerAccount = (typeof LEDGER_ACCOUNTS)[number];
 
-const LEGACY_BANK_ALIASES = new Set(['line', '街口', '仁中信', '富邦', '轉帳']);
+/** 已停用、餘額已轉空的舊帳戶（仍需在流水帳正確歸類，但財務總覽不單列） */
+export const RETIRED_LEDGER_ACCOUNTS = ['仁中信', '街口', 'Line'] as const;
+
+/** Notion 付款方式（小寫）→ 帳戶名稱 */
+const ACCOUNT_ALIASES: Record<string, LedgerAccount> = {
+  現金: '現金',
+  富邦: '富邦',
+  轉帳: '富邦',
+  仁中信: '仁中信',
+  街口: '街口',
+  line: 'Line',
+};
 
 /** 舊 Notion 付款方式 → 更動的帳戶 */
 export function normalizeLedgerAccount(raw: string): LedgerAccount | null {
   const s = raw.trim();
   if (!s || s === '會員使用') return null;
-  if (s === '現金') return '現金';
-  if (s === '富邦' || LEGACY_BANK_ALIASES.has(s) || LEGACY_BANK_ALIASES.has(s.toLowerCase())) {
-    return '富邦';
-  }
-  return null;
+  return ACCOUNT_ALIASES[s] ?? ACCOUNT_ALIASES[s.toLowerCase()] ?? null;
 }
 
 export function normalizeLedgerAccounts(
