@@ -9,7 +9,7 @@ import {
   formatClientKeyLabel,
   resolveClientFromFields,
 } from '@/lib/ledger-client-display';
-import { latestClientBalanceFromTitles } from '@/lib/ledger-title-balance';
+import { clientMemberBalance } from '@/lib/ledger-title-balance';
 import type { StoreSlug } from '@/lib/stores';
 import { cn } from '@/lib/utils';
 
@@ -122,16 +122,18 @@ export function ClientLedgerDrawer({
 
   const balance = useMemo(() => {
     if (!client) return null;
-    return latestClientBalanceFromTitles(
-      rows.map((r) => ({
+    const memberRows = rows
+      .filter((r) => ['會員儲值', '會員使用', '會員補差額'].includes(r.category))
+      .map((r) => ({
         id: r.id,
         occurred_on: r.occurredOn,
         title: r.title,
+        amount: r.amount,
+        category: r.category,
         client_name: r.clientName,
         client_phone: r.clientPhone,
-      })),
-      client.phone,
-    );
+      }));
+    return clientMemberBalance(memberRows, client.phone);
   }, [client, rows]);
 
   if (!mounted || !open || !client) return null;

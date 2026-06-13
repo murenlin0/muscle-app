@@ -387,3 +387,20 @@ export function buildNotionPaymentUpdate(paymentMethods: string[]) {
     },
   };
 }
+
+/** 封存（刪除）Notion 頁面 */
+export async function archiveNotionPage(pageId: string): Promise<void> {
+  const res = await fetch(`https://api.notion.com/v1/pages/${pageId}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${notionToken()}`,
+      'Notion-Version': NOTION_VERSION,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ archived: true }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw wrapNotionError(res.status, body);
+  }
+}

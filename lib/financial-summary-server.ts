@@ -2,7 +2,7 @@ import { getSupabaseAdmin } from '@/lib/supabase';
 import { fetchAllPages } from '@/lib/supabase-paginate';
 import { primaryLedgerAccount } from '@/lib/ledger-accounts';
 import { sumLedgerAccountBalances } from '@/lib/ledger-balances';
-import { sumUnusedBalancesFromTitles } from '@/lib/ledger-title-balance';
+import { sumUnusedMemberBalances, type MemberBalanceRow } from '@/lib/ledger-title-balance';
 import type { StoreSlug } from '@/lib/stores';
 import {
   isPnlExpenseCategory,
@@ -27,7 +27,7 @@ export interface FinancialOverview {
     total: number;
     cashOnHand: number;
     bankAccounts: number;
-    /** 標題頓號後餘額加總（每位客人取最新一筆） */
+    /** 會員儲值/使用/補差額 signed 加總（逐客人累計後加總） */
     unusedMemberBalance: number;
     /** @deprecated 使用 unusedMemberBalance */
     deferredRevenue: number;
@@ -52,12 +52,9 @@ export interface FinancialOverview {
   }>;
 }
 
-interface TxRow {
+interface TxRow extends MemberBalanceRow {
   id: string;
   occurred_on: string;
-  title: string;
-  client_name: string | null;
-  client_phone: string | null;
 }
 
 interface ReceivableRow {
@@ -102,11 +99,10 @@ async function fetchUnusedBalanceRows(storeId: StoreSlug, to: string): Promise<T
   return fetchAllPages<TxRow>(async (offset, pageSize) =>
     supabase
       .from('daily_transactions')
-      .select('id, occurred_on, title, client_name, client_phone')
+      .select('id, occurred_on, title, amount, category, client_name, client_phone')
       .eq('store_id', storeId)
       .lte('occurred_on', to)
       .in('category', ['會員儲值', '會員使用', '會員補差額'])
-      .like('title', '%、%')
       .order('occurred_on', { ascending: true })
       .order('id', { ascending: true })
       .range(offset, offset + pageSize - 1),
@@ -144,7 +140,7 @@ export async function getFinancialOverview(
 
   const { cashOnHand, bankAccounts } = sumLedgerAccountBalances(balanceRows);
 
-  const unusedMemberBalance = sumUnusedBalancesFromTitles(unusedRows);
+  const unusedMemberBalance = sumUnusedMemberBalances(unusedRows);
   let accountsReceivable = 0;
 
   for (const row of balanceRows as ReceivableRow[]) {

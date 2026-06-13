@@ -89,6 +89,19 @@ export interface TitleBalanceRow {
   client_phone?: string | null;
 }
 
+export interface MemberBalanceRow extends TitleBalanceRow {
+  amount: number;
+  category: string;
+}
+
+/** 會員列 signed 金額：儲值/補差額 +，使用 -（對齊 Notion 會員餘額公式） */
+export function memberRowSignedAmount(category: string, amount: number): number {
+  const a = Math.round(amount ?? 0);
+  if (category === '會員使用') return -a;
+  if (category === '會員儲值' || category === '會員補差額') return a;
+  return 0;
+}
+
 function clientPhoneKey(row: TitleBalanceRow): string | null {
   if (row.client_phone) return row.client_phone;
   const parsed = parseNotionNamePhone(row.title);
@@ -106,24 +119,63 @@ function clientNameKey(row: TitleBalanceRow): string | null {
   return last?.[1] ?? null;
 }
 
-/**
- * 餘額未使用：每位客人（電話歸戶，無電話時用名字歸戶）只取最新一筆
- * 含頓號餘額的標題，加總其頓號後數字。
- */
-export function sumUnusedBalancesFromTitles(rows: TitleBalanceRow[]): number {
-  // 名字 → 電話 對照：讓「許芳榮老婆/VIP許芳榮」這類無電話列歸到本人帳上
+function buildNameToPhone(rows: TitleBalanceRow[]): Map<string, string> {
   const nameToPhone = new Map<string, string>();
   for (const row of rows) {
     const phone = clientPhoneKey(row);
     const name = clientNameKey(row);
     if (phone && name && !nameToPhone.has(name)) nameToPhone.set(name, phone);
   }
+  return nameToPhone;
+}
+
+function clientGroupKey(row: TitleBalanceRow, nameToPhone: Map<string, string>): string | null {
+  const phone = clientPhoneKey(row);
+  const name = clientNameKey(row);
+  return phone ?? (name ? nameToPhone.get(name) ?? `name:${name}` : null);
+}
+
+/**
+ * 餘額未使用：每位客人加總 會員儲值/使用/補差額 的 signed 金額，再全部加總。
+ * 與 Notion「會員餘額」公式逐客人加總一致。
+ */
+export function sumUnusedMemberBalances(rows: MemberBalanceRow[]): number {
+  const nameToPhone = buildNameToPhone(rows);
+  const nets = new Map<string, number>();
+  for (const row of rows) {
+    const key = clientGroupKey(row, nameToPhone);
+    if (!key) continue;
+    nets.set(key, (nets.get(key) ?? 0) + memberRowSignedAmount(row.category, row.amount));
+  }
+  let sum = 0;
+  for (const net of nets.values()) sum += net;
+  return sum;
+}
+
+/** 單一客人會員餘額（儲值 - 使用 + 補差額） */
+export function clientMemberBalance(rows: MemberBalanceRow[], phone: string): number | null {
+  let sum = 0;
+  let any = false;
+  for (const row of rows) {
+    if (clientPhoneKey(row) !== phone) continue;
+    if (!['會員儲值', '會員使用', '會員補差額'].includes(row.category)) continue;
+    sum += memberRowSignedAmount(row.category, row.amount);
+    any = true;
+  }
+  return any ? sum : null;
+}
+
+/**
+ * @deprecated 改用 sumUnusedMemberBalances；仍供稽核腳本比對頓號餘額
+ * 餘額未使用：每位客人（電話歸戶，無電話時用名字歸戶）只取最新一筆
+ * 含頓號餘額的標題，加總其頓號後數字。
+ */
+export function sumUnusedBalancesFromTitles(rows: TitleBalanceRow[]): number {
+  const nameToPhone = buildNameToPhone(rows);
 
   const rowsByClient = new Map<string, TitleBalanceRow[]>();
   for (const row of rows) {
-    const phone = clientPhoneKey(row);
-    const name = clientNameKey(row);
-    const key = phone ?? (name ? nameToPhone.get(name) ?? `name:${name}` : null);
+    const key = clientGroupKey(row, nameToPhone);
     if (!key) continue;
     const arr = rowsByClient.get(key);
     if (arr) arr.push(row);
