@@ -329,6 +329,49 @@ export function buildNotionTitleUpdate(title: string) {
   };
 }
 
+export interface CreateNotionDailyPageInput {
+  title: string;
+  date: string;
+  amount: number;
+  serviceType: string;
+  staffName?: string | null;
+  paymentMethods?: string[];
+}
+
+/** 在 store1 每日紀錄資料庫新增一頁，回傳新 pageId */
+export async function createNotionDailyPage(
+  input: CreateNotionDailyPageInput,
+  databaseId = NOTION_STORE1_DAILY_DB_ID,
+): Promise<string> {
+  const properties: Record<string, unknown> = {
+    名稱電話: { title: [{ type: 'text', text: { content: input.title } }] },
+    Date: { date: { start: input.date } },
+    金額數字: { number: input.amount },
+    消費類型: { select: { name: input.serviceType } },
+  };
+  if (input.staffName) properties['師傅'] = { select: { name: input.staffName } };
+  if (input.paymentMethods?.length) {
+    properties['付款方式'] = { multi_select: input.paymentMethods.map((name) => ({ name })) };
+  }
+
+  const res = await fetch('https://api.notion.com/v1/pages', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${notionToken()}`,
+      'Notion-Version': NOTION_VERSION,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ parent: { database_id: databaseId }, properties }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw wrapNotionError(res.status, body);
+  }
+  const data = (await res.json()) as { id: string };
+  return data.id;
+}
+
 export function buildNotionStaffUpdate(staffName: string) {
   return {
     師傅: {
