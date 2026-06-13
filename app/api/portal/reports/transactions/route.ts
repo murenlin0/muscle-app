@@ -14,6 +14,7 @@ export async function GET(request: Request) {
   const to = url.searchParams.get('to');
   const storeParam = url.searchParams.get('store') as StoreSlug | null;
   const categoryParam = url.searchParams.get('category');
+  const categoriesParam = url.searchParams.get('categories');
   const pageParam = url.searchParams.get('page');
   const pageSizeParam = url.searchParams.get('pageSize');
   const clientPhoneParam = url.searchParams.get('clientPhone');
@@ -40,8 +41,20 @@ export async function GET(request: Request) {
       ? (categoryParam as TransactionCategory)
       : undefined;
 
+  const categories = categoriesParam
+    ? categoriesParam
+        .split(',')
+        .map((c) => c.trim())
+        .filter((c): c is TransactionCategory =>
+          (TRANSACTION_CATEGORIES as readonly string[]).includes(c),
+        )
+    : undefined;
+
+  const categoryFilter =
+    categories && categories.length > 0 ? categories : category;
+
   try {
-    const report = await listDailyTransactions(from, to, storeId, category, {
+    const report = await listDailyTransactions(from, to, storeId, categoryFilter, {
       mode,
       page: pageParam !== null ? Number(pageParam) : undefined,
       pageSize: pageSizeParam ? Number(pageSizeParam) : undefined,

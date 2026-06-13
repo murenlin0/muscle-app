@@ -11,6 +11,25 @@ import {
   type TransactionCategory,
 } from '@/lib/transaction-category';
 
+export type TransactionCategoryFilter = TransactionCategory | TransactionCategory[];
+
+function normalizeCategories(
+  filter?: TransactionCategoryFilter,
+): TransactionCategory[] | undefined {
+  if (!filter) return undefined;
+  return Array.isArray(filter) ? filter : [filter];
+}
+
+function applyCategoryFilter<T extends { eq: Function; in: Function }>(
+  q: T,
+  filter?: TransactionCategoryFilter,
+): T {
+  const categories = normalizeCategories(filter);
+  if (!categories?.length) return q;
+  if (categories.length === 1) return q.eq('category', categories[0]) as T;
+  return q.in('category', categories) as T;
+}
+
 export interface DailyTransactionListItem {
   id: string;
   occurredOn: string;
@@ -82,7 +101,7 @@ async function sumTransactionAmounts(
   from: string,
   to: string,
   storeId?: StoreSlug,
-  category?: TransactionCategory,
+  category?: TransactionCategoryFilter,
   clientPhone?: string,
 ): Promise<number> {
   const supabase = getSupabaseAdmin();
@@ -94,7 +113,7 @@ async function sumTransactionAmounts(
       .lte('occurred_on', to)
       .range(offset, offset + pageSize - 1);
     if (storeId) q = q.eq('store_id', storeId);
-    if (category) q = q.eq('category', category);
+    q = applyCategoryFilter(q, category);
     if (clientPhone) q = applyClientPhoneQuery(q, clientPhone);
     return q;
   });
@@ -188,7 +207,7 @@ async function countTransactions(
   from: string,
   to: string,
   storeId?: StoreSlug,
-  category?: TransactionCategory,
+  category?: TransactionCategoryFilter,
   clientPhone?: string,
 ): Promise<number> {
   const supabase = getSupabaseAdmin();
@@ -198,7 +217,7 @@ async function countTransactions(
     .gte('occurred_on', from)
     .lte('occurred_on', to);
   if (storeId) q = q.eq('store_id', storeId);
-  if (category) q = q.eq('category', category);
+  q = applyCategoryFilter(q, category);
   if (clientPhone) q = applyClientPhoneQuery(q, clientPhone);
   const { count, error } = await q;
   if (error) throw new Error(error.message);
@@ -209,7 +228,7 @@ async function fetchTransactionRows(
   from: string,
   to: string,
   storeId?: StoreSlug,
-  category?: TransactionCategory,
+  category?: TransactionCategoryFilter,
   clientPhone?: string,
 ): Promise<DailyTransactionListItem[]> {
   const supabase = getSupabaseAdmin();
@@ -227,7 +246,7 @@ async function fetchTransactionRows(
       .order('id', { ascending: false })
       .range(offset, offset + pageSize - 1);
     if (storeId) q = q.eq('store_id', storeId);
-    if (category) q = q.eq('category', category);
+    q = applyCategoryFilter(q, category);
     if (clientPhone) q = applyClientPhoneQuery(q, clientPhone);
     return q;
   });
@@ -239,7 +258,7 @@ async function fetchTransactionPage(
   from: string,
   to: string,
   storeId: StoreSlug | undefined,
-  category: TransactionCategory | undefined,
+  category: TransactionCategoryFilter | undefined,
   page: number,
   pageSize: number,
   clientPhone?: string,
@@ -254,7 +273,7 @@ async function fetchTransactionPage(
     .gte('occurred_on', from)
     .lte('occurred_on', to);
   if (storeId) q = q.eq('store_id', storeId);
-  if (category) q = q.eq('category', category);
+  q = applyCategoryFilter(q, category);
   if (clientPhone) q = applyClientPhoneQuery(q, clientPhone);
   q = q
     .order('occurred_on', { ascending: false })
@@ -274,7 +293,7 @@ export async function listDailyTransactions(
   from: string,
   to: string,
   storeId?: StoreSlug,
-  category?: TransactionCategory,
+  category?: TransactionCategoryFilter,
   options?: {
     page?: number;
     pageSize?: number;

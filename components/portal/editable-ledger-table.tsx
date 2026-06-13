@@ -60,7 +60,47 @@ const COL_HEADER_CLASS: Record<ColKey, string> = {
 };
 
 const badgeSelect =
-  'mx-1 my-1 w-auto max-w-full cursor-pointer px-2 py-1 text-xs font-medium outline-none transition-opacity rounded-md';
+  'cursor-pointer border bg-transparent px-2 py-1 text-xs font-medium outline-none transition-opacity rounded-md appearance-none';
+
+function badgeSelectWidth(label: string): string {
+  return `${Math.max(label.length + 2, 4)}ch`;
+}
+
+function LedgerBadgeSelect({
+  value,
+  onChange,
+  options,
+  badgeClass,
+  disabled,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  badgeClass: string;
+  disabled?: boolean;
+}) {
+  const selected = options.find((o) => o.value === value)?.label ?? (value || '—');
+  return (
+    <label className="relative mx-1 my-1 inline-flex items-center">
+      <select
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        className={cn(badgeSelect, badgeClass, 'pr-5', disabled && 'opacity-60')}
+        style={{ width: badgeSelectWidth(selected) }}
+      >
+        {options.map((o) => (
+          <option key={o.value || '__empty'} value={o.value} className="bg-[#252525] text-white">
+            {o.label}
+          </option>
+        ))}
+      </select>
+      <span className="pointer-events-none absolute right-1.5 text-[10px] text-current/50" aria-hidden>
+        ▾
+      </span>
+    </label>
+  );
+}
 
 function todayIso() {
   const d = new Date();
@@ -126,7 +166,7 @@ function computeTotals(rows: LedgerRow[]) {
 }
 
 const cellInput =
-  'w-full min-w-0 border-0 bg-transparent px-2 py-1.5 text-sm outline-none ring-0 focus:bg-[#2a2a2a] focus:ring-1 focus:ring-[#4a4a4a] rounded-sm transition-colors duration-150';
+  'min-w-0 border-0 bg-transparent px-2 py-1.5 text-sm outline-none ring-0 focus:bg-[#2a2a2a] focus:ring-1 focus:ring-[#4a4a4a] rounded-sm transition-colors duration-150';
 
 export function EditableLedgerTable({
   rows: initialRows,
@@ -444,60 +484,45 @@ export function EditableLedgerTable({
                       />
                     </td>
                     <td className={cn('p-0 align-middle', COL_HEADER_CLASS.category)}>
-                      <select
+                      <LedgerBadgeSelect
                         value={row.category}
-                        onChange={(e) => {
-                          const category = e.target.value as TransactionCategory;
-                          const detected = syncClientFieldsFromTitle(row.title, category, {
+                        badgeClass={CATEGORY_NOTION_STYLE[row.category]}
+                        disabled={status === 'saving'}
+                        options={TRANSACTION_CATEGORIES.map((c) => ({ value: c, label: c }))}
+                        onChange={(category) => {
+                          const cat = category as TransactionCategory;
+                          const detected = syncClientFieldsFromTitle(row.title, cat, {
                             clientName: row.clientName,
                             clientPhone: row.clientPhone,
                           });
                           updateRow(row.id, {
-                            category,
+                            category: cat,
                             clientName: detected.clientName,
                             clientPhone: detected.clientPhone,
                           });
                           void saveRowById(row.id);
                         }}
-                        className={cn(
-                          badgeSelect,
-                          CATEGORY_NOTION_STYLE[row.category],
-                          status === 'saving' && 'opacity-60',
-                        )}
-                      >
-                        {TRANSACTION_CATEGORIES.map((c) => (
-                          <option key={c} value={c} className="bg-[#252525] text-white">
-                            {c}
-                          </option>
-                        ))}
-                      </select>
+                      />
                     </td>
                     <td className={cn('p-0 align-middle', COL_HEADER_CLASS.payment)}>
                       {showAccount ? (
-                        <select
+                        <LedgerBadgeSelect
                           value={account}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            updateRow(row.id, {
-                              paymentMethods: v ? [v] : [],
-                            });
-                            void saveRowById(row.id);
-                          }}
-                          className={cn(
-                            badgeSelect,
+                          badgeClass={
                             account
                               ? LEDGER_ACCOUNT_STYLE[account]
-                              : 'border border-[#444] text-[#888]',
-                            status === 'saving' && 'opacity-60',
-                          )}
-                        >
-                          <option value="">—</option>
-                          {LEDGER_ACCOUNTS.map((a) => (
-                            <option key={a} value={a}>
-                              {a}
-                            </option>
-                          ))}
-                        </select>
+                              : 'border border-[#444] text-[#888]'
+                          }
+                          disabled={status === 'saving'}
+                          options={[
+                            { value: '', label: '—' },
+                            ...LEDGER_ACCOUNTS.map((a) => ({ value: a, label: a })),
+                          ]}
+                          onChange={(v) => {
+                            updateRow(row.id, { paymentMethods: v ? [v] : [] });
+                            void saveRowById(row.id);
+                          }}
+                        />
                       ) : (
                         <span className="block px-2 py-1.5 text-[#555]">—</span>
                       )}
@@ -525,6 +550,8 @@ export function EditableLedgerTable({
                       </select>
                     </td>
                     <td className={cn('p-0 align-middle', COL_HEADER_CLASS.client)}>
+                      {(() => {
+                        const identity = resolveClientFromFields(
                           row.title,
                           row.category,
                           row.clientName,

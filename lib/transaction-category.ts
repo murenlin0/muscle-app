@@ -9,8 +9,22 @@ export const TRANSACTION_CATEGORIES = [
   '支出',
   '工資',
   '收入',
+  '店租收入',
   '分紅',
 ] as const;
+
+/** 財務總覽「收入」加總用的類型 */
+export const OVERVIEW_INCOME_CATEGORIES = [
+  '會員儲值',
+  '一般消費',
+  '會員補差額',
+  '店租收入',
+] as const satisfies readonly TransactionCategory[];
+
+/** 財務總覽「支出」加總用的類型 */
+export const OVERVIEW_EXPENSE_CATEGORIES = ['支出', '工資'] as const satisfies readonly TransactionCategory[];
+
+export type LedgerPresetFilter = 'income' | 'expense';
 
 export type TransactionCategory = (typeof TRANSACTION_CATEGORIES)[number];
 
@@ -37,6 +51,7 @@ const NOTION_TYPE_TO_CATEGORY: Record<string, TransactionCategory | typeof LEGAC
   支出: '支出',
   工資: '工資',
   收入: '收入',
+  店租收入: '店租收入',
   分紅: '分紅',
 };
 
@@ -61,6 +76,7 @@ const REVENUE_CATEGORIES = new Set<TransactionCategory>([
   '會員儲值',
   '會員補差額',
   '收入',
+  '店租收入',
 ]);
 
 export function isRevenueCategory(category: TransactionCategory): boolean {
@@ -79,4 +95,18 @@ export function isPnlIncomeCategory(category: TransactionCategory): boolean {
 
 export function isPnlExpenseCategory(category: TransactionCategory): boolean {
   return category === '支出' || category === '工資' || category === '分紅';
+}
+
+export function isOverviewIncomeCategory(category: TransactionCategory): boolean {
+  return (OVERVIEW_INCOME_CATEGORIES as readonly string[]).includes(category);
+}
+
+export function isOverviewExpenseCategory(category: TransactionCategory): boolean {
+  return (OVERVIEW_EXPENSE_CATEGORIES as readonly string[]).includes(category);
+}
+
+export function categoriesForLedgerPreset(preset: LedgerPresetFilter): TransactionCategory[] {
+  return preset === 'income'
+    ? [...OVERVIEW_INCOME_CATEGORIES]
+    : [...OVERVIEW_EXPENSE_CATEGORIES];
 }

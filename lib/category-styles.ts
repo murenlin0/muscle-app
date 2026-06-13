@@ -11,6 +11,7 @@ export const CATEGORY_NOTION_STYLE: Record<TransactionCategory, string> = {
   支出: 'bg-transparent text-sky-300/90 border border-sky-400/50 rounded-md',
   工資: 'bg-transparent text-zinc-300/90 border border-zinc-500/50 rounded-md',
   收入: 'bg-transparent text-yellow-200/90 border border-yellow-500/45 rounded-md',
+  店租收入: 'bg-transparent text-lime-300/90 border border-lime-500/45 rounded-md',
   分紅: 'bg-transparent text-red-300/90 border border-red-400/50 rounded-md',
 };
 

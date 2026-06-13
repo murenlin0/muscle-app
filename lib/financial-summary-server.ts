@@ -5,8 +5,8 @@ import { sumLedgerAccountBalances } from '@/lib/ledger-balances';
 import { sumUnusedMemberBalances, type MemberBalanceRow } from '@/lib/ledger-title-balance';
 import type { StoreSlug } from '@/lib/stores';
 import {
-  isPnlExpenseCategory,
-  isPnlIncomeCategory,
+  isOverviewExpenseCategory,
+  isOverviewIncomeCategory,
   type TransactionCategory,
 } from '@/lib/transaction-category';
 
@@ -156,37 +156,27 @@ export async function getFinancialOverview(
   }
   const totalAssets = cashOnHand + bankAccounts;
 
-  let serviceIncome = 0;
-  let subleaseIncome = 0;
+  let totalIncome = 0;
+  let totalExpense = 0;
   const breakdown = emptyBreakdown();
 
   for (const row of periodRows) {
     const cat = row.category as TransactionCategory;
     const amt = row.amount ?? 0;
 
-    if (cat === '收入') {
-      subleaseIncome += Math.abs(amt);
-    } else if (isPnlIncomeCategory(cat)) {
-      serviceIncome += Math.abs(amt);
-    } else if (isPnlExpenseCategory(cat)) {
+    if (isOverviewIncomeCategory(cat)) {
+      totalIncome += Math.abs(amt);
+    } else if (isOverviewExpenseCategory(cat)) {
       const expenseAmt = Math.abs(amt);
-      if (cat === '支出' || cat === '工資') {
-        const key = classifyExpense(row.title, cat);
-        breakdown[key] += expenseAmt;
-      } else if (cat === '分紅') {
-        breakdown.其他 += expenseAmt;
-      }
+      totalExpense += expenseAmt;
+      breakdown[classifyExpense(row.title, cat)] += expenseAmt;
+    } else if (cat === '分紅') {
+      breakdown.其他 += Math.abs(amt);
     }
   }
 
-  const totalExpense =
-    breakdown.添購 +
-    breakdown.房租 +
-    breakdown.水電 +
-    breakdown.廣告 +
-    breakdown.師傅薪水 +
-    breakdown.其他;
-  const totalIncome = serviceIncome + subleaseIncome;
+  const serviceIncome = totalIncome;
+  const subleaseIncome = 0;
   const netProfit = totalIncome - totalExpense;
 
   const supabase = getSupabaseAdmin();

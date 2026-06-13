@@ -11,7 +11,14 @@ import { Label } from '@/components/ui/label';
 import type { FinancialOverview } from '@/lib/financial-summary-server';
 import { LEDGER_UI_PAGE_SIZE } from '@/lib/ledger-pagination';
 import { STORE_LIST, type StoreSlug } from '@/lib/stores';
-import { TRANSACTION_CATEGORIES, type TransactionCategory } from '@/lib/transaction-category';
+import {
+  categoriesForLedgerPreset,
+  OVERVIEW_EXPENSE_CATEGORIES,
+  OVERVIEW_INCOME_CATEGORIES,
+  TRANSACTION_CATEGORIES,
+  type LedgerPresetFilter,
+  type TransactionCategory,
+} from '@/lib/transaction-category';
 
 interface ReportList {
   rows: LedgerRow[];
@@ -54,6 +61,7 @@ export function ReportsDashboard({
   const [to, setTo] = useState(today());
   const [store, setStore] = useState<StoreSlug>(storeFilter ?? 'store1');
   const [category, setCategory] = useState<TransactionCategory | ''>('');
+  const [ledgerPresetFilter, setLedgerPresetFilter] = useState<LedgerPresetFilter | null>(null);
   const [report, setReport] = useState<ReportList | null>(null);
   const [overview, setOverview] = useState<FinancialOverview | null>(null);
   const [stats, setStats] = useState({ totalRows: 0, totalAmount: 0 });
@@ -77,6 +85,23 @@ export function ReportsDashboard({
   );
 
   const activeStore = storeFilter ?? store;
+
+  const activeCategories = useMemo(() => {
+    if (ledgerPresetFilter) return categoriesForLedgerPreset(ledgerPresetFilter);
+    if (category) return [category];
+    return null;
+  }, [ledgerPresetFilter, category]);
+
+  const filterDescription = useMemo(() => {
+    if (ledgerPresetFilter === 'income') {
+      return `類型：${OVERVIEW_INCOME_CATEGORIES.join('、')}`;
+    }
+    if (ledgerPresetFilter === 'expense') {
+      return `類型：${OVERVIEW_EXPENSE_CATEGORIES.join('、')}`;
+    }
+    if (category) return `類型：${category}`;
+    return null;
+  }, [ledgerPresetFilter, category]);
 
   const displayRows = useMemo(() => {
     const rows = report?.rows ?? [];
@@ -107,7 +132,11 @@ export function ReportsDashboard({
       qs.set('page', String(page));
       qs.set('pageSize', String(LEDGER_UI_PAGE_SIZE));
       if (!withMeta) qs.set('meta', '0');
-      if (category) qs.set('category', category);
+      if (activeCategories?.length === 1) {
+        qs.set('category', activeCategories[0]!);
+      } else if (activeCategories && activeCategories.length > 1) {
+        qs.set('categories', activeCategories.join(','));
+      }
 
       try {
         const txRes = await fetch(`/api/portal/reports/transactions?${qs}`, { cache: 'no-store' });
@@ -157,7 +186,7 @@ export function ReportsDashboard({
         setLoading(false);
       }
     },
-    [from, to, activeStore, category],
+    [from, to, activeStore, activeCategories],
   );
 
   const loadOverview = useCallback(async () => {
@@ -194,7 +223,7 @@ export function ReportsDashboard({
   useEffect(() => {
     void load(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to, activeStore, category]);
+  }, [from, to, activeStore, activeCategories]);
 
   /** 翻頁：只抓當頁列，不重抓統計與財務總覽 */
   function goToPage(page: number) {
@@ -294,7 +323,15 @@ export function ReportsDashboard({
 
       <section className="space-y-3">
         <h2 className="text-sm font-semibold text-[#ccc]">財務總覽</h2>
-        <FinancialOverviewPanel overview={overview} loading={overviewLoading} />
+        <FinancialOverviewPanel
+          overview={overview}
+          loading={overviewLoading}
+          ledgerPresetFilter={ledgerPresetFilter}
+          onLedgerPresetFilter={(preset) => {
+            setLedgerPresetFilter(preset);
+            if (preset) setCategory('');
+          }}
+        />
       </section>
 
       <section className="space-y-3 border-t border-[#333] pt-5">
@@ -305,7 +342,11 @@ export function ReportsDashboard({
               <Label className="text-xs text-[#888]">類型篩選</Label>
               <select
                 value={category}
-                onChange={(e) => setCategory(e.target.value as TransactionCategory | '')}
+                onChange={(e) => {
+                  const next = e.target.value as TransactionCategory | '';
+                  setCategory(next);
+                  if (next) setLedgerPresetFilter(null);
+                }}
                 className="flex h-9 min-w-[8rem] rounded-md border border-[#444] bg-[#252525] px-2 text-sm"
               >
                 <option value="">全部</option>
@@ -329,6 +370,29 @@ export function ReportsDashboard({
             </div>
           </div>
         </div>
+
+        {filterDescription ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-[#3a4a5a] bg-[#1a2430] px-3 py-2 text-sm text-[#9ec5ff]">
+            <span>
+              篩選條件：{filterDescription}
+              {ledgerPresetFilter === 'income'
+                ? '（收入）'
+                : ledgerPresetFilter === 'expense'
+                  ? '（支出）'
+                  : ''}
+            </span>
+            <button
+              type="button"
+              className="rounded px-2 py-0.5 text-[#888] hover:bg-[#252525] hover:text-[#ccc]"
+              onClick={() => {
+                setLedgerPresetFilter(null);
+                setCategory('');
+              }}
+            >
+              清除篩選
+            </button>
+          </div>
+        ) : null}
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[#888]">
           <span>
