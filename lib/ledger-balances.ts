@@ -4,18 +4,13 @@ export interface LedgerBalanceRow {
   payment_methods: string[];
 }
 
-const BANK_PM_ALIASES = new Set(['富邦', 'Line', '街口', '仁中信', '轉帳', 'line']);
-
-function paymentMethodsHaveBank(pm: string[]): boolean {
-  return pm.some((p) => BANK_PM_ALIASES.has(p) || BANK_PM_ALIASES.has(p.toLowerCase()));
-}
-
 /**
- * Notion 餘額算法：付款方式含現金／銀行帳戶者，各加一次資料庫內原始金額。
- * （與 Notion 報表加總一致，不依類型翻轉正負號）
+ * Notion 餘額算法：更動的帳戶含「現金」或「富邦」者，各加一次資料庫內原始金額。
+ * （與 Notion 報表加總一致，不依類型翻轉正負號；略過會員使用）
  */
 export function sumLedgerAccountBalances(rows: LedgerBalanceRow[]): {
   cashOnHand: number;
+  /** 更動的帳戶＝富邦 之流水金額加總（不含 Line／街口／仁中信等已停用帳戶） */
   bankAccounts: number;
 } {
   let cashOnHand = 0;
@@ -27,7 +22,7 @@ export function sumLedgerAccountBalances(rows: LedgerBalanceRow[]): {
 
     const amt = Math.round(row.amount ?? 0);
     if (pm.includes('現金')) cashOnHand += amt;
-    if (paymentMethodsHaveBank(pm)) bankAccounts += amt;
+    if (pm.includes('富邦')) bankAccounts += amt;
   }
 
   return { cashOnHand, bankAccounts };
