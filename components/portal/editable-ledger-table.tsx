@@ -87,10 +87,12 @@ function loadWidths(): Record<ColKey, number> {
 }
 
 const badgeSelect =
-  'cursor-pointer border bg-transparent px-2 py-1 text-xs font-medium outline-none transition-opacity rounded-md appearance-none';
+  'inline-block cursor-pointer border bg-transparent px-2.5 py-0.5 text-xs font-medium leading-snug outline-none transition-opacity rounded-full appearance-none text-center';
 
-function badgeSelectMinCh(labels: string[]): number {
-  return Math.max(4, ...labels.map((l) => l.length)) + 3;
+/** 框寬 = 目前顯示文字長度 + 左右留白 + 下拉箭頭 */
+function badgeFitWidthCh(label: string): string {
+  const len = Math.max([...label].length, 1);
+  return `${len + 2.5}ch`;
 }
 
 function LedgerBadgeSelect({
@@ -107,15 +109,14 @@ function LedgerBadgeSelect({
   disabled?: boolean;
 }) {
   const selected = options.find((o) => o.value === value)?.label ?? (value || '—');
-  const minCh = badgeSelectMinCh(options.map((o) => o.label));
   return (
-    <label className="relative mx-1 my-1 flex w-[calc(100%-8px)] min-w-0">
+    <label className="relative mx-1.5 my-1 inline-flex w-fit max-w-full">
       <select
         value={value}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className={cn(badgeSelect, badgeClass, 'w-full min-w-0 truncate pr-5', disabled && 'opacity-60')}
-        style={{ minWidth: `${minCh}ch` }}
+        className={cn(badgeSelect, badgeClass, 'pr-5', disabled && 'opacity-60')}
+        style={{ width: badgeFitWidthCh(selected) }}
         title={selected}
       >
         {options.map((o) => (
@@ -124,7 +125,10 @@ function LedgerBadgeSelect({
           </option>
         ))}
       </select>
-      <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-current/50" aria-hidden>
+      <span
+        className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-[9px] text-current/45"
+        aria-hidden
+      >
         ▾
       </span>
     </label>
@@ -579,7 +583,7 @@ export function EditableLedgerTable({
                         )}
                       />
                     </td>
-                    <td className="p-0 align-middle">
+                    <td className="p-0 align-middle whitespace-nowrap w-[1%]">
                       <LedgerBadgeSelect
                         value={row.category}
                         badgeClass={CATEGORY_NOTION_STYLE[row.category]}
@@ -600,7 +604,7 @@ export function EditableLedgerTable({
                         }}
                       />
                     </td>
-                    <td className="p-0 align-middle">
+                    <td className="p-0 align-middle whitespace-nowrap w-[1%]">
                       {showAccount ? (
                         <LedgerBadgeSelect
                           value={account}
