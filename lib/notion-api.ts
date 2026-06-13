@@ -379,3 +379,11 @@ export function buildNotionStaffUpdate(staffName: string) {
     },
   };
 }
+
+export function buildNotionPaymentUpdate(paymentMethods: string[]) {
+  return {
+    付款方式: {
+      multi_select: paymentMethods.map((name) => ({ name })),
+    },
+  };
+}

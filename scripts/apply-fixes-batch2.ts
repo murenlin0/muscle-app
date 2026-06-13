@@ -74,6 +74,7 @@ async function main() {
           amount,
           serviceType: 'VIP 60分',
           staffName: '仁',
+          paymentMethods: ['會員使用'],
         });
         const { error } = await sb.from('daily_transactions').insert({
           store_id: 'store1',
