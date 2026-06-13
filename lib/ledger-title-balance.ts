@@ -21,6 +21,66 @@ export function parseBalanceAfter顿号(title: string): number | null {
   return null;
 }
 
+/** 頓號前所有帶正負號數字的總和＝該列當日的增減（儲值為正、使用為負） */
+function parseSignedDeltaBefore顿号(title: string): number | null {
+  const idx = title.lastIndexOf('、');
+  const head = idx >= 0 ? title.slice(0, idx) : title;
+  const tokens = [...head.matchAll(/([+-]\d+)/g)];
+  if (!tokens.length) return null;
+  return tokens.reduce((s, m) => s + Number(m[1]), 0);
+}
+
+interface BalRow {
+  date: string;
+  balance: number;
+  id: string;
+  delta: number | null;
+}
+
+/**
+ * 取單一客人的「最新餘額」。
+ * 同一天只有一列時直接取該列頓號餘額；同一天有多列（例如先結清 +、再使用 -）時，
+ * 用「前一日餘額 + 當日各列增減」推算當日結束餘額，並要求它等於某列標註餘額才採用，
+ * 否則退回「同日取最大 id」的舊行為。
+ */
+function pickLatestBalance(rows: BalRow[]): number | null {
+  if (!rows.length) return null;
+  const maxDate = rows.reduce((d, r) => (r.date > d ? r.date : d), rows[0]!.date);
+  const latest = rows.filter((r) => r.date === maxDate);
+
+  const byIdDesc = (a: BalRow, b: BalRow) => (a.id < b.id ? 1 : a.id > b.id ? -1 : 0);
+  const byDateIdDesc = (a: BalRow, b: BalRow) =>
+    a.date !== b.date ? (a.date < b.date ? 1 : -1) : byIdDesc(a, b);
+
+  if (latest.length === 1) return latest[0]!.balance;
+
+  // 同日多列：嘗試鏈式推算
+  const prior = rows.filter((r) => r.date < maxDate).sort(byDateIdDesc);
+  const startBalance = prior.length ? prior[0]!.balance : 0;
+  if (latest.every((r) => r.delta !== null)) {
+    const end = startBalance + latest.reduce((s, r) => s + (r.delta ?? 0), 0);
+    if (latest.some((r) => r.balance === end)) return end;
+  }
+
+  // 退回舊行為：同日取最大 id
+  return [...latest].sort(byIdDesc)[0]!.balance;
+}
+
+function toBalRows(rows: TitleBalanceRow[]): BalRow[] {
+  const out: BalRow[] = [];
+  for (const row of rows) {
+    const balance = parseBalanceAfter顿号(row.title);
+    if (balance === null) continue;
+    out.push({
+      date: row.occurred_on,
+      balance,
+      id: row.id ?? '',
+      delta: parseSignedDeltaBefore顿号(row.title),
+    });
+  }
+  return out;
+}
+
 export interface TitleBalanceRow {
   id?: string;
   occurred_on: string;
@@ -59,31 +119,21 @@ export function sumUnusedBalancesFromTitles(rows: TitleBalanceRow[]): number {
     if (phone && name && !nameToPhone.has(name)) nameToPhone.set(name, phone);
   }
 
-  const latestByClient = new Map<string, { date: string; balance: number; id: string }>();
-
+  const rowsByClient = new Map<string, TitleBalanceRow[]>();
   for (const row of rows) {
-    const balance = parseBalanceAfter顿号(row.title);
-    if (balance === null) continue;
-
     const phone = clientPhoneKey(row);
     const name = clientNameKey(row);
     const key = phone ?? (name ? nameToPhone.get(name) ?? `name:${name}` : null);
     if (!key) continue;
-
-    const id = row.id ?? '';
-    const existing = latestByClient.get(key);
-    if (
-      !existing ||
-      row.occurred_on > existing.date ||
-      (row.occurred_on === existing.date && id > existing.id)
-    ) {
-      latestByClient.set(key, { date: row.occurred_on, balance, id });
-    }
+    const arr = rowsByClient.get(key);
+    if (arr) arr.push(row);
+    else rowsByClient.set(key, [row]);
   }
 
   let sum = 0;
-  for (const { balance } of latestByClient.values()) {
-    sum += balance;
+  for (const clientRows of rowsByClient.values()) {
+    const balance = pickLatestBalance(toBalRows(clientRows));
+    if (balance !== null) sum += balance;
   }
   return sum;
 }
@@ -95,15 +145,5 @@ export function latestClientBalanceFromTitles(
 ): number | null {
   const filtered = rows.filter((r) => clientPhoneKey(r) === phone);
   if (!filtered.length) return null;
-
-  const sorted = [...filtered].sort((a, b) => {
-    if (a.occurred_on !== b.occurred_on) return a.occurred_on.localeCompare(b.occurred_on);
-    return (a.id ?? '').localeCompare(b.id ?? '');
-  });
-
-  for (let i = sorted.length - 1; i >= 0; i -= 1) {
-    const balance = parseBalanceAfter顿号(sorted[i]!.title);
-    if (balance !== null) return balance;
-  }
-  return null;
+  return pickLatestBalance(toBalRows(filtered));
 }
