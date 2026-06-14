@@ -18,6 +18,7 @@ export interface BookingPreviewData {
 function formatTime(iso: string) {
   const d = new Date(iso);
   return d.toLocaleString('zh-TW', {
+    timeZone: 'Asia/Taipei',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',

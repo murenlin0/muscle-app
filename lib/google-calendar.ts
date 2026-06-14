@@ -1,5 +1,6 @@
 import { getGoogleCalendarId, getGoogleRefreshToken } from '@/lib/integration-settings';
 import { refreshGoogleAccessToken } from '@/lib/google-oauth';
+import { formatStoreDateTimeForGoogle, STORE_TIMEZONE } from '@/lib/store-timezone';
 
 /** Google Calendar 色碼：8 = 灰（待結帳） */
 export const CALENDAR_COLOR_PENDING = '8';
@@ -35,7 +36,6 @@ export async function createPendingCheckoutEvent(
   }
 
   const accessToken = await calendarAccessToken();
-  const timeZone = 'Asia/Taipei';
   const description = [input.note, input.description].filter(Boolean).join('\n\n') || undefined;
 
   const res = await fetch(
@@ -49,8 +49,14 @@ export async function createPendingCheckoutEvent(
       body: JSON.stringify({
         summary: input.title,
         description,
-        start: { dateTime: input.startsAt.toISOString(), timeZone },
-        end: { dateTime: input.endsAt.toISOString(), timeZone },
+        start: {
+          dateTime: formatStoreDateTimeForGoogle(input.startsAt),
+          timeZone: STORE_TIMEZONE,
+        },
+        end: {
+          dateTime: formatStoreDateTimeForGoogle(input.endsAt),
+          timeZone: STORE_TIMEZONE,
+        },
         colorId: CALENDAR_COLOR_PENDING,
       }),
     },

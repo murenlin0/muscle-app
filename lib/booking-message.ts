@@ -1,4 +1,5 @@
 import { normalizePhone, stripAllSpaces } from '@/lib/phone';
+import { parseStoreDateTime } from '@/lib/store-timezone';
 import {
   getStore,
   resolveStoreSlugFromMessageLabel,
@@ -50,17 +51,7 @@ function parseStartsAt(timeLine: string): Date {
     throw new Error('時間格式須為 YYYY-MM-DD HH:mm，例如：2026-06-15 14:00');
   }
   const [, y, mo, d, h, mi] = match;
-  const date = new Date(
-    Number(y),
-    Number(mo) - 1,
-    Number(d),
-    Number(h),
-    Number(mi),
-    0,
-    0,
-  );
-  if (Number.isNaN(date.getTime())) throw new Error('無效的預約時間');
-  return date;
+  return parseStoreDateTime(Number(y), Number(mo), Number(d), Number(h), Number(mi));
 }
 
 export function parseBookingMessage(text: string): BookingMessageData {
