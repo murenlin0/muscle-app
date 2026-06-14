@@ -11,7 +11,7 @@ import {
 import { cn } from '@/lib/utils';
 
 const SNAP_MINUTES = 15;
-const HOUR_HEIGHT_PX = 56;
+const HOUR_HEIGHT_PX = 48;
 const MAX_BOOKING_DAYS = 30;
 
 function startOfDay(date: Date): Date {
@@ -270,8 +270,11 @@ export function CalendarTimePicker({
         </p>
       </div>
 
-      <div className="relative flex max-h-[480px] overflow-x-hidden overflow-y-auto">
-        <div className="w-[4.5rem] shrink-0 border-r border-primary/15 pt-2">
+      <div className="relative flex overflow-x-hidden">
+        <div
+          className="w-[4.5rem] shrink-0 border-r border-primary/15 pt-2"
+          style={{ height: gridHeightPx }}
+        >
           {hours.map((hour) => (
             <div
               key={hour}

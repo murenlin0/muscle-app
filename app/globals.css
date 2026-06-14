@@ -208,18 +208,24 @@
     box-shadow: 0 0 12px oklch(0.55 0.12 285 / 0.15);
   }
   .neon-outline-card {
-    @apply rounded-2xl border-2 border-primary/70 bg-card/20 transition-all duration-200;
-    box-shadow: 0 0 18px oklch(0.58 0.19 252 / 0.12);
+    @apply rounded-2xl border border-primary/22 bg-card/10 transition-all duration-300;
+    box-shadow:
+      0 0 0 1px oklch(0.58 0.19 252 / 0.05),
+      0 0 18px oklch(0.58 0.19 252 / 0.04);
   }
   .neon-outline-card:hover {
-    border-color: oklch(0.58 0.19 252 / 0.95);
-    background: oklch(0.58 0.19 252 / 0.08);
-    box-shadow: 0 0 28px oklch(0.58 0.19 252 / 0.22);
+    border-color: oklch(0.58 0.19 252 / 0.36);
+    background: oklch(0.58 0.19 252 / 0.035);
+    box-shadow:
+      0 0 0 1px oklch(0.58 0.19 252 / 0.08),
+      0 0 26px oklch(0.58 0.19 252 / 0.09);
   }
   .neon-outline-card-selected {
-    border-color: oklch(0.58 0.19 252 / 0.88);
-    background: oklch(0.58 0.19 252 / 0.1);
-    box-shadow: 0 0 28px oklch(0.58 0.19 252 / 0.2);
+    border-color: oklch(0.58 0.19 252 / 0.42);
+    background: oklch(0.58 0.19 252 / 0.05);
+    box-shadow:
+      0 0 0 1px oklch(0.58 0.19 252 / 0.1),
+      0 0 30px oklch(0.58 0.19 252 / 0.11);
   }
   .neon-panel {
     @apply rounded-2xl border border-primary/35 bg-card/10 transition-colors duration-200;
@@ -235,5 +241,44 @@
     border-color: oklch(0.58 0.19 252 / 0.75);
     box-shadow: 0 0 16px oklch(0.58 0.19 252 / 0.18);
     outline: none;
+  }
+  .neon-future-btn {
+    @apply relative overflow-hidden rounded-xl border border-primary/35 font-semibold tracking-wide text-primary-foreground transition-all duration-300;
+    background: linear-gradient(
+      135deg,
+      oklch(0.58 0.19 252 / 0.85) 0%,
+      oklch(0.52 0.17 268 / 0.92) 50%,
+      oklch(0.58 0.19 252 / 0.85) 100%
+    );
+    box-shadow:
+      0 0 0 1px oklch(0.66 0.13 272 / 0.15),
+      0 0 22px oklch(0.58 0.19 252 / 0.28),
+      inset 0 1px 0 oklch(0.99 0 0 / 0.12);
+  }
+  .neon-future-btn:not(:disabled):hover {
+    border-color: oklch(0.66 0.13 272 / 0.45);
+    box-shadow:
+      0 0 0 1px oklch(0.66 0.13 272 / 0.25),
+      0 0 32px oklch(0.58 0.19 252 / 0.42),
+      inset 0 1px 0 oklch(0.99 0 0 / 0.18);
+    filter: brightness(1.06);
+  }
+  .neon-future-btn:not(:disabled)::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      105deg,
+      transparent 35%,
+      oklch(0.99 0 0 / 0.14) 50%,
+      transparent 65%
+    );
+    transform: translateX(-120%);
+    animation: neon-scan 4s ease-in-out infinite;
+    pointer-events: none;
+  }
+  .neon-future-btn:disabled {
+    @apply opacity-40;
+    box-shadow: none;
   }
 }

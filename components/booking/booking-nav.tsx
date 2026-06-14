@@ -33,18 +33,18 @@ export function BookingNav({
         <span />
       )}
       {onNext ? (
-        <Button
+        <button
           type="button"
           disabled={nextDisabled}
           className={cn(
-            'h-11 rounded-xl px-6 font-semibold',
-            nextDisabled && 'opacity-40',
+            'neon-future-btn inline-flex h-12 min-w-[8.5rem] items-center justify-center gap-1.5 px-7 text-sm',
+            nextDisabled && 'cursor-not-allowed',
           )}
           onClick={onNext}
         >
-          {nextLabel}
-          <ArrowRight className="ml-1 size-4" />
-        </Button>
+          <span className="relative z-10">{nextLabel}</span>
+          <ArrowRight className="relative z-10 size-4" />
+        </button>
       ) : null}
     </div>
   );

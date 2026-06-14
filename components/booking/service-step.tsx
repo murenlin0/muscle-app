@@ -47,6 +47,10 @@ export function ServiceStep({
           const selected = selectedId === service.id;
           const prices = servicePriceDisplay(service, client);
           const badge = serviceBadge(service);
+          const mainPrice =
+            prices.highlightMember && prices.memberLabel
+              ? prices.memberLabel
+              : prices.cashLabel;
 
           return (
             <button
@@ -58,37 +62,40 @@ export function ServiceStep({
                 selected && 'neon-outline-card-selected',
               )}
             >
-              {badge ? (
-                <span
-                  className={cn(
-                    'absolute top-4 right-4 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold',
-                    serviceBadgeClass(badge.tone),
-                  )}
-                >
-                  {badge.label}
-                </span>
-              ) : null}
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <p className="text-base font-bold">{service.name}</p>
+                  <div className="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <Clock className="size-4 shrink-0 text-primary/60" />
+                    {serviceDurationLabel(service)}
+                  </div>
+                </div>
 
-              <p className={cn('text-base font-bold', badge && 'pr-14')}>{service.name}</p>
-              <div className="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground">
-                <Clock className="size-4 text-primary/70" />
-                {serviceDurationLabel(service)}
+                <div className="flex shrink-0 flex-col items-end">
+                  {badge ? (
+                    <span
+                      className={cn(
+                        'mb-2 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold',
+                        serviceBadgeClass(badge.tone),
+                      )}
+                    >
+                      {badge.label}
+                    </span>
+                  ) : null}
+                  <p className="font-mono text-base font-semibold tabular-nums text-primary/85">
+                    {mainPrice}
+                  </p>
+                  {prices.memberLabel && !prices.highlightMember ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      會員 {prices.memberLabel}
+                    </p>
+                  ) : prices.highlightMember ? (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      單次 {prices.cashLabel}
+                    </p>
+                  ) : null}
+                </div>
               </div>
-
-              <p className="mt-4 font-mono text-base font-semibold tabular-nums text-primary">
-                {prices.highlightMember && prices.memberLabel
-                  ? prices.memberLabel
-                  : prices.cashLabel}
-              </p>
-              {prices.memberLabel && !prices.highlightMember ? (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  會員 {prices.memberLabel}
-                </p>
-              ) : prices.highlightMember ? (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  單次 {prices.cashLabel}
-                </p>
-              ) : null}
             </button>
           );
         })}

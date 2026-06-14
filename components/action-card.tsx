@@ -14,7 +14,6 @@ export function ActionCard({
   icon: LucideIcon;
   title: string;
   description: string;
-  /** 卡片左下角等寬字提示（如餘額） */
   monoHint?: string;
   tone?: 'blue' | 'wallet';
 }) {
@@ -24,28 +23,28 @@ export function ActionCard({
         <div className="flex items-start gap-4">
           <div
             className={cn(
-              'flex size-12 shrink-0 items-center justify-center rounded-xl border-2 transition-colors duration-200',
+              'flex size-11 shrink-0 items-center justify-center rounded-xl border transition-colors duration-300',
               tone === 'blue'
-                ? 'border-primary/70 bg-primary/15 text-primary group-hover:border-primary group-hover:bg-primary/20 group-hover:shadow-[0_0_16px_oklch(0.58_0.19_252/0.35)]'
-                : 'border-amber-400/70 bg-amber-400/15 text-amber-400 group-hover:border-amber-300 group-hover:bg-amber-400/22 group-hover:shadow-[0_0_16px_oklch(0.82_0.16_85/0.35)]',
+                ? 'border-primary/30 bg-primary/8 text-primary/90 group-hover:border-primary/45 group-hover:bg-primary/12 group-hover:shadow-[0_0_14px_oklch(0.58_0.19_252/0.12)]'
+                : 'border-amber-400/35 bg-amber-400/8 text-amber-400/90 group-hover:border-amber-400/50 group-hover:bg-amber-400/12 group-hover:shadow-[0_0_14px_oklch(0.82_0.16_85/0.12)]',
             )}
           >
-            <Icon className="size-6" strokeWidth={2.25} />
+            <Icon className="size-5" strokeWidth={2.25} />
           </div>
           <div className="min-w-0 flex-1 text-left">
-            <p className="text-lg font-bold tracking-tight transition-colors group-hover:text-primary">
+            <p className="text-lg font-bold tracking-tight transition-colors group-hover:text-primary/90">
               {title}
             </p>
-            <p className="mt-1 text-sm text-muted-foreground transition-colors group-hover:text-foreground/80">
+            <p className="mt-1 text-sm text-muted-foreground transition-colors group-hover:text-foreground/75">
               {description}
             </p>
           </div>
           <span
             className={cn(
-              'font-mono text-sm transition-all duration-200',
+              'font-mono text-sm transition-all duration-300',
               tone === 'blue'
-                ? 'text-primary/50 group-hover:text-primary group-hover:drop-shadow-[0_0_8px_oklch(0.58_0.19_252/0.45)]'
-                : 'text-amber-400/50 group-hover:text-amber-300 group-hover:drop-shadow-[0_0_8px_oklch(0.82_0.16_85/0.45)]',
+                ? 'text-primary/30 group-hover:text-primary/70'
+                : 'text-amber-400/35 group-hover:text-amber-400/75',
             )}
           >
             →
@@ -54,10 +53,10 @@ export function ActionCard({
         {monoHint ? (
           <p
             className={cn(
-              'mt-4 font-mono text-sm font-semibold tabular-nums transition-colors',
+              'mt-4 text-right font-mono text-sm font-semibold tabular-nums transition-colors',
               tone === 'blue'
-                ? 'text-primary/90 group-hover:text-primary'
-                : 'text-amber-400/90 group-hover:text-amber-300',
+                ? 'text-primary/70 group-hover:text-primary/90'
+                : 'text-amber-400/70 group-hover:text-amber-400/90',
             )}
           >
             {monoHint}
