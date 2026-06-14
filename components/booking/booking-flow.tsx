@@ -30,6 +30,7 @@ import {
 } from '@/lib/booking-draft';
 import type { Service, Staff } from '@/lib/types/database';
 import { BOOKING_HOURS_LABEL } from '@/lib/booking-hours';
+import { getLiffIdForStore } from '@/lib/store-liff';
 
 type Step = 1 | 2 | 3;
 
