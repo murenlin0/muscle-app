@@ -1,0 +1,8 @@
+{
+  "plugins": {
+    "notion-workspace": {
+      "enabled": true
+    }
+  },
+  "terminal.integrated.defaultProfile.windows": "Command Prompt"
+}

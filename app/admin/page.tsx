@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
   BarChart3,
+  CalendarDays,
   Contact,
   FileSpreadsheet,
   LogOut,
@@ -78,6 +79,12 @@ export default function SuperAdminPage() {
           icon={Users}
           title="人員與權限"
           description="指派店長帳號、管理各店師傅"
+        />
+        <AdminHubCard
+          href="/admin/google"
+          icon={CalendarDays}
+          title="Google 日曆"
+          description="OAuth 授權與 refresh token 設定"
         />
         <AdminHubCard
           href="/admin/reports"

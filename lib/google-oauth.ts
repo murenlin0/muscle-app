@@ -50,6 +50,41 @@ export function assertGoogleSetupKey(request: Request): string | null {
   return null;
 }
 
+export function isGoogleCalendarConfigured(): boolean {
+  return Boolean(
+    process.env.GOOGLE_CLIENT_ID?.trim() &&
+      process.env.GOOGLE_CLIENT_SECRET?.trim() &&
+      process.env.GOOGLE_REFRESH_TOKEN?.trim() &&
+      process.env.GOOGLE_CALENDAR_ID?.trim(),
+  );
+}
+
+export async function refreshGoogleAccessToken(): Promise<string> {
+  const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
+  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN?.trim();
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new Error('缺少 GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REFRESH_TOKEN');
+  }
+
+  const res = await fetch(TOKEN_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }),
+  });
+
+  const data = (await res.json()) as GoogleTokenResponse & { error?: string; error_description?: string };
+  if (!res.ok) {
+    throw new Error(data.error_description ?? data.error ?? '無法更新 access token');
+  }
+  return data.access_token;
+}
+
 export function buildGoogleAuthUrl(config: GoogleOAuthConfig): string {
   const params = new URLSearchParams({
     client_id: config.clientId,
