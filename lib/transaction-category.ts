@@ -21,10 +21,24 @@ export const OVERVIEW_INCOME_CATEGORIES = [
   '店租收入',
 ] as const satisfies readonly TransactionCategory[];
 
+/** 餘額未使用＝逐客累計的會員列類型 */
+export const MEMBER_BALANCE_CATEGORIES = [
+  '會員儲值',
+  '會員使用',
+  '會員補差額',
+] as const satisfies readonly TransactionCategory[];
+
 /** 財務總覽「成本」加總用的類型 */
 export const OVERVIEW_EXPENSE_CATEGORIES = ['支出', '工資'] as const satisfies readonly TransactionCategory[];
 
-export type LedgerPresetFilter = 'income' | 'expense';
+export type LedgerPresetFilter =
+  | 'income'
+  | 'expense'
+  | 'cash'
+  | 'fubon'
+  | 'memberBalance';
+
+export type LedgerAccountFilter = '現金' | '富邦';
 
 export type TransactionCategory = (typeof TRANSACTION_CATEGORIES)[number];
 
@@ -105,8 +119,38 @@ export function isOverviewExpenseCategory(category: TransactionCategory): boolea
   return (OVERVIEW_EXPENSE_CATEGORIES as readonly string[]).includes(category);
 }
 
-export function categoriesForLedgerPreset(preset: LedgerPresetFilter): TransactionCategory[] {
-  return preset === 'income'
-    ? [...OVERVIEW_INCOME_CATEGORIES]
-    : [...OVERVIEW_EXPENSE_CATEGORIES];
+export function categoriesForLedgerPreset(
+  preset: LedgerPresetFilter,
+): TransactionCategory[] | null {
+  switch (preset) {
+    case 'income':
+      return [...OVERVIEW_INCOME_CATEGORIES];
+    case 'expense':
+      return [...OVERVIEW_EXPENSE_CATEGORIES];
+    case 'memberBalance':
+      return [...MEMBER_BALANCE_CATEGORIES];
+    default:
+      return null;
+  }
+}
+
+export function accountForLedgerPreset(preset: LedgerPresetFilter): LedgerAccountFilter | null {
+  if (preset === 'cash') return '現金';
+  if (preset === 'fubon') return '富邦';
+  return null;
+}
+
+export function labelForLedgerPreset(preset: LedgerPresetFilter): string {
+  switch (preset) {
+    case 'income':
+      return '營業額(不含儲值)';
+    case 'expense':
+      return '成本';
+    case 'cash':
+      return '店內現金';
+    case 'fubon':
+      return '富邦帳戶';
+    case 'memberBalance':
+      return '餘額未使用';
+  }
 }

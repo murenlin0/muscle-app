@@ -8,17 +8,18 @@ import { StatusBanner } from '@/components/portal/status-banner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { CATEGORY_NOTION_STYLE } from '@/lib/category-styles';
+import { CATEGORY_NOTION_STYLE, LEDGER_ACCOUNT_STYLE } from '@/lib/category-styles';
 import type { FinancialOverview } from '@/lib/financial-summary-server';
 import { LEDGER_UI_PAGE_SIZE } from '@/lib/ledger-pagination';
 import { REPORTS_UI_VERSION } from '@/lib/reports-ui-version';
 import { STORE_LIST, type StoreSlug } from '@/lib/stores';
 import {
+  accountForLedgerPreset,
   categoriesForLedgerPreset,
-  OVERVIEW_EXPENSE_CATEGORIES,
-  OVERVIEW_INCOME_CATEGORIES,
+  labelForLedgerPreset,
   TRANSACTION_CATEGORIES,
   type LedgerPresetFilter,
+  type LedgerAccountFilter,
   type TransactionCategory,
 } from '@/lib/transaction-category';
 import { cn } from '@/lib/utils';
@@ -32,6 +33,19 @@ function CategoryFilterBadge({ category }: { category: TransactionCategory }) {
       )}
     >
       {category}
+    </span>
+  );
+}
+
+function AccountFilterBadge({ account }: { account: LedgerAccountFilter }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex shrink-0 px-2.5 py-0.5 text-xs font-medium rounded-full border',
+        LEDGER_ACCOUNT_STYLE[account],
+      )}
+    >
+      {account}
     </span>
   );
 }
@@ -104,24 +118,24 @@ export function ReportsDashboard({
   const activeStore = storeFilter ?? store;
 
   const activeCategories = useMemo(() => {
-    if (ledgerPresetFilter) return categoriesForLedgerPreset(ledgerPresetFilter);
+    if (ledgerPresetFilter) {
+      const cats = categoriesForLedgerPreset(ledgerPresetFilter);
+      if (cats) return cats;
+    }
     if (category) return [category];
     return null;
   }, [ledgerPresetFilter, category]);
 
-  const filterCategories = useMemo((): TransactionCategory[] | null => {
-    if (ledgerPresetFilter === 'income') return [...OVERVIEW_INCOME_CATEGORIES];
-    if (ledgerPresetFilter === 'expense') return [...OVERVIEW_EXPENSE_CATEGORIES];
-    if (category) return [category];
-    return null;
-  }, [ledgerPresetFilter, category]);
+  const activeAccount = useMemo(
+    () => (ledgerPresetFilter ? accountForLedgerPreset(ledgerPresetFilter) : null),
+    [ledgerPresetFilter],
+  );
 
-  const filterPresetLabel =
-    ledgerPresetFilter === 'income'
-      ? '營業額(不含儲值)'
-      : ledgerPresetFilter === 'expense'
-        ? '成本'
-        : null;
+  const filterCategories = activeCategories;
+
+  const filterPresetLabel = ledgerPresetFilter ? labelForLedgerPreset(ledgerPresetFilter) : null;
+
+  const showFilterBar = Boolean(filterCategories?.length || activeAccount);
 
   const displayRows = useMemo(() => {
     const rows = report?.rows ?? [];
@@ -157,6 +171,7 @@ export function ReportsDashboard({
       } else if (activeCategories && activeCategories.length > 1) {
         qs.set('categories', activeCategories.join(','));
       }
+      if (activeAccount) qs.set('account', activeAccount);
 
       try {
         const txRes = await fetch(`/api/portal/reports/transactions?${qs}`, { cache: 'no-store' });
@@ -206,7 +221,7 @@ export function ReportsDashboard({
         setLoading(false);
       }
     },
-    [from, to, activeStore, activeCategories],
+    [from, to, activeStore, activeCategories, activeAccount],
   );
 
   const loadOverview = useCallback(async () => {
@@ -243,7 +258,7 @@ export function ReportsDashboard({
   useEffect(() => {
     void load(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to, activeStore, activeCategories]);
+  }, [from, to, activeStore, activeCategories, activeAccount]);
 
   useEffect(() => {
     if (!ledgerPresetFilter) return;
@@ -404,13 +419,23 @@ export function ReportsDashboard({
           </div>
         </div>
 
-        {filterCategories ? (
+        {showFilterBar ? (
           <div className="flex flex-wrap items-center gap-x-2 gap-y-2 rounded-md border border-[#333] bg-[#1a1a1a] px-3 py-2.5">
             <span className="text-sm text-[#888]">篩選條件</span>
-            <span className="text-sm text-[#666]">類型</span>
-            {filterCategories.map((cat) => (
-              <CategoryFilterBadge key={cat} category={cat} />
-            ))}
+            {activeAccount ? (
+              <>
+                <span className="text-sm text-[#666]">更動的帳戶</span>
+                <AccountFilterBadge account={activeAccount} />
+              </>
+            ) : null}
+            {filterCategories?.length ? (
+              <>
+                <span className="text-sm text-[#666]">類型</span>
+                {filterCategories.map((cat) => (
+                  <CategoryFilterBadge key={cat} category={cat} />
+                ))}
+              </>
+            ) : null}
             {filterPresetLabel ? (
               <span className="text-xs text-[#666]">（{filterPresetLabel}）</span>
             ) : null}

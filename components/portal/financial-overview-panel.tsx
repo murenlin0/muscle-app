@@ -62,25 +62,40 @@ function PanelCard({
   );
 }
 
-function LineItem({
+function AssetFilterLine({
   label,
   value,
-  muted,
+  active,
+  onClick,
 }: {
   label: string;
   value: number;
-  muted?: boolean;
+  active?: boolean;
+  onClick: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between border-b border-white/[0.04] py-2.5 last:border-0">
-      <span className={cn('text-[13px]', muted ? 'text-[#5e5e5e]' : 'text-[#9a9a9a]')}>
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'group flex w-full items-center justify-between border-b border-white/[0.04] py-2.5 text-left transition-colors last:border-0',
+        'hover:bg-white/[0.03]',
+        active && 'rounded-md border border-white/[0.08] bg-white/[0.04] px-2 -mx-2',
+      )}
+    >
+      <span className="text-[13px] text-[#9a9a9a] transition-colors group-hover:text-[#c8c8c8]">
         {label}
       </span>
-      <SignedMoney
-        value={value}
-        className={cn('text-[13px] font-medium', muted ? 'text-[#666]' : 'text-[#d6d6d6]')}
-      />
-    </div>
+      <span className="flex items-center gap-2">
+        <SignedMoney value={value} className="text-[13px] font-medium text-[#d6d6d6]" />
+        <span
+          className="text-[#484848] transition-colors group-hover:text-[#777]"
+          aria-hidden
+        >
+          ›
+        </span>
+      </span>
+    </button>
   );
 }
 
@@ -207,13 +222,31 @@ export function FinancialOverviewPanel({
           <SignedMoney value={assets.total} className="text-2xl font-semibold" />
         </div>
         <div>
-          <LineItem label="店內現金" value={assets.cashOnHand} />
-          <LineItem label="富邦帳戶" value={assets.bankAccounts} />
-          <LineItem label="餘額未使用" value={assets.unusedMemberBalance} />
-          <LineItem label="應收帳款" value={assets.accountsReceivable} muted />
+          <AssetFilterLine
+            label="店內現金"
+            value={assets.cashOnHand}
+            active={ledgerPresetFilter === 'cash'}
+            onClick={() => togglePreset('cash')}
+          />
+          <AssetFilterLine
+            label="富邦帳戶"
+            value={assets.bankAccounts}
+            active={ledgerPresetFilter === 'fubon'}
+            onClick={() => togglePreset('fubon')}
+          />
+          <AssetFilterLine
+            label="餘額未使用"
+            value={assets.unusedMemberBalance}
+            active={ledgerPresetFilter === 'memberBalance'}
+            onClick={() => togglePreset('memberBalance')}
+          />
+          <div className="flex items-center justify-between border-b border-white/[0.04] py-2.5 last:border-0">
+            <span className="text-[13px] text-[#5e5e5e]">應收帳款</span>
+            <SignedMoney value={assets.accountsReceivable} className="text-[13px] font-medium text-[#666]" />
+          </div>
         </div>
         <p className="mt-auto pt-4 text-[10px] leading-relaxed text-[#505050]">
-          總資產＝店內現金＋富邦帳戶；餘額未使用＝會員儲值／使用／補差額逐客累計；應收帳款僅供參考。
+          總資產＝店內現金＋富邦帳戶；餘額未使用＝會員儲值／使用／補差額逐客累計；應收帳款僅供參考。點擊前三項可篩選流水帳。
         </p>
       </PanelCard>
 

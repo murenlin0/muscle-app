@@ -4,10 +4,11 @@ import { getSupabaseAdmin } from '@/lib/supabase';
 import { fetchAllPages } from '@/lib/supabase-paginate';
 import type { StoreSlug } from '@/lib/stores';
 
-export const LEDGER_API_VERSION = 5;
+export const LEDGER_API_VERSION = 6;
 import {
   isRevenueCategory,
   TRANSACTION_CATEGORIES,
+  type LedgerAccountFilter,
   type TransactionCategory,
 } from '@/lib/transaction-category';
 
@@ -28,6 +29,22 @@ function applyCategoryFilter<T extends { eq: Function; in: Function }>(
   if (!categories?.length) return q;
   if (categories.length === 1) return q.eq('category', categories[0]) as T;
   return q.in('category', categories) as T;
+}
+
+function rowMatchesLedgerAccount(
+  row: { category: string; payment_methods: string[] | null },
+  account: LedgerAccountFilter,
+): boolean {
+  const pm = row.payment_methods ?? [];
+  if (row.category === '會員使用' || pm.includes('會員使用')) return false;
+  return pm.includes(account);
+}
+
+function applyLedgerAccountDbFilter<
+  T extends { contains: (col: string, val: string[]) => T; neq: (col: string, val: string) => T },
+>(q: T, account?: LedgerAccountFilter): T {
+  if (!account) return q;
+  return q.contains('payment_methods', [account]).neq('category', '會員使用');
 }
 
 export interface DailyTransactionListItem {
@@ -103,21 +120,29 @@ async function sumTransactionAmounts(
   storeId?: StoreSlug,
   category?: TransactionCategoryFilter,
   clientPhone?: string,
+  ledgerAccount?: LedgerAccountFilter,
 ): Promise<number> {
   const supabase = getSupabaseAdmin();
-  const amounts = await fetchAllPages<{ amount: number }>(async (offset, pageSize) => {
+  const amounts = await fetchAllPages<{
+    amount: number;
+    category: string;
+    payment_methods: string[];
+  }>(async (offset, pageSize) => {
     let q = supabase
       .from('daily_transactions')
-      .select('amount')
+      .select('amount, category, payment_methods')
       .gte('occurred_on', from)
       .lte('occurred_on', to)
       .range(offset, offset + pageSize - 1);
     if (storeId) q = q.eq('store_id', storeId);
     q = applyCategoryFilter(q, category);
+    q = applyLedgerAccountDbFilter(q, ledgerAccount);
     if (clientPhone) q = applyClientPhoneQuery(q, clientPhone);
     return q;
   });
-  return amounts.reduce((sum, r) => sum + (r.amount ?? 0), 0);
+  return amounts
+    .filter((r) => !ledgerAccount || rowMatchesLedgerAccount(r, ledgerAccount))
+    .reduce((sum, r) => sum + (r.amount ?? 0), 0);
 }
 
 type TxDbRow = {
@@ -209,7 +234,18 @@ async function countTransactions(
   storeId?: StoreSlug,
   category?: TransactionCategoryFilter,
   clientPhone?: string,
+  ledgerAccount?: LedgerAccountFilter,
 ): Promise<number> {
+  if (ledgerAccount) {
+    const rows = await fetchAllPages<{ category: string; payment_methods: string[] }>(
+      async (offset, pageSize) => {
+        let q = supabaseCountQuery(from, to, storeId, category, clientPhone, ledgerAccount);
+        return q.range(offset, offset + pageSize - 1);
+      },
+    );
+    return rows.filter((r) => rowMatchesLedgerAccount(r, ledgerAccount)).length;
+  }
+
   const supabase = getSupabaseAdmin();
   let q = supabase
     .from('daily_transactions')
@@ -224,12 +260,34 @@ async function countTransactions(
   return count ?? 0;
 }
 
+function supabaseCountQuery(
+  from: string,
+  to: string,
+  storeId?: StoreSlug,
+  category?: TransactionCategoryFilter,
+  clientPhone?: string,
+  ledgerAccount?: LedgerAccountFilter,
+) {
+  const supabase = getSupabaseAdmin();
+  let q = supabase
+    .from('daily_transactions')
+    .select('id, category, payment_methods')
+    .gte('occurred_on', from)
+    .lte('occurred_on', to);
+  if (storeId) q = q.eq('store_id', storeId);
+  q = applyCategoryFilter(q, category);
+  q = applyLedgerAccountDbFilter(q, ledgerAccount);
+  if (clientPhone) q = applyClientPhoneQuery(q, clientPhone);
+  return q;
+}
+
 async function fetchTransactionRows(
   from: string,
   to: string,
   storeId?: StoreSlug,
   category?: TransactionCategoryFilter,
   clientPhone?: string,
+  ledgerAccount?: LedgerAccountFilter,
 ): Promise<DailyTransactionListItem[]> {
   const supabase = getSupabaseAdmin();
 
@@ -247,11 +305,18 @@ async function fetchTransactionRows(
       .range(offset, offset + pageSize - 1);
     if (storeId) q = q.eq('store_id', storeId);
     q = applyCategoryFilter(q, category);
+    q = applyLedgerAccountDbFilter(q, ledgerAccount);
     if (clientPhone) q = applyClientPhoneQuery(q, clientPhone);
     return q;
   });
 
-  return all.filter((row) => !clientPhone || rowMatchesClientPhone(row, clientPhone)).map(mapTxRow);
+  return all
+    .filter(
+      (row) =>
+        (!clientPhone || rowMatchesClientPhone(row, clientPhone)) &&
+        (!ledgerAccount || rowMatchesLedgerAccount(row, ledgerAccount)),
+    )
+    .map(mapTxRow);
 }
 
 async function fetchTransactionPage(
@@ -262,6 +327,7 @@ async function fetchTransactionPage(
   page: number,
   pageSize: number,
   clientPhone?: string,
+  ledgerAccount?: LedgerAccountFilter,
 ): Promise<DailyTransactionListItem[]> {
   const supabase = getSupabaseAdmin();
   const offset = page * pageSize;
@@ -274,6 +340,7 @@ async function fetchTransactionPage(
     .lte('occurred_on', to);
   if (storeId) q = q.eq('store_id', storeId);
   q = applyCategoryFilter(q, category);
+  q = applyLedgerAccountDbFilter(q, ledgerAccount);
   if (clientPhone) q = applyClientPhoneQuery(q, clientPhone);
   q = q
     .order('occurred_on', { ascending: false })
@@ -285,7 +352,11 @@ async function fetchTransactionPage(
   if (error) throw new Error(error.message);
   const rows = (data as TxDbRow[] | null) ?? [];
   return rows
-    .filter((row) => !clientPhone || rowMatchesClientPhone(row, clientPhone))
+    .filter(
+      (row) =>
+        (!clientPhone || rowMatchesClientPhone(row, clientPhone)) &&
+        (!ledgerAccount || rowMatchesLedgerAccount(row, ledgerAccount)),
+    )
     .map(mapTxRow);
 }
 
@@ -299,6 +370,7 @@ export async function listDailyTransactions(
     pageSize?: number;
     mode?: 'all' | 'page';
     clientPhone?: string;
+    ledgerAccount?: LedgerAccountFilter;
     includeVipPhones?: boolean;
     /** 翻頁時略過統計查詢（count／sum／VIP／最新日期），只抓當頁列 */
     skipMeta?: boolean;
@@ -307,6 +379,7 @@ export async function listDailyTransactions(
   const pageSize = options?.pageSize ?? TX_PAGE_SIZE;
   const mode = options?.mode ?? 'all';
   const clientPhone = options?.clientPhone;
+  const ledgerAccount = options?.ledgerAccount;
 
   if (mode === 'page' && options?.skipMeta) {
     const page = options?.page ?? 0;
@@ -318,6 +391,7 @@ export async function listDailyTransactions(
       page,
       pageSize,
       clientPhone,
+      ledgerAccount,
     );
     return {
       from,
@@ -338,15 +412,24 @@ export async function listDailyTransactions(
 
   const page = options?.page ?? 0;
   const [totalCount, totalAmount, vipMemberPhones, latestRecordDate, rows] = await Promise.all([
-    countTransactions(from, to, storeId, category, clientPhone),
-    sumTransactionAmounts(from, to, storeId, category, clientPhone),
+    countTransactions(from, to, storeId, category, clientPhone, ledgerAccount),
+    sumTransactionAmounts(from, to, storeId, category, clientPhone, ledgerAccount),
     options?.includeVipPhones && storeId
       ? getVipMemberPhones(storeId)
       : Promise.resolve(undefined),
     getLatestTransactionDate(storeId),
     mode === 'page'
-      ? fetchTransactionPage(from, to, storeId, category, page, pageSize, clientPhone)
-      : fetchTransactionRows(from, to, storeId, category, clientPhone),
+      ? fetchTransactionPage(
+          from,
+          to,
+          storeId,
+          category,
+          page,
+          pageSize,
+          clientPhone,
+          ledgerAccount,
+        )
+      : fetchTransactionRows(from, to, storeId, category, clientPhone, ledgerAccount),
   ]);
 
   if (mode === 'page') {
