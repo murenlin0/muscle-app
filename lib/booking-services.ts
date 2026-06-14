@@ -17,6 +17,29 @@ export function clientQualifiesForMemberPrice(client: Client): boolean {
   return client.is_vip || client.balance > 0;
 }
 
+export type ServiceBadgeTone = 'hot' | 'rec';
+
+export interface ServiceBadge {
+  label: string;
+  tone: ServiceBadgeTone;
+}
+
+/** 卡片角標（僅外觀，不影響 DB 服務名稱） */
+export function serviceBadge(service: Service): ServiceBadge | null {
+  if (service.duration_minutes === 90) return { label: '熱門', tone: 'hot' };
+  if (service.duration_minutes === 60) return { label: '推薦', tone: 'rec' };
+  return null;
+}
+
+export function serviceBadgeClass(tone: ServiceBadgeTone): string {
+  switch (tone) {
+    case 'hot':
+      return 'border-primary/50 bg-primary/15 text-primary';
+    case 'rec':
+      return 'border-emerald-400/45 bg-emerald-500/10 text-emerald-300';
+  }
+}
+
 export interface ServicePriceDisplay {
   cashLabel: string;
   memberLabel: string | null;

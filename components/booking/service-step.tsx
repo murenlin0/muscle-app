@@ -2,6 +2,8 @@
 
 import { Clock, Loader2 } from 'lucide-react';
 import {
+  serviceBadge,
+  serviceBadgeClass,
   serviceDurationLabel,
   servicePriceDisplay,
 } from '@/lib/booking-services';
@@ -44,6 +46,7 @@ export function ServiceStep({
         {services.map((service) => {
           const selected = selectedId === service.id;
           const prices = servicePriceDisplay(service, client);
+          const badge = serviceBadge(service);
 
           return (
             <button
@@ -57,7 +60,18 @@ export function ServiceStep({
                   : 'border-border/70 bg-card/40 hover:border-primary/35 hover:bg-card/60',
               )}
             >
-              <p className="text-base font-bold">{service.name}</p>
+              {badge ? (
+                <span
+                  className={cn(
+                    'absolute top-4 right-4 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold',
+                    serviceBadgeClass(badge.tone),
+                  )}
+                >
+                  {badge.label}
+                </span>
+              ) : null}
+
+              <p className={cn('text-base font-bold', badge && 'pr-14')}>{service.name}</p>
               <p className="mt-2 text-sm text-muted-foreground">
                 單次 {prices.cashLabel}
                 {prices.memberLabel ? ` · 會員 ${prices.memberLabel}` : ''}
