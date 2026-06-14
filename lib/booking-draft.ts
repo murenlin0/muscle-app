@@ -1,12 +1,9 @@
 import { formatBookingMessage, type BookingMessageData } from '@/lib/booking-message';
+import { bookingServiceLabel } from '@/lib/booking-services';
 import { stripAllSpaces } from '@/lib/phone';
 import type { StoreSlug } from '@/lib/stores';
 
 export const BOOKING_STAFF_UNASSIGNED = '不指定';
-
-export function serviceItemLabel(durationMinutes: number): string {
-  return `運動按摩 ${durationMinutes}min`;
-}
 
 export function buildBookingNote(input: {
   headcount: number;
@@ -40,7 +37,7 @@ export function buildBookingDraft(input: {
     staffName: input.staffName,
     clientName: stripAllSpaces(input.clientName),
     phone: stripAllSpaces(input.phone),
-    serviceLabel: serviceItemLabel(input.durationMinutes),
+    serviceLabel: bookingServiceLabel(input.durationMinutes),
     durationMinutes: input.durationMinutes,
     startsAt: input.startsAt,
     note: buildBookingNote({

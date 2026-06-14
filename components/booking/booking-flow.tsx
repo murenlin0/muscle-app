@@ -3,9 +3,11 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import liff from '@line/liff';
-import { CalendarDays, Check, ChevronRight, Copy, Loader2 } from 'lucide-react';
+import { Check, Copy } from 'lucide-react';
 import { PageShell } from '@/app/components/page-shell';
 import { useLiff } from '@/app/components/liff-provider';
+import { ServiceStep } from '@/components/booking/service-step';
+import { TimeStep } from '@/components/booking/time-step';
 import { BindSubmitButton } from '@/components/bind-submit-button';
 import { LoadingScreen } from '@/components/loading-screen';
 import { useStore } from '@/components/store-provider';
@@ -17,78 +19,16 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import {
   BOOKING_STAFF_UNASSIGNED,
   buildBookingDraft,
   buildBookingMessageText,
 } from '@/lib/booking-draft';
-import { formatCurrency } from '@/lib/phone';
 import type { Service, Staff } from '@/lib/types/database';
 import { getLiffIdForStore } from '@/lib/store-liff';
 import { cn } from '@/lib/utils';
 
-const OPEN_HOUR = 10;
-const CLOSE_HOUR = 21;
-const SLOT_MINUTES = 30;
-
 type Step = 1 | 2 | 3;
-
-function startOfDay(date: Date): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-}
-
-function addDays(date: Date, days: number): Date {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
-}
-
-function formatDayLabel(date: Date, index: number): string {
-  if (index === 0) return '今天';
-  if (index === 1) return '明天';
-  const weekdays = ['日', '一', '二', '三', '四', '五', '六'];
-  return `${date.getMonth() + 1}/${date.getDate()} 週${weekdays[date.getDay()]}`;
-}
-
-function formatTimeLabel(date: Date): string {
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-}
-
-function formatSelectedDateTime(date: Date): string {
-  const y = date.getFullYear();
-  const mo = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${mo}-${d} ${formatTimeLabel(date)}`;
-}
-
-function buildSlotsForDay(day: Date): Date[] {
-  const slots: Date[] = [];
-  const base = startOfDay(day);
-  for (let minutes = OPEN_HOUR * 60; minutes < CLOSE_HOUR * 60; minutes += SLOT_MINUTES) {
-    const slot = new Date(base);
-    slot.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
-    slots.push(slot);
-  }
-  return slots;
-}
-
-function slotIsPast(slot: Date, now: Date): boolean {
-  return slot.getTime() <= now.getTime();
-}
-
-function slotOverlapsSelection(
-  slot: Date,
-  selected: Date | null,
-  durationMinutes: number,
-): boolean {
-  if (!selected) return false;
-  const start = selected.getTime();
-  const end = start + durationMinutes * 60_000;
-  const slotEnd = slot.getTime() + SLOT_MINUTES * 60_000;
-  return slot.getTime() >= start && slot.getTime() < end;
-}
 
 function StepIndicator({ step }: { step: Step }) {
   const labels = ['選服務', '選時間', '確認送出'];
@@ -149,7 +89,6 @@ export function BookingFlow() {
   const [sentMode, setSentMode] = useState<'line' | 'copied' | null>(null);
 
   const now = useMemo(() => new Date(), [step]);
-  const days = useMemo(() => [0, 1, 2].map((offset) => addDays(startOfDay(now), offset)), [now]);
 
   useEffect(() => {
     if (status === 'ready' && !client) {
@@ -211,6 +150,16 @@ export function BookingFlow() {
     return buildBookingMessageText(draft);
   }, [client, selectedService, startsAt, staffName, headcount, note, store]);
 
+  function handleServiceSelect(service: Service) {
+    setSelectedService(service);
+    setStartsAt(null);
+    setStep(2);
+  }
+
+  function handleChangeService() {
+    setStep(1);
+  }
+
   async function handleSend() {
     if (!messageText) return;
     setSending(true);
@@ -260,8 +209,8 @@ export function BookingFlow() {
   }
 
   const subtitles: Record<Step, string> = {
-    1: '選擇服務時長',
-    2: '點選時段，可指定師傅與人數',
+    1: '點選服務後自動進入選時間',
+    2: '選日期與時段，可指定師傅與人數',
     3: '確認後送出 LINE 預約訊息',
   };
 
@@ -276,163 +225,32 @@ export function BookingFlow() {
       ) : null}
 
       {step === 1 ? (
-        <div className="space-y-3">
-          {loadingCatalog ? (
-            <div className="flex justify-center py-12">
-              <Loader2 className="size-8 animate-spin text-primary" />
-            </div>
-          ) : (
-            services.map((service) => {
-              const selected = selectedService?.id === service.id;
-              return (
-                <button
-                  key={service.id}
-                  type="button"
-                  onClick={() => setSelectedService(service)}
-                  className={cn(
-                    'glass-card w-full p-0 text-left transition active:scale-[0.99]',
-                    selected && 'ring-2 ring-primary/60',
-                  )}
-                >
-                  <div className="flex items-center justify-between gap-4 p-5">
-                    <div>
-                      <p className="text-lg font-bold">{service.name}</p>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        單次 {formatCurrency(service.price_cash)}
-                        {service.price_member != null
-                          ? ` · 會員 ${formatCurrency(service.price_member)}`
-                          : ''}
-                      </p>
-                    </div>
-                    <ChevronRight className={cn('size-5', selected ? 'text-primary' : 'text-muted-foreground/40')} />
-                  </div>
-                </button>
-              );
-            })
-          )}
-          <div className="pt-4">
-            <BindSubmitButton
-              type="button"
-              disabled={!selectedService}
-              onClick={() => setStep(2)}
-            >
-              下一步
-            </BindSubmitButton>
-          </div>
-        </div>
+        <ServiceStep
+          services={services}
+          loading={loadingCatalog}
+          client={client}
+          selectedId={selectedService?.id ?? null}
+          onSelect={handleServiceSelect}
+        />
       ) : null}
 
       {step === 2 && selectedService ? (
-        <div className="space-y-5">
-          <Card className="glass-card border-primary/15">
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <CalendarDays className="size-4 text-primary" />
-                已選 {selectedService.name}
-                {startsAt ? ` · ${formatSelectedDateTime(startsAt)}` : ' · 請點選時段'}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-3 gap-2">
-                {days.map((day, dayIndex) => (
-                  <div key={day.toISOString()} className="min-w-0">
-                    <p className="mb-2 text-center text-xs font-semibold text-muted-foreground">
-                      {formatDayLabel(day, dayIndex)}
-                    </p>
-                    <div className="max-h-72 space-y-1 overflow-y-auto pr-0.5">
-                      {buildSlotsForDay(day).map((slot) => {
-                        const disabled = slotIsPast(slot, now);
-                        const selected = startsAt?.getTime() === slot.getTime();
-                        const inRange = slotOverlapsSelection(
-                          slot,
-                          startsAt,
-                          selectedService.duration_minutes,
-                        );
-                        return (
-                          <button
-                            key={slot.toISOString()}
-                            type="button"
-                            disabled={disabled}
-                            onClick={() => setStartsAt(slot)}
-                            className={cn(
-                              'w-full rounded-md border px-1 py-2 text-xs font-medium transition',
-                              disabled && 'cursor-not-allowed opacity-30',
-                              selected && 'border-primary bg-primary text-primary-foreground',
-                              inRange && !selected && 'border-primary/40 bg-primary/10 text-primary',
-                              !selected && !inRange && !disabled && 'border-border/60 hover:border-primary/30',
-                            )}
-                          >
-                            {formatTimeLabel(slot)}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="staff">師傅</Label>
-              <select
-                id="staff"
-                value={staffName}
-                onChange={(e) => setStaffName(e.target.value)}
-                className="input-neon h-12 w-full rounded-lg border border-input bg-input/50 px-3 text-base"
-              >
-                <option value={BOOKING_STAFF_UNASSIGNED}>{BOOKING_STAFF_UNASSIGNED}</option>
-                {staffList.map((member) => (
-                  <option key={member.id} value={member.display_name}>
-                    {member.display_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="headcount">人數</Label>
-              <select
-                id="headcount"
-                value={headcount}
-                onChange={(e) => setHeadcount(Number(e.target.value))}
-                className="input-neon h-12 w-full rounded-lg border border-input bg-input/50 px-3 text-base"
-              >
-                {[1, 2, 3, 4].map((n) => (
-                  <option key={n} value={n}>
-                    {n} 人
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="note">備註（選填）</Label>
-              <Input
-                id="note"
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="傷痛部位、其他需求"
-                className="input-neon h-12 border-primary/20 bg-input/50 text-base"
-              />
-            </div>
-          </div>
-
-          <div className="flex gap-2 pt-2">
-            <Button type="button" variant="outline" className="h-12 flex-1" onClick={() => setStep(1)}>
-              上一步
-            </Button>
-            <BindSubmitButton
-              type="button"
-              className="flex-[2]"
-              disabled={!startsAt}
-              onClick={() => setStep(3)}
-            >
-              下一步
-            </BindSubmitButton>
-          </div>
-        </div>
+        <TimeStep
+          service={selectedService}
+          startsAt={startsAt}
+          now={now}
+          staffList={staffList}
+          staffName={staffName}
+          headcount={headcount}
+          note={note}
+          onChangeService={handleChangeService}
+          onSelectSlot={setStartsAt}
+          onStaffChange={setStaffName}
+          onHeadcountChange={setHeadcount}
+          onNoteChange={setNote}
+          onBack={() => setStep(1)}
+          onNext={() => setStep(3)}
+        />
       ) : null}
 
       {step === 3 && selectedService && startsAt ? (
