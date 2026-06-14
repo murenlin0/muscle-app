@@ -208,24 +208,27 @@
     box-shadow: 0 0 12px oklch(0.55 0.12 285 / 0.15);
   }
   .neon-outline-card {
-    @apply rounded-2xl border border-primary/22 bg-card/10 transition-all duration-300;
-    box-shadow:
-      0 0 0 1px oklch(0.58 0.19 252 / 0.05),
-      0 0 18px oklch(0.58 0.19 252 / 0.04);
-  }
-  .neon-outline-card:hover {
-    border-color: oklch(0.58 0.19 252 / 0.36);
-    background: oklch(0.58 0.19 252 / 0.035);
+    @apply rounded-2xl border border-primary/32 bg-card/10 transition-all duration-300;
     box-shadow:
       0 0 0 1px oklch(0.58 0.19 252 / 0.08),
-      0 0 26px oklch(0.58 0.19 252 / 0.09);
+      0 0 24px oklch(0.58 0.19 252 / 0.08);
+  }
+  .neon-outline-card:hover {
+    border-color: oklch(0.58 0.19 252 / 0.52);
+    background: oklch(0.58 0.19 252 / 0.045);
+    box-shadow:
+      0 0 0 1px oklch(0.58 0.19 252 / 0.14),
+      0 0 34px oklch(0.58 0.19 252 / 0.16);
   }
   .neon-outline-card-selected {
-    border-color: oklch(0.58 0.19 252 / 0.42);
-    background: oklch(0.58 0.19 252 / 0.05);
+    border-color: oklch(0.58 0.19 252 / 0.55);
+    background: oklch(0.58 0.19 252 / 0.06);
     box-shadow:
-      0 0 0 1px oklch(0.58 0.19 252 / 0.1),
-      0 0 30px oklch(0.58 0.19 252 / 0.11);
+      0 0 0 1px oklch(0.58 0.19 252 / 0.16),
+      0 0 38px oklch(0.58 0.19 252 / 0.18);
+  }
+  .liff-content {
+    @apply mx-auto w-full max-w-sm px-3;
   }
   .neon-panel {
     @apply rounded-2xl border border-primary/35 bg-card/10 transition-colors duration-200;

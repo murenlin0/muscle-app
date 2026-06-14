@@ -177,8 +177,8 @@ export function BookingFlow() {
   const canNextStep2 = Boolean(startsAt);
 
   return (
-    <main className="min-h-svh pb-10">
-      <div className="mx-auto max-w-md px-5 pt-4">
+    <main className="min-h-svh touch-pan-y pb-10">
+      <div className="liff-content pt-4">
         <Link
           href={bookBase}
           aria-label="返回"

@@ -58,7 +58,7 @@ export function ServiceStep({
               type="button"
               onClick={() => onSelect(service)}
               className={cn(
-                'neon-outline-card relative w-full p-5 text-left active:scale-[0.995]',
+                'neon-outline-card relative w-full p-4 text-left active:scale-[0.995]',
                 selected && 'neon-outline-card-selected',
               )}
             >

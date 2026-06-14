@@ -168,6 +168,7 @@ export function CalendarTimePicker({
   function onBlockPointerDown(e: React.PointerEvent) {
     e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
+    if (gridRef.current) gridRef.current.style.touchAction = 'none';
     dragRef.current = { startY: e.clientY, startMinutes: startMinutes };
   }
 
@@ -180,6 +181,7 @@ export function CalendarTimePicker({
 
   function onBlockPointerUp(e: React.PointerEvent) {
     dragRef.current = null;
+    if (gridRef.current) gridRef.current.style.touchAction = 'pan-y';
     e.currentTarget.releasePointerCapture(e.pointerId);
   }
 
@@ -295,8 +297,8 @@ export function CalendarTimePicker({
 
         <div
           ref={gridRef}
-          className="relative flex-1 touch-none select-none"
-          style={{ height: gridHeightPx }}
+          className="relative flex-1 select-none"
+          style={{ height: gridHeightPx, touchAction: 'pan-y' }}
           onPointerDown={onGridPointerDown}
         >
           {Array.from({ length: BOOKING_CLOSE_HOUR - BOOKING_OPEN_HOUR + 1 }, (_, i) => (
@@ -314,7 +316,7 @@ export function CalendarTimePicker({
             aria-valuemin={minStartMinutes}
             aria-valuemax={maxStartMinutes}
             aria-valuetext={formatTimeRange(currentStart, durationMinutes)}
-            className="absolute left-2 right-2 cursor-grab rounded-md border-2 border-primary/75 bg-primary/12 transition-colors duration-200 hover:border-primary hover:bg-primary/18 active:cursor-grabbing"
+            className="absolute left-1 right-1 cursor-grab rounded-md border-2 border-primary/75 bg-primary/12 transition-colors duration-200 hover:border-primary hover:bg-primary/18 active:cursor-grabbing"
             style={{
               top: (startMinutes / 60) * HOUR_HEIGHT_PX,
               height: blockHeightPx,

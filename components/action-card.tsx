@@ -19,7 +19,7 @@ export function ActionCard({
 }) {
   return (
     <Link href={href} className="group block active:scale-[0.995] transition-transform">
-      <div className="neon-outline-card relative p-5">
+      <div className="neon-outline-card relative p-4">
         <div className="flex items-start gap-4">
           <div
             className={cn(

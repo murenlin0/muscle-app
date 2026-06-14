@@ -1,15 +1,21 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { ClientLedgerTable, type ClientLedgerDisplayRow } from '@/components/client-ledger-table';
 import { PageShell } from '@/app/components/page-shell';
 import { useLiff } from '@/app/components/liff-provider';
 import { LiffStatusGate } from '@/components/liff-status-gate';
 import { LoadingScreen } from '@/components/loading-screen';
 import { useStore } from '@/components/store-provider';
-import { Badge } from '@/components/ui/badge';
 import { buttonVariants } from '@/components/ui/button';
+import { CATEGORY_NOTION_STYLE } from '@/lib/category-styles';
+import {
+  formatClientKey,
+  formatClientKeyLabel,
+} from '@/lib/ledger-client-display';
 import { cn } from '@/lib/utils';
+import { formatCurrency } from '@/lib/phone';
 import {
   Card,
   CardContent,
@@ -18,8 +24,25 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { formatCurrency } from '@/lib/phone';
 import type { Client, LedgerRecord } from '@/lib/types/database';
+
+const MEMBER_LEDGER_TYPE_STYLE: Record<string, string> = {
+  initial: CATEGORY_NOTION_STYLE['會員儲值'],
+  top_up: CATEGORY_NOTION_STYLE['會員儲值'],
+  deduction: CATEGORY_NOTION_STYLE['會員使用'],
+  adjustment: CATEGORY_NOTION_STYLE['會員補差額'],
+};
+
+function toDisplayRows(ledger: LedgerRecord[]): ClientLedgerDisplayRow[] {
+  return ledger.map((row) => ({
+    id: row.id,
+    occurredOn: row.occurred_at,
+    title: row.note?.trim() || row.type_label,
+    amount: row.signed_amount,
+    category: row.type_label,
+    categoryClassName: MEMBER_LEDGER_TYPE_STYLE[row.type],
+  }));
+}
 
 export default function WalletPage() {
   const { bookBase, apiBase } = useStore();
@@ -57,8 +80,10 @@ export default function WalletPage() {
       setLoading(false);
     }
 
-    load();
+    void load();
   }, [status, lineUserId, apiBase]);
+
+  const rows = useMemo(() => toDisplayRows(ledger), [ledger]);
 
   if (status !== 'ready' || loading) {
     return (
@@ -70,7 +95,7 @@ export default function WalletPage() {
 
   if (error || !client) {
     return (
-      <PageShell title="儲值金" backHref={bookBase}>
+      <PageShell title="儲值與交易紀錄" backHref={bookBase}>
         <Card className="glass-card">
           <CardHeader>
             <CardTitle className="text-destructive">無法載入</CardTitle>
@@ -89,70 +114,33 @@ export default function WalletPage() {
     );
   }
 
+  const clientLabel = formatClientKeyLabel(client, client.is_vip);
+  const clientKey = formatClientKey(client);
+
   return (
-    <PageShell title="儲值金" subtitle={client.name} backHref={bookBase}>
-      <div className="glow-balance">
-        <div className="pointer-events-none absolute -right-8 -top-8 size-36 rounded-full bg-accent/15 blur-3xl" />
-        <CardHeader className="relative">
-          <div className="flex items-center justify-between gap-2">
-            <CardDescription className="text-base text-foreground/70">目前可用餘額</CardDescription>
-            {client.is_vip ? (
-              <Badge className="border-primary-foreground/20 bg-primary/20 text-primary-foreground">
-                VIP
-              </Badge>
-            ) : null}
-          </div>
-          <CardTitle className="neon-text font-mono text-5xl font-bold tracking-tight text-foreground">
-            {formatCurrency(client.balance)}
-          </CardTitle>
-          {client.initial_balance > 0 && ledger.length === 0 ? (
-            <CardDescription className="text-foreground/60">
-              含期初匯入 {formatCurrency(client.initial_balance)}
-            </CardDescription>
-          ) : null}
-        </CardHeader>
+    <PageShell title="儲值與交易紀錄" backHref={bookBase}>
+      <div className="neon-panel mb-5 px-4 py-4">
+        <p className="text-sm font-semibold text-foreground">{clientLabel}</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          {rows.length} 筆紀錄 · 餘額 {formatCurrency(client.balance)}
+        </p>
+        <p className="mt-0.5 font-mono text-[10px] text-muted-foreground/70">{clientKey}</p>
       </div>
 
-      <div className="mt-8">
-        <h2 className="mb-4 text-base font-bold text-foreground">交易紀錄</h2>
-        {ledger.length === 0 ? (
-          <Card className="glass-card">
-            <CardContent className="py-8 text-center text-base text-muted-foreground">
-              尚無流水紀錄
-              <br />
-              Calendar 同步後會顯示儲值與扣款
-            </CardContent>
-          </Card>
-        ) : (
-          <Card className="glass-card divide-y divide-border/60 overflow-hidden p-0">
-            {ledger.map((row) => (
-              <div key={row.id} className="flex items-center justify-between px-5 py-4">
-                <div>
-                  <p className="font-semibold">{row.type_label}</p>
-                  <p className="mt-0.5 text-sm text-muted-foreground">
-                    {new Date(row.occurred_at).toLocaleString('zh-TW')}
-                  </p>
-                </div>
-                <span
-                  className={cn(
-                    'font-mono text-lg font-bold',
-                    row.signed_amount >= 0 ? 'text-accent' : 'text-destructive',
-                  )}
-                >
-                  {row.signed_amount >= 0 ? '+' : ''}
-                  {row.signed_amount.toLocaleString('zh-TW')}
-                </span>
-              </div>
-            ))}
-          </Card>
-        )}
-      </div>
+      <ClientLedgerTable
+        rows={rows}
+        compact
+        emptyMessage="尚無交易紀錄"
+      />
 
       <Separator className="my-8 bg-border/60" />
 
       <Link
         href={`${bookBase}/bind?edit=1`}
-        className={cn(buttonVariants({ variant: 'outline' }), 'inline-flex h-12 w-full justify-center text-base')}
+        className={cn(
+          buttonVariants({ variant: 'outline' }),
+          'inline-flex h-12 w-full justify-center text-base',
+        )}
       >
         修改本名或電話
       </Link>

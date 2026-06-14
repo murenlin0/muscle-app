@@ -15,8 +15,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { formatPriceNtd } from '@/lib/booking-services';
-
 export default function BookHomePage() {
   const router = useRouter();
   const { bookBase } = useStore();
@@ -57,7 +55,7 @@ export default function BookHomePage() {
 
   return (
     <main className="min-h-svh">
-      <div className="mx-auto flex min-h-svh max-w-md flex-col px-5 py-10">
+      <div className="liff-content flex min-h-svh flex-col py-10">
         <header className="mb-8 text-center">
           <div className="mt-8 flex flex-wrap items-center justify-center gap-2.5">
             <h1 className="text-[2rem] font-bold leading-tight tracking-tight">
@@ -83,9 +81,8 @@ export default function BookHomePage() {
           <ActionCard
             href={`${bookBase}/wallet`}
             icon={Wallet}
-            title="儲值金"
-            description="查看餘額與儲值紀錄"
-            monoHint={formatPriceNtd(client.balance)}
+            title="儲值與交易紀錄"
+            description="查看儲值、扣款與交易明細"
             tone="wallet"
           />
         </div>

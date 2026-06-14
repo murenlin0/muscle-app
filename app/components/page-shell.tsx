@@ -19,7 +19,7 @@ export function PageShell({
 }) {
   return (
     <main className="min-h-svh">
-      <div className={cn('mx-auto max-w-md px-5', compact ? 'py-4' : 'py-8')}>
+      <div className={cn('liff-content', compact ? 'py-4' : 'py-8')}>
         <div className={cn('relative flex items-center justify-center', compact ? 'mb-3' : 'mb-8')}>
           <Link
             href={backHref}

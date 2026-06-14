@@ -3,15 +3,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { LedgerRow } from '@/components/portal/editable-ledger-table';
-import { CATEGORY_NOTION_STYLE, ledgerAmountClass } from '@/lib/category-styles';
+import type { ClientLedgerDisplayRow } from '@/components/client-ledger-table';
+import { ClientLedgerTable } from '@/components/client-ledger-table';
 import {
   formatClientKey,
   formatClientKeyLabel,
-  resolveClientFromFields,
 } from '@/lib/ledger-client-display';
 import { clientMemberBalance } from '@/lib/ledger-title-balance';
 import type { StoreSlug } from '@/lib/stores';
-import { cn } from '@/lib/utils';
 
 function fmt(n: number) {
   return n.toLocaleString('zh-TW');
@@ -183,46 +182,18 @@ export function ClientLedgerDrawer({
               {formatDate(from)}～{formatDate(to)} 無紀錄
             </p>
           ) : (
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 bg-[#1a1a1a] text-[11px] text-[#888]">
-                <tr>
-                  <th className="px-3 py-2 text-left font-medium">日期</th>
-                  <th className="px-3 py-2 text-left font-medium">標題</th>
-                  <th className="px-3 py-2 text-right font-medium">金額</th>
-                  <th className="px-3 py-2 text-left font-medium">類型</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.id} className="border-b border-[#252525] hover:bg-[#1f1f1f]">
-                    <td className="whitespace-nowrap px-3 py-2 text-[#aaa]">
-                      {formatDate(row.occurredOn)}
-                    </td>
-                    <td className="max-w-[240px] truncate px-3 py-2 text-[#ddd]" title={row.title}>
-                      {row.title}
-                    </td>
-                    <td
-                      className={cn(
-                        'whitespace-nowrap px-3 py-2 text-right tabular-nums font-medium',
-                        ledgerAmountClass(row.amount),
-                      )}
-                    >
-                      ${fmt(row.amount)}
-                    </td>
-                    <td className="px-3 py-2">
-                      <span
-                        className={cn(
-                          'inline-block px-2 py-0.5 text-[10px] font-medium',
-                          CATEGORY_NOTION_STYLE[row.category],
-                        )}
-                      >
-                        {row.category}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <ClientLedgerTable
+              variant="portal"
+              rows={rows.map(
+                (row): ClientLedgerDisplayRow => ({
+                  id: row.id,
+                  occurredOn: row.occurredOn,
+                  title: row.title,
+                  amount: row.amount,
+                  category: row.category,
+                }),
+              )}
+            />
           )}
         </div>
       </aside>
