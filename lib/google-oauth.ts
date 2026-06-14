@@ -38,6 +38,11 @@ export function getGoogleOAuthConfig(request: Request): GoogleOAuthConfig | null
   return { clientId, clientSecret, redirectUri };
 }
 
+export function isValidGoogleSetupKey(key: string | null | undefined): boolean {
+  const required = process.env.GOOGLE_OAUTH_SETUP_KEY?.trim();
+  return Boolean(required && key === required);
+}
+
 export function assertGoogleSetupKey(request: Request): string | null {
   const required = process.env.GOOGLE_OAUTH_SETUP_KEY?.trim();
   if (!required) {
