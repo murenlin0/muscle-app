@@ -16,6 +16,8 @@ const nextConfig: NextConfig = {
       { source: '/admin/:path*', headers: noStoreHeaders },
       { source: '/:store/admin/:path*', headers: noStoreHeaders },
       { source: '/login', headers: noStoreHeaders },
+      { source: '/:store/book', headers: noStoreHeaders },
+      { source: '/:store/book/:path*', headers: noStoreHeaders },
     ];
   },
   async redirects() {
