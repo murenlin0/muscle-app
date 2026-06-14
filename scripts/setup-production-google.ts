@@ -21,60 +21,86 @@ function parseEnvFile(path: string): Record<string, string> {
   return out;
 }
 
-async function applySql(password: string) {
+async function connectPg(password: string): Promise<{ client: pg.Client; label: string }> {
   const regions = [
-    'ap-northeast-1',
     'ap-southeast-1',
+    'ap-northeast-1',
+    'ap-northeast-2',
     'us-east-1',
     'eu-west-1',
   ];
-  const sql = readFileSync(
-    join(process.cwd(), 'supabase', '09_integration_settings.sql'),
-    'utf8',
-  );
 
   let lastError: unknown;
   for (const region of regions) {
-    const url = `postgresql://postgres.${PROJECT_REF}:${encodeURIComponent(password)}@aws-0-${region}.pooler.supabase.com:6543/postgres`;
-    const client = new pg.Client({ connectionString: url, ssl: { rejectUnauthorized: false } });
-    try {
-      await client.connect();
-      await client.query(sql);
-      await client.end();
-      console.log(`OK: integration_settings（region ${region}）`);
-      return;
-    } catch (e) {
-      lastError = e;
-      try {
-        await client.end();
-      } catch {
-        /* ignore */
+    for (const aws of ['aws-1', 'aws-0'] as const) {
+      for (const port of [5432, 6543] as const) {
+        const url = `postgresql://postgres.${PROJECT_REF}:${encodeURIComponent(password)}@${aws}-${region}.pooler.supabase.com:${port}/postgres`;
+        const client = new pg.Client({
+          connectionString: url,
+          ssl: { rejectUnauthorized: false },
+          connectionTimeoutMillis: 10_000,
+        });
+        try {
+          await client.connect();
+          return { client, label: `${aws}-${region}:${port}` };
+        } catch (e) {
+          lastError = e;
+          try {
+            await client.end();
+          } catch {
+            /* ignore */
+          }
+        }
       }
     }
   }
   throw lastError;
 }
 
-async function saveTokens(local: Record<string, string>) {
-  const url = local.NEXT_PUBLIC_SUPABASE_URL;
-  const key = local.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error('缺少 Supabase URL / service role key');
+async function applySql(client: pg.Client) {
+  const sql = readFileSync(
+    join(process.cwd(), 'supabase', '09_integration_settings.sql'),
+    'utf8',
+  );
+  await client.query(sql);
+}
 
-  const supabase = createClient(url, key, { auth: { persistSession: false } });
+async function saveTokensPg(
+  client: pg.Client,
+  local: Record<string, string>,
+) {
   const refresh = local.GOOGLE_REFRESH_TOKEN;
   const calendarId = local.GOOGLE_CALENDAR_ID ?? 'muscle.com.tw@gmail.com';
   if (!refresh) throw new Error('缺少 GOOGLE_REFRESH_TOKEN');
 
-  const rows = [
-    { key: 'google_refresh_token', value: refresh },
-    { key: 'google_calendar_id', value: calendarId },
-  ];
-  const { error } = await supabase.from('integration_settings').upsert(
-    rows.map((r) => ({ ...r, updated_at: new Date().toISOString() })),
-    { onConflict: 'key' },
+  await client.query("NOTIFY pgrst, 'reload schema'");
+  await client.query(
+    `insert into integration_settings (key, value, updated_at)
+     values ('google_refresh_token', $1, now()), ('google_calendar_id', $2, now())
+     on conflict (key) do update
+       set value = excluded.value, updated_at = excluded.updated_at`,
+    [refresh, calendarId],
   );
-  if (error) throw new Error(error.message);
   console.log('OK: token 已寫入 integration_settings');
+}
+
+async function verifyTokens(local: Record<string, string>) {
+  const url = local.NEXT_PUBLIC_SUPABASE_URL;
+  const key = local.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) return;
+
+  const supabase = createClient(url, key, { auth: { persistSession: false } });
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const { data, error } = await supabase
+      .from('integration_settings')
+      .select('key')
+      .order('key');
+    if (!error) {
+      console.log('OK: REST 可讀', data?.map((r) => r.key).join(', '));
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 1500));
+  }
 }
 
 async function main() {
@@ -88,8 +114,15 @@ async function main() {
     process.exit(1);
   }
 
-  await applySql(password);
-  await saveTokens(local);
+  const { client, label } = await connectPg(password);
+  try {
+    await applySql(client);
+    console.log(`OK: integration_settings 表（${label}）`);
+    await saveTokensPg(client, local);
+  } finally {
+    await client.end();
+  }
+  await verifyTokens(local);
 }
 
 main().catch((e) => {

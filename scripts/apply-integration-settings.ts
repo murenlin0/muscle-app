@@ -16,7 +16,7 @@ async function main() {
   const connectionString =
     url ||
     (password
-      ? `postgresql://postgres.${projectRef}:${encodeURIComponent(password)}@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres`
+      ? `postgresql://postgres.${projectRef}:${encodeURIComponent(password)}@aws-1-ap-southeast-1.pooler.supabase.com:5432/postgres`
       : null);
 
   if (!connectionString) {
