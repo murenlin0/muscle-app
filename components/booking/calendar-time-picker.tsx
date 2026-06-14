@@ -364,6 +364,7 @@ export function CalendarTimePicker({
           </div>
         </div>
       </div>
+      </div>
 
       <p className="border-t border-primary/15 px-4 py-2 text-center text-xs text-muted-foreground">
         拖曳方框或點擊時段 · 時長 {durationMinutes} 分鐘

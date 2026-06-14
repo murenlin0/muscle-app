@@ -130,11 +130,18 @@ export function BookingFlow() {
 
     try {
       const liffId = getLiffIdForStore(store.slug);
-      if (liffId && liff.isInClient() && liff.isApiAvailable('sendMessages')) {
-        await liff.sendMessages([{ type: 'text', text: messageText }]);
-        setSentMode('line');
-        liff.closeWindow();
-        return;
+      if (liffId && liff.isInClient()) {
+        try {
+          await liff.sendMessages([{ type: 'text', text: messageText }]);
+          setSentMode('line');
+          liff.closeWindow();
+          return;
+        } catch {
+          // sendMessages 需從官方帳號對話開啟；失敗時改複製到剪貼簿
+          await navigator.clipboard.writeText(messageText);
+          setSentMode('copied');
+          return;
+        }
       }
 
       await navigator.clipboard.writeText(messageText);
@@ -157,7 +164,7 @@ export function BookingFlow() {
           <Card className="glass-card">
             <CardHeader>
               <CardTitle className="text-lg">訊息已複製</CardTitle>
-              <CardDescription>本機測試：請貼到 LINE 官方帳號</CardDescription>
+              <CardDescription>已複製到剪貼簿，請貼到 LINE 官方帳號對話</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <pre className="whitespace-pre-wrap rounded-lg border border-border/60 bg-input/40 p-4 font-mono text-sm leading-relaxed">
