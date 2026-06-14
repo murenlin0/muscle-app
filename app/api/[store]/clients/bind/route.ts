@@ -71,29 +71,52 @@ export async function POST(
     is_active: true,
   };
 
+  const selectCols =
+    'id, store_id, phone, line_user_id, name, is_vip, initial_balance, balance, is_active, created_at, updated_at';
+
+  /** 電話已存在 → 連到同一筆會員（保留餘額與 ledger_records） */
+  if (byPhone) {
+    if (byLine && byLine.id !== byPhone.id) {
+      await supabase
+        .from('clients')
+        .update({ line_user_id: null })
+        .eq('id', byLine.id);
+    }
+
+    const { data, error } = await supabase
+      .from('clients')
+      .update(payload)
+      .eq('id', byPhone.id)
+      .select(selectCols)
+      .single();
+
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+
+    return NextResponse.json({ client: data, action: 'linked' as const });
+  }
+
+  /** 電話不存在 → 更新既有 LINE 列或新建 */
   const { data, error } = byLine
     ? await supabase
         .from('clients')
         .update(payload)
         .eq('id', byLine.id)
-        .select('id, store_id, phone, line_user_id, name, is_vip, initial_balance, balance, is_active, created_at, updated_at')
+        .select(selectCols)
         .single()
-    : byPhone
-      ? await supabase
-          .from('clients')
-          .update(payload)
-          .eq('id', byPhone.id)
-          .select('id, store_id, phone, line_user_id, name, is_vip, initial_balance, balance, is_active, created_at, updated_at')
-          .single()
-      : await supabase
-          .from('clients')
-          .insert({ ...payload, initial_balance: 0, balance: 0 })
-          .select('id, store_id, phone, line_user_id, name, is_vip, initial_balance, balance, is_active, created_at, updated_at')
-          .single();
+    : await supabase
+        .from('clients')
+        .insert({ ...payload, initial_balance: 0, balance: 0 })
+        .select(selectCols)
+        .single();
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ client: data });
+  return NextResponse.json({
+    client: data,
+    action: byLine ? ('updated' as const) : ('created' as const),
+  });
 }

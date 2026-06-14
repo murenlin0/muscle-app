@@ -92,7 +92,7 @@ function BindForm() {
             ) : null}
           </div>
           <CardDescription className="text-sm">
-            姓名與電話會用於預約確認，請填寫與到店時一致的本名。
+            姓名與電話會用於預約確認。若電話已是店內會員，綁定後會沿用原有餘額與儲值紀錄。
           </CardDescription>
         </CardHeader>
         <CardContent className="pt-5">
