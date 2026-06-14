@@ -83,10 +83,7 @@ export function CalendarTimePicker({
     return defaultStartMinutes(startOfDay(value ?? now), now, durationMinutes);
   });
   const [dateMenuOpen, setDateMenuOpen] = useState(false);
-  const [dragging, setDragging] = useState(false);
-  const dragRef = useRef<{ startY: number; startMinutes: number; pointerId: number } | null>(
-    null,
-  );
+  const dragRef = useRef<{ startY: number; startMinutes: number } | null>(null);
 
   const totalMinutes = (BOOKING_CLOSE_HOUR - BOOKING_OPEN_HOUR) * 60;
   const maxStartMinutes = maxStartMinutesForDuration(durationMinutes);
@@ -142,38 +139,6 @@ export function CalendarTimePicker({
     applyMinutes(startMinutes);
   }, [durationMinutes, minStartMinutes, maxStartMinutes]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    if (!dragging) return;
-
-    function onMove(e: PointerEvent) {
-      if (!dragRef.current || e.pointerId !== dragRef.current.pointerId) return;
-      e.preventDefault();
-      const deltaY = e.clientY - dragRef.current.startY;
-      const deltaMinutes = (deltaY / HOUR_HEIGHT_PX) * 60;
-      applyMinutes(dragRef.current.startMinutes + deltaMinutes);
-    }
-
-    function onUp(e: PointerEvent) {
-      if (!dragRef.current || e.pointerId !== dragRef.current.pointerId) return;
-      dragRef.current = null;
-      setDragging(false);
-    }
-
-    window.addEventListener('pointermove', onMove, { passive: false });
-    window.addEventListener('pointerup', onUp);
-    window.addEventListener('pointercancel', onUp);
-
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-
-    return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-      window.removeEventListener('pointercancel', onUp);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [dragging, applyMinutes]);
-
   function shiftDay(delta: number) {
     const next = addDays(selectedDay, delta);
     if (next.getTime() < minDay.getTime() || next.getTime() > maxDay.getTime()) return;
@@ -200,28 +165,29 @@ export function CalendarTimePicker({
     applyMinutes(yToMinutes(e.clientY));
   }
 
-  function onBlockPointerDown(e: React.PointerEvent) {
-    e.preventDefault();
+  function onBlockPointerDown(e: React.PointerEvent<HTMLDivElement>) {
     e.stopPropagation();
-    dragRef.current = {
-      startY: e.clientY,
-      startMinutes: startMinutes,
-      pointerId: e.pointerId,
-    };
-    setDragging(true);
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    document.body.style.overflow = 'hidden';
+    dragRef.current = { startY: e.clientY, startMinutes: startMinutes };
   }
 
-  function onBlockPointerMove(e: React.PointerEvent) {
+  function onBlockPointerMove(e: React.PointerEvent<HTMLDivElement>) {
     if (!dragRef.current) return;
     e.preventDefault();
-    e.stopPropagation();
+    const deltaY = e.clientY - dragRef.current.startY;
+    const deltaMinutes = (deltaY / HOUR_HEIGHT_PX) * 60;
+    applyMinutes(dragRef.current.startMinutes + deltaMinutes);
   }
 
-  function onBlockPointerUp(e: React.PointerEvent) {
-    if (!dragRef.current || e.pointerId !== dragRef.current.pointerId) return;
-    e.preventDefault();
+  function endBlockDrag(e: React.PointerEvent<HTMLDivElement>) {
+    if (!dragRef.current) return;
     dragRef.current = null;
-    setDragging(false);
+    document.body.style.overflow = '';
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
   }
 
   const weekdayLabels = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
@@ -362,8 +328,9 @@ export function CalendarTimePicker({
             }}
             onPointerDown={onBlockPointerDown}
             onPointerMove={onBlockPointerMove}
-            onPointerUp={onBlockPointerUp}
-            onPointerCancel={onBlockPointerUp}
+            onPointerUp={endBlockDrag}
+            onPointerCancel={endBlockDrag}
+            onLostPointerCapture={endBlockDrag}
           >
             <div className="px-2 py-1 text-xs font-medium text-foreground/90">
               {formatTimeRange(currentStart, durationMinutes)}
