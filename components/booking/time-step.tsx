@@ -10,7 +10,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { BOOKING_STAFF_UNASSIGNED } from '@/lib/booking-draft';
-import { serviceDisplayMeta } from '@/lib/booking-services';
+import { serviceDurationLabel } from '@/lib/booking-services';
 import type { Service, Staff } from '@/lib/types/database';
 import { cn } from '@/lib/utils';
 
@@ -118,7 +118,7 @@ export function TimeStep({
     <div className="space-y-5">
       <h2 className="text-lg font-bold">選擇時間與師傅</h2>
       <p className="-mt-3 text-sm text-muted-foreground">
-        已選：{serviceDisplayMeta(service).title} · {service.duration_minutes} 分鐘
+        已選：{service.name} · {serviceDurationLabel(service)}
       </p>
 
       <Card className="glass-card border-primary/15">

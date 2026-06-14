@@ -3,10 +3,11 @@
 import { CalendarDays, Clock, Sparkles, UserRound } from 'lucide-react';
 import { BOOKING_STAFF_UNASSIGNED } from '@/lib/booking-draft';
 import {
-  serviceDisplayMeta,
   serviceDurationLabel,
   servicePriceDisplay,
 } from '@/lib/booking-services';
+import type { Client, Service } from '@/lib/types/database';
+import { cn } from '@/lib/utils';
 
 function formatDateTime(date: Date): string {
   const y = date.getFullYear();
@@ -57,7 +58,6 @@ export function BookingSummary({
   staffName: string;
   startsAt: Date | null;
 }) {
-  const meta = service ? serviceDisplayMeta(service) : null;
   const prices = service ? servicePriceDisplay(service, client) : null;
 
   return (
@@ -66,8 +66,8 @@ export function BookingSummary({
       <div className="divide-y divide-border/50">
         <SummaryRow
           icon={Sparkles}
-          label="療程"
-          value={meta?.title ?? '尚未選擇'}
+          label="服務"
+          value={service?.name ?? '尚未選擇'}
           empty={!service}
         />
         <SummaryRow
@@ -103,6 +103,3 @@ export function BookingSummary({
     </div>
   );
 }
-
-import type { Client, Service } from '@/lib/types/database';
-import { cn } from '@/lib/utils';
