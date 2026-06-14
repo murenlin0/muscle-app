@@ -6,6 +6,7 @@ import {
   serviceDurationLabel,
   servicePriceDisplay,
 } from '@/lib/booking-services';
+import { ServicePriceLines } from '@/components/booking/service-price-lines';
 import type { Client, Service } from '@/lib/types/database';
 import { cn } from '@/lib/utils';
 
@@ -89,17 +90,16 @@ export function BookingSummary({
           empty={!startsAt}
         />
       </div>
-      <div className="mt-3 flex items-center justify-between border-t border-primary/15 pt-3">
-        <span className="text-sm text-muted-foreground">預估金額</span>
-        <span className="font-mono text-lg font-bold tabular-nums text-primary">
-          {prices?.estimatedLabel ?? '—'}
-        </span>
+      <div className="mt-3 border-t border-primary/15 pt-3">
+        <div className="flex items-start justify-between gap-3">
+          <span className="text-sm text-muted-foreground">預估金額</span>
+          {prices ? (
+            <ServicePriceLines prices={prices} align="right" size="md" />
+          ) : (
+            <span className="font-mono text-lg font-bold tabular-nums text-primary">—</span>
+          )}
+        </div>
       </div>
-      {prices?.memberLabel && !prices.highlightMember ? (
-        <p className="mt-1 text-right text-xs text-muted-foreground">
-          會員價 {prices.memberLabel}
-        </p>
-      ) : null}
     </div>
   );
 }

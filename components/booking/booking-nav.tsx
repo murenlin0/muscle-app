@@ -39,22 +39,29 @@ export function BookingNav({
           onClick={onNext}
           className={cn(
             'relative inline-flex h-12 min-w-[9.5rem] shrink-0 items-center justify-center gap-2 overflow-hidden rounded-xl px-7 text-sm font-semibold tracking-wide',
-            'border border-sky-400/50 bg-gradient-to-br from-sky-500 via-blue-600 to-indigo-600 text-white',
-            'shadow-[0_0_0_1px_oklch(0.72_0.14_230/0.35),0_0_28px_oklch(0.55_0.2_252/0.45),inset_0_1px_0_oklch(1_0_0/0.2)]',
+            'border border-white/25 bg-gradient-to-br from-sky-400/25 via-blue-500/20 to-indigo-500/15',
+            'text-white/95 backdrop-blur-md',
+            'shadow-[inset_0_1px_0_oklch(1_0_0/0.35),inset_0_-1px_0_oklch(0.5_0.1_252/0.15),0_0_24px_oklch(0.58_0.19_252/0.22)]',
             'transition-all duration-300',
             !nextDisabled &&
-              'hover:border-sky-300/70 hover:shadow-[0_0_0_1px_oklch(0.78_0.12_230/0.5),0_0_40px_oklch(0.55_0.2_252/0.65),inset_0_1px_0_oklch(1_0_0/0.28)] hover:brightness-110',
-            nextDisabled && 'cursor-not-allowed opacity-40 shadow-none',
+              'hover:border-white/40 hover:from-sky-400/35 hover:via-blue-500/28 hover:to-indigo-500/22 hover:shadow-[inset_0_1px_0_oklch(1_0_0/0.45),0_0_32px_oklch(0.58_0.19_252/0.35)]',
+            nextDisabled && 'cursor-not-allowed opacity-35 shadow-none',
           )}
         >
           {!nextDisabled ? (
-            <span
-              aria-hidden
-              className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-[neon-scan_3s_ease-in-out_infinite]"
-            />
+            <>
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/20 via-transparent to-transparent"
+              />
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-white/15 to-transparent animate-[neon-scan_4s_ease-in-out_infinite]"
+              />
+            </>
           ) : null}
-          <span className="relative z-10">{nextLabel}</span>
-          <ArrowRight className="relative z-10 size-4" strokeWidth={2.5} />
+          <span className="relative z-10 drop-shadow-sm">{nextLabel}</span>
+          <ArrowRight className="relative z-10 size-4 drop-shadow-sm" strokeWidth={2.5} />
         </button>
       ) : null}
     </div>

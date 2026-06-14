@@ -83,7 +83,10 @@ export function CalendarTimePicker({
     return defaultStartMinutes(startOfDay(value ?? now), now, durationMinutes);
   });
   const [dateMenuOpen, setDateMenuOpen] = useState(false);
-  const dragRef = useRef<{ startY: number; startMinutes: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const dragRef = useRef<{ startY: number; startMinutes: number; pointerId: number } | null>(
+    null,
+  );
 
   const totalMinutes = (BOOKING_CLOSE_HOUR - BOOKING_OPEN_HOUR) * 60;
   const maxStartMinutes = maxStartMinutesForDuration(durationMinutes);
@@ -139,6 +142,38 @@ export function CalendarTimePicker({
     applyMinutes(startMinutes);
   }, [durationMinutes, minStartMinutes, maxStartMinutes]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!dragging) return;
+
+    function onMove(e: PointerEvent) {
+      if (!dragRef.current || e.pointerId !== dragRef.current.pointerId) return;
+      e.preventDefault();
+      const deltaY = e.clientY - dragRef.current.startY;
+      const deltaMinutes = (deltaY / HOUR_HEIGHT_PX) * 60;
+      applyMinutes(dragRef.current.startMinutes + deltaMinutes);
+    }
+
+    function onUp(e: PointerEvent) {
+      if (!dragRef.current || e.pointerId !== dragRef.current.pointerId) return;
+      dragRef.current = null;
+      setDragging(false);
+    }
+
+    window.addEventListener('pointermove', onMove, { passive: false });
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [dragging, applyMinutes]);
+
   function shiftDay(delta: number) {
     const next = addDays(selectedDay, delta);
     if (next.getTime() < minDay.getTime() || next.getTime() > maxDay.getTime()) return;
@@ -166,23 +201,27 @@ export function CalendarTimePicker({
   }
 
   function onBlockPointerDown(e: React.PointerEvent) {
+    e.preventDefault();
     e.stopPropagation();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    if (gridRef.current) gridRef.current.style.touchAction = 'none';
-    dragRef.current = { startY: e.clientY, startMinutes: startMinutes };
+    dragRef.current = {
+      startY: e.clientY,
+      startMinutes: startMinutes,
+      pointerId: e.pointerId,
+    };
+    setDragging(true);
   }
 
   function onBlockPointerMove(e: React.PointerEvent) {
     if (!dragRef.current) return;
-    const deltaY = e.clientY - dragRef.current.startY;
-    const deltaMinutes = (deltaY / HOUR_HEIGHT_PX) * 60;
-    applyMinutes(dragRef.current.startMinutes + deltaMinutes);
+    e.preventDefault();
+    e.stopPropagation();
   }
 
   function onBlockPointerUp(e: React.PointerEvent) {
+    if (!dragRef.current || e.pointerId !== dragRef.current.pointerId) return;
+    e.preventDefault();
     dragRef.current = null;
-    if (gridRef.current) gridRef.current.style.touchAction = 'pan-y';
-    e.currentTarget.releasePointerCapture(e.pointerId);
+    setDragging(false);
   }
 
   const weekdayLabels = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
@@ -298,7 +337,7 @@ export function CalendarTimePicker({
         <div
           ref={gridRef}
           className="relative flex-1 select-none"
-          style={{ height: gridHeightPx, touchAction: 'pan-y' }}
+          style={{ height: gridHeightPx }}
           onPointerDown={onGridPointerDown}
         >
           {Array.from({ length: BOOKING_CLOSE_HOUR - BOOKING_OPEN_HOUR + 1 }, (_, i) => (
@@ -316,7 +355,7 @@ export function CalendarTimePicker({
             aria-valuemin={minStartMinutes}
             aria-valuemax={maxStartMinutes}
             aria-valuetext={formatTimeRange(currentStart, durationMinutes)}
-            className="absolute left-1 right-1 cursor-grab rounded-md border-2 border-primary/75 bg-primary/12 transition-colors duration-200 hover:border-primary hover:bg-primary/18 active:cursor-grabbing"
+            className="absolute left-1 right-1 cursor-grab rounded-md border-2 border-primary/75 bg-primary/12 touch-none transition-colors duration-200 hover:border-primary hover:bg-primary/18 active:cursor-grabbing"
             style={{
               top: (startMinutes / 60) * HOUR_HEIGHT_PX,
               height: blockHeightPx,

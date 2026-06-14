@@ -1,6 +1,7 @@
 'use client';
 
 import { CalendarTimePicker } from '@/components/booking/calendar-time-picker';
+import { ServicePriceLines } from '@/components/booking/service-price-lines';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { BOOKING_STAFF_UNASSIGNED } from '@/lib/booking-draft';
@@ -9,6 +10,15 @@ import {
   servicePriceDisplay,
 } from '@/lib/booking-services';
 import type { Client, Service, Staff } from '@/lib/types/database';
+
+function formatSelectedTime(date: Date): string {
+  const y = date.getFullYear();
+  const mo = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  const h = String(date.getHours()).padStart(2, '0');
+  const mi = String(date.getMinutes()).padStart(2, '0');
+  return `${y}-${mo}-${d} ${h}:${mi}`;
+}
 
 export function TimeStep({
   service,
@@ -44,13 +54,18 @@ export function TimeStep({
       <h2 className="text-lg font-bold">選擇時間</h2>
 
       <div className="neon-outline-card-selected px-4 py-3">
-        <p className="text-sm font-semibold">{service.name}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          {serviceDurationLabel(service)}
-        </p>
-        <p className="mt-2 font-mono text-sm font-semibold tabular-nums text-primary">
-          {prices.estimatedLabel}
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">{service.name}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {serviceDurationLabel(service)}
+            </p>
+            <p className="mt-2 text-xs text-foreground/90">
+              {startsAt ? formatSelectedTime(startsAt) : '請在下方選擇時段'}
+            </p>
+          </div>
+          <ServicePriceLines prices={prices} align="right" />
+        </div>
       </div>
 
       <CalendarTimePicker
