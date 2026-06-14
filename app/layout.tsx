@@ -22,6 +22,9 @@ const josefinSans = Josefin_Sans({
 export const metadata: Metadata = {
   title: '筋棧｜專業運動按摩',
   description: '筋棧 The Muscle Inn — 專業運動按摩、肌骨平衡',
+  other: {
+    google: 'notranslate',
+  },
 };
 
 export default function RootLayout({
@@ -32,6 +35,7 @@ export default function RootLayout({
   return (
     <html
       lang="zh-Hant"
+      translate="no"
       className={`${notoSansTC.variable} ${geistMono.variable} ${josefinSans.variable} h-full`}
     >
       <body className="flex min-h-full flex-col">{children}</body>

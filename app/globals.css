@@ -138,6 +138,7 @@
   }
   html {
     @apply font-sans text-[17px];
+    font-variant-east-asian: traditional;
   }
   h1,
   h2,
