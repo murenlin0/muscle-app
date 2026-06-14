@@ -86,7 +86,7 @@ export default function BookHomePage() {
             title="儲值金"
             description="查看餘額與儲值紀錄"
             monoHint={formatPriceNtd(client.balance)}
-            tone="muted"
+            tone="wallet"
           />
         </div>
 

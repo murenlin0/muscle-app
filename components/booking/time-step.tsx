@@ -106,7 +106,7 @@ export function TimeStep({
             id="note"
             value={note}
             onChange={(e) => onNoteChange(e.target.value)}
-            placeholder="傷痛部位、其他需求"
+            placeholder="其他需求"
             className="neon-field h-12 border-primary/30 bg-input/40 text-base"
           />
         </div>

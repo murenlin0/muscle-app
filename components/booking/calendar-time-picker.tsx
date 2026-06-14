@@ -2,10 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+  BOOKING_CLOSE_HOUR,
+  BOOKING_MIN_LEAD_MINUTES,
+  BOOKING_OPEN_HOUR,
+  bookingHourLabel,
+} from '@/lib/booking-hours';
 import { cn } from '@/lib/utils';
 
-const OPEN_HOUR = 10;
-const CLOSE_HOUR = 21;
 const SNAP_MINUTES = 15;
 const HOUR_HEIGHT_PX = 56;
 const MAX_BOOKING_DAYS = 30;
@@ -18,12 +22,6 @@ function addDays(date: Date, days: number): Date {
   const next = new Date(date);
   next.setDate(next.getDate() + days);
   return next;
-}
-
-function formatHourLabel(hour: number): string {
-  if (hour < 12) return `上午${hour}時`;
-  if (hour === 12) return '下午12時';
-  return `下午${hour - 12}時`;
 }
 
 function formatTimeRange(start: Date, durationMinutes: number): string {
@@ -39,23 +37,30 @@ function snapMinutes(value: number): number {
 
 function minutesToDate(day: Date, minutesFromOpen: number): Date {
   const d = startOfDay(day);
-  const total = OPEN_HOUR * 60 + minutesFromOpen;
+  const total = BOOKING_OPEN_HOUR * 60 + minutesFromOpen;
   d.setHours(Math.floor(total / 60), total % 60, 0, 0);
   return d;
 }
 
 function dateToMinutesFromOpen(date: Date): number {
-  return date.getHours() * 60 + date.getMinutes() - OPEN_HOUR * 60;
+  return date.getHours() * 60 + date.getMinutes() - BOOKING_OPEN_HOUR * 60;
+}
+
+function minStartMinutesForDay(day: Date, now: Date): number {
+  if (startOfDay(day).getTime() !== startOfDay(now).getTime()) return 0;
+  const nowMinutes =
+    now.getHours() * 60 + now.getMinutes() - BOOKING_OPEN_HOUR * 60;
+  return snapMinutes(Math.max(0, nowMinutes + BOOKING_MIN_LEAD_MINUTES));
+}
+
+function maxStartMinutesForDuration(durationMinutes: number): number {
+  return (BOOKING_CLOSE_HOUR - BOOKING_OPEN_HOUR) * 60 - durationMinutes;
 }
 
 function defaultStartMinutes(day: Date, now: Date, durationMinutes: number): number {
-  const maxStart = (CLOSE_HOUR - OPEN_HOUR) * 60 - durationMinutes;
-  let minutes = 0;
-  if (startOfDay(day).getTime() === startOfDay(now).getTime()) {
-    const nowMinutes = now.getHours() * 60 + now.getMinutes() - OPEN_HOUR * 60;
-    minutes = snapMinutes(Math.max(0, nowMinutes + SNAP_MINUTES));
-  }
-  return Math.min(Math.max(0, minutes), maxStart);
+  const maxStart = maxStartMinutesForDuration(durationMinutes);
+  const minStart = minStartMinutesForDay(day, now);
+  return Math.min(Math.max(minStart, 0), maxStart);
 }
 
 export function CalendarTimePicker({
@@ -73,20 +78,25 @@ export function CalendarTimePicker({
   const [selectedDay, setSelectedDay] = useState(() =>
     startOfDay(value ?? now),
   );
-  const [startMinutes, setStartMinutes] = useState(() =>
-    value
-      ? dateToMinutesFromOpen(value)
-      : defaultStartMinutes(selectedDay, now, durationMinutes),
-  );
+  const [startMinutes, setStartMinutes] = useState(() => {
+    if (value) return dateToMinutesFromOpen(value);
+    return defaultStartMinutes(startOfDay(value ?? now), now, durationMinutes);
+  });
   const [dateMenuOpen, setDateMenuOpen] = useState(false);
   const dragRef = useRef<{ startY: number; startMinutes: number } | null>(null);
 
-  const totalMinutes = (CLOSE_HOUR - OPEN_HOUR) * 60;
-  const maxStartMinutes = totalMinutes - durationMinutes;
+  const totalMinutes = (BOOKING_CLOSE_HOUR - BOOKING_OPEN_HOUR) * 60;
+  const maxStartMinutes = maxStartMinutesForDuration(durationMinutes);
+  const minStartMinutes = minStartMinutesForDay(selectedDay, now);
   const blockHeightPx = (durationMinutes / 60) * HOUR_HEIGHT_PX;
   const gridHeightPx = (totalMinutes / 60) * HOUR_HEIGHT_PX;
+
   const hours = useMemo(
-    () => Array.from({ length: CLOSE_HOUR - OPEN_HOUR }, (_, i) => OPEN_HOUR + i),
+    () =>
+      Array.from(
+        { length: BOOKING_CLOSE_HOUR - BOOKING_OPEN_HOUR },
+        (_, i) => BOOKING_OPEN_HOUR + i,
+      ),
     [],
   );
 
@@ -94,8 +104,9 @@ export function CalendarTimePicker({
   const maxDay = addDays(minDay, MAX_BOOKING_DAYS);
 
   const clampMinutes = useCallback(
-    (m: number) => Math.min(Math.max(0, snapMinutes(m)), maxStartMinutes),
-    [maxStartMinutes],
+    (m: number) =>
+      Math.min(Math.max(minStartMinutes, snapMinutes(m)), maxStartMinutes),
+    [minStartMinutes, maxStartMinutes],
   );
 
   const applyMinutes = useCallback(
@@ -111,9 +122,9 @@ export function CalendarTimePicker({
   useEffect(() => {
     if (value) {
       setSelectedDay(startOfDay(value));
-      setStartMinutes(dateToMinutesFromOpen(value));
+      setStartMinutes(clampMinutes(dateToMinutesFromOpen(value)));
     }
-  }, [value]);
+  }, [value]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (value) return;
@@ -122,11 +133,11 @@ export function CalendarTimePicker({
     setSelectedDay(day);
     setStartMinutes(mins);
     onChange(minutesToDate(day, mins));
-  }, [durationMinutes]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [durationMinutes, now]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     applyMinutes(startMinutes);
-  }, [durationMinutes]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [durationMinutes, minStartMinutes, maxStartMinutes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function shiftDay(delta: number) {
     const next = addDays(selectedDay, delta);
@@ -182,6 +193,7 @@ export function CalendarTimePicker({
   }, [minDay]);
 
   const currentStart = minutesToDate(selectedDay, startMinutes);
+  const isToday = startOfDay(selectedDay).getTime() === minDay.getTime();
 
   return (
     <div className="neon-panel overflow-hidden">
@@ -191,10 +203,10 @@ export function CalendarTimePicker({
             type="button"
             onClick={() => shiftDay(-1)}
             disabled={selectedDay.getTime() <= minDay.getTime()}
-            className="rounded-lg p-1.5 text-muted-foreground transition-colors duration-200 hover:bg-primary/10 hover:text-primary disabled:opacity-30"
+            className="rounded-xl p-2.5 text-muted-foreground transition-colors duration-200 hover:bg-primary/10 hover:text-primary disabled:opacity-30"
             aria-label="前一天"
           >
-            <ChevronLeft className="size-5" />
+            <ChevronLeft className="size-7" strokeWidth={2.5} />
           </button>
           <div className="relative flex-1">
             <button
@@ -204,7 +216,10 @@ export function CalendarTimePicker({
             >
               {selectedDay.getMonth() + 1}月
               <ChevronDown
-                className={cn('size-4 text-muted-foreground transition', dateMenuOpen && 'rotate-180 text-primary')}
+                className={cn(
+                  'size-4 text-muted-foreground transition',
+                  dateMenuOpen && 'rotate-180 text-primary',
+                )}
               />
             </button>
             {dateMenuOpen ? (
@@ -243,10 +258,10 @@ export function CalendarTimePicker({
             type="button"
             onClick={() => shiftDay(1)}
             disabled={selectedDay.getTime() >= maxDay.getTime()}
-            className="rounded-lg p-1.5 text-muted-foreground transition-colors duration-200 hover:bg-primary/10 hover:text-primary disabled:opacity-30"
+            className="rounded-xl p-2.5 text-muted-foreground transition-colors duration-200 hover:bg-primary/10 hover:text-primary disabled:opacity-30"
             aria-label="後一天"
           >
-            <ChevronRight className="size-5" />
+            <ChevronRight className="size-7" strokeWidth={2.5} />
           </button>
         </div>
         <p className="mt-3 text-3xl font-normal text-muted-foreground">
@@ -255,17 +270,24 @@ export function CalendarTimePicker({
         </p>
       </div>
 
-      <div className="relative flex max-h-[420px] overflow-x-hidden overflow-y-auto">
-        <div className="w-16 shrink-0 border-r border-primary/15 pt-2">
+      <div className="relative flex max-h-[480px] overflow-x-hidden overflow-y-auto">
+        <div className="w-[4.5rem] shrink-0 border-r border-primary/15 pt-2">
           {hours.map((hour) => (
             <div
               key={hour}
-              className="pr-2 text-right text-[11px] leading-none text-muted-foreground"
+              className="relative pr-2 text-right text-[11px] leading-none text-muted-foreground"
               style={{ height: HOUR_HEIGHT_PX }}
             >
-              <span className="relative -top-2">{formatHourLabel(hour)}</span>
+              <span className="absolute right-2 -top-2 whitespace-nowrap">
+                {bookingHourLabel(hour)}
+              </span>
             </div>
           ))}
+          <div className="relative h-0">
+            <span className="absolute right-2 -top-2 whitespace-nowrap text-[11px] text-muted-foreground">
+              {bookingHourLabel(BOOKING_CLOSE_HOUR)}
+            </span>
+          </div>
         </div>
 
         <div
@@ -274,11 +296,11 @@ export function CalendarTimePicker({
           style={{ height: gridHeightPx }}
           onPointerDown={onGridPointerDown}
         >
-          {hours.map((hour) => (
+          {Array.from({ length: BOOKING_CLOSE_HOUR - BOOKING_OPEN_HOUR + 1 }, (_, i) => (
             <div
-              key={hour}
+              key={BOOKING_OPEN_HOUR + i}
               className="absolute left-0 right-0 border-t border-primary/12"
-              style={{ top: (hour - OPEN_HOUR) * HOUR_HEIGHT_PX }}
+              style={{ top: i * HOUR_HEIGHT_PX }}
             />
           ))}
 
@@ -286,6 +308,8 @@ export function CalendarTimePicker({
             data-drag-block
             role="slider"
             aria-label="拖曳選擇開始時間"
+            aria-valuemin={minStartMinutes}
+            aria-valuemax={maxStartMinutes}
             aria-valuetext={formatTimeRange(currentStart, durationMinutes)}
             className="absolute left-2 right-2 cursor-grab rounded-md border-2 border-primary/75 bg-primary/12 transition-colors duration-200 hover:border-primary hover:bg-primary/18 active:cursor-grabbing"
             style={{
@@ -306,6 +330,7 @@ export function CalendarTimePicker({
 
       <p className="border-t border-primary/15 px-4 py-2 text-center text-xs text-muted-foreground">
         拖曳方框或點擊時段 · 時長 {durationMinutes} 分鐘
+        {isToday ? ` · 最早 ${BOOKING_MIN_LEAD_MINUTES} 分鐘後` : ''}
       </p>
     </div>
   );

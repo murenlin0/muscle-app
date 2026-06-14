@@ -29,7 +29,7 @@ import {
   buildBookingMessageText,
 } from '@/lib/booking-draft';
 import type { Service, Staff } from '@/lib/types/database';
-import { getLiffIdForStore } from '@/lib/store-liff';
+import { BOOKING_HOURS_LABEL } from '@/lib/booking-hours';
 
 type Step = 1 | 2 | 3;
 
@@ -53,7 +53,14 @@ export function BookingFlow() {
   const [sendError, setSendError] = useState<string | null>(null);
   const [sentMode, setSentMode] = useState<'line' | 'copied' | null>(null);
 
-  const now = useMemo(() => new Date(), [step]);
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    if (step !== 2) return;
+    setNow(new Date());
+    const id = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, [step]);
 
   useEffect(() => {
     if (status === 'ready' && !client) {
@@ -296,7 +303,7 @@ export function BookingFlow() {
         </div>
 
         <p className="mt-6 text-center text-xs text-muted-foreground/70">
-          © {new Date().getFullYear()} 筋棧 · {store.name} · 營業時間 10:00 – 21:00
+          © {new Date().getFullYear()} 筋棧 · {store.name} · 營業時間 {BOOKING_HOURS_LABEL}
         </p>
       </div>
     </main>
