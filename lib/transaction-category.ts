@@ -16,6 +16,7 @@ export const TRANSACTION_CATEGORIES = [
 /** 財務總覽「營業額(不含儲值)」加總用的類型 */
 export const OVERVIEW_INCOME_CATEGORIES = [
   '一般消費',
+  '會員使用',
   '會員補差額',
   '店租收入',
 ] as const satisfies readonly TransactionCategory[];

@@ -25,9 +25,9 @@ function SignedMoney({
     <span
       className={cn(
         'tabular-nums font-semibold tracking-tight',
-        showSign && positive && 'text-[#4fd1c5]',
-        showSign && !positive && value !== 0 && 'text-[#f56565]',
-        !showSign && 'text-[#e8e8e8]',
+        showSign && positive && 'text-emerald-300/90',
+        showSign && !positive && value !== 0 && 'text-rose-300/85',
+        !showSign && 'text-[#ebebeb]',
         className,
       )}
     >
@@ -48,14 +48,16 @@ function PanelCard({
   return (
     <div
       className={cn(
-        'flex min-h-[280px] flex-col rounded-lg border border-[#2a2a2a] bg-[#1c1c1c]/80',
+        'flex min-h-[300px] flex-col overflow-hidden rounded-xl border border-white/[0.06] bg-[#171717]/95 shadow-[0_1px_0_rgba(255,255,255,0.04)_inset]',
         className,
       )}
     >
-      <div className="border-b border-[#2a2a2a] px-4 py-3 text-xs font-medium uppercase tracking-wider text-[#888]">
-        {title}
+      <div className="border-b border-white/[0.06] px-5 py-3.5">
+        <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-[#6e6e6e]">
+          {title}
+        </span>
       </div>
-      <div className="flex flex-1 flex-col p-4">{children}</div>
+      <div className="flex flex-1 flex-col p-5">{children}</div>
     </div>
   );
 }
@@ -70,9 +72,14 @@ function LineItem({
   muted?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between px-2 py-2">
-      <span className={cn('text-sm', muted ? 'text-[#777]' : 'text-[#999]')}>{label}</span>
-      <SignedMoney value={value} className="text-sm font-medium text-[#d4d4d4]" />
+    <div className="flex items-center justify-between border-b border-white/[0.04] py-2.5 last:border-0">
+      <span className={cn('text-[13px]', muted ? 'text-[#5e5e5e]' : 'text-[#9a9a9a]')}>
+        {label}
+      </span>
+      <SignedMoney
+        value={value}
+        className={cn('text-[13px] font-medium', muted ? 'text-[#666]' : 'text-[#d6d6d6]')}
+      />
     </div>
   );
 }
@@ -98,55 +105,62 @@ function PnlFilterCard({
       type="button"
       onClick={onClick}
       className={cn(
-        'flex w-full items-center gap-3 rounded-full border px-3 py-2.5 text-left transition',
+        'group flex w-full items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-all duration-200',
         isRevenue
-          ? 'border-[#1e3a5f]/90 bg-[#0c1829]/95 hover:bg-[#122038]'
-          : 'border-[#5f2438]/90 bg-[#1f0c14]/95 hover:bg-[#2a1018]',
+          ? 'border-emerald-500/15 bg-emerald-500/[0.03] hover:border-emerald-400/25 hover:bg-emerald-500/[0.06]'
+          : 'border-rose-400/12 bg-rose-500/[0.025] hover:border-rose-400/22 hover:bg-rose-500/[0.05]',
         active &&
           (isRevenue
-            ? 'ring-1 ring-[#3b82f6]/70 shadow-[0_0_0_1px_rgba(59,130,246,0.15)]'
-            : 'ring-1 ring-[#ef4444]/70 shadow-[0_0_0_1px_rgba(239,68,68,0.15)]'),
+            ? 'border-emerald-400/35 bg-emerald-500/[0.08] shadow-[0_0_0_1px_rgba(52,211,153,0.08)]'
+            : 'border-rose-400/30 bg-rose-500/[0.07] shadow-[0_0_0_1px_rgba(251,113,133,0.08)]'),
       )}
     >
       <span
         className={cn(
-          'flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white',
-          isRevenue ? 'bg-[#2563eb]' : 'bg-[#dc2626]',
+          'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border',
+          isRevenue
+            ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300/85'
+            : 'border-rose-400/20 bg-rose-500/8 text-rose-300/75',
         )}
         aria-hidden
       >
         {isRevenue ? (
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
             <path
-              d="M8 12V4M8 4L5 7M8 4l3 3"
+              d="M8 11V5M8 5L5.5 7.5M8 5l2.5 2.5"
               stroke="currentColor"
-              strokeWidth="1.75"
+              strokeWidth="1.5"
               strokeLinecap="round"
               strokeLinejoin="round"
             />
           </svg>
         ) : (
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
             <path
-              d="M8 4v8M8 12l-3-3M8 12l3-3"
+              d="M8 5v6M8 11l-2.5-2.5M8 11l2.5-2.5"
               stroke="currentColor"
-              strokeWidth="1.75"
+              strokeWidth="1.5"
               strokeLinecap="round"
               strokeLinejoin="round"
             />
           </svg>
         )}
       </span>
-      <span className="min-w-0 flex-1 truncate text-sm font-medium text-white">{label}</span>
+      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-[#d4d4d4]">
+        {label}
+      </span>
       <span
         className={cn(
-          'shrink-0 tabular-nums text-base font-semibold tracking-tight',
-          isRevenue ? 'text-[#4da3ff]' : 'text-[#ff6b8a]',
+          'shrink-0 tabular-nums text-[15px] font-semibold tracking-tight',
+          isRevenue ? 'text-emerald-300/90' : 'text-rose-300/85',
         )}
       >
         {isRevenue ? '+' : '-'}${abs}
       </span>
-      <span className="shrink-0 text-sm text-[#666]" aria-hidden>
+      <span
+        className="shrink-0 text-[#484848] transition-colors group-hover:text-[#777]"
+        aria-hidden
+      >
         ›
       </span>
     </button>
@@ -166,9 +180,12 @@ export function FinancialOverviewPanel({
 }) {
   if (loading && !overview) {
     return (
-      <div className="grid gap-3 lg:grid-cols-3">
+      <div className="grid gap-4 lg:grid-cols-3">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="h-[280px] animate-pulse rounded-lg bg-[#252525]" />
+          <div
+            key={i}
+            className="h-[300px] animate-pulse rounded-xl border border-white/[0.04] bg-[#1a1a1a]"
+          />
         ))}
       </div>
     );
@@ -183,25 +200,25 @@ export function FinancialOverviewPanel({
   }
 
   return (
-    <div className="grid gap-3 lg:grid-cols-3">
+    <div className="grid gap-4 lg:grid-cols-3">
       <PanelCard title="資產">
-        <div className="mb-3 flex items-baseline justify-between border-b border-[#2a2a2a] pb-3">
-          <span className="text-sm font-medium text-[#aaa]">總資產</span>
-          <SignedMoney value={assets.total} className="text-xl" />
+        <div className="mb-4 border-b border-white/[0.06] pb-4">
+          <p className="mb-1 text-[11px] tracking-wide text-[#6e6e6e]">總資產</p>
+          <SignedMoney value={assets.total} className="text-2xl font-semibold" />
         </div>
-        <div className="space-y-0.5">
+        <div>
           <LineItem label="店內現金" value={assets.cashOnHand} />
           <LineItem label="富邦帳戶" value={assets.bankAccounts} />
           <LineItem label="餘額未使用" value={assets.unusedMemberBalance} />
           <LineItem label="應收帳款" value={assets.accountsReceivable} muted />
         </div>
-        <p className="mt-auto pt-3 text-[10px] leading-relaxed text-[#555]">
-          總資產＝店內現金＋富邦帳戶（流水帳更動的帳戶為現金／富邦者，金額數字加總）；餘額未使用＝每位客人會員儲值／使用／補差額金額加總後再合計；應收帳款僅供參考。
+        <p className="mt-auto pt-4 text-[10px] leading-relaxed text-[#505050]">
+          總資產＝店內現金＋富邦帳戶；餘額未使用＝會員儲值／使用／補差額逐客累計；應收帳款僅供參考。
         </p>
       </PanelCard>
 
       <PanelCard title="收支">
-        <div className="space-y-2.5">
+        <div className="space-y-2">
           <PnlFilterCard
             variant="revenue"
             label="營業額(不含儲值)"
@@ -216,56 +233,57 @@ export function FinancialOverviewPanel({
             active={ledgerPresetFilter === 'expense'}
             onClick={() => togglePreset('expense')}
           />
-          <div className="border-t border-[#2a2a2a] pt-2">
-            <div className="flex items-center justify-between px-2 py-2.5">
-              <span className="text-sm font-medium text-[#ccc]">
-                {incomeStatement.netProfit >= 0 ? '淨利' : '淨損'}
-              </span>
-              <SignedMoney
-                value={incomeStatement.netProfit}
-                showSign
-                className="text-base"
-              />
-            </div>
+        </div>
+        <div className="mt-3 rounded-lg border border-white/[0.05] bg-white/[0.02] px-3.5 py-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[13px] font-medium text-[#a8a8a8]">
+              {incomeStatement.netProfit >= 0 ? '淨利' : '淨損'}
+            </span>
+            <SignedMoney value={incomeStatement.netProfit} showSign className="text-[15px]" />
           </div>
         </div>
-        <p className="mt-auto pt-3 text-[10px] text-[#555]">
-          營業額＝一般消費＋會員補差額＋店租收入；成本＝支出＋工資。點擊可篩選下方流水帳。
+        <p className="mt-auto pt-4 text-[10px] leading-relaxed text-[#505050]">
+          營業額＝一般消費＋會員使用＋會員補差額＋店租收入；成本＝支出＋工資。點擊可篩選流水帳。
         </p>
       </PanelCard>
 
       <PanelCard title="股東權益">
         {shareholders.length === 0 ? (
-          <p className="text-sm text-[#888]">尚無股東資料，請在 Supabase shareholders 表新增。</p>
+          <p className="text-[13px] text-[#6e6e6e]">尚無股東資料，請在 Supabase shareholders 表新增。</p>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+          <div className="overflow-x-auto -mx-1">
+            <table className="w-full text-left text-[12px]">
               <thead>
-                <tr className="text-[#666]">
-                  <th className="pb-2 pr-2 font-medium">股東</th>
-                  <th className="pb-2 pr-2 text-right font-medium">持股</th>
-                  <th className="pb-2 pr-2 text-right font-medium">應領</th>
-                  <th className="pb-2 pr-2 text-right font-medium">已發放</th>
-                  <th className="pb-2 text-right font-medium">未領</th>
+                <tr className="text-[#5e5e5e]">
+                  <th className="pb-2.5 pr-2 font-medium">股東</th>
+                  <th className="pb-2.5 pr-2 text-right font-medium">持股</th>
+                  <th className="pb-2.5 pr-2 text-right font-medium">應領</th>
+                  <th className="pb-2.5 pr-2 text-right font-medium">已發放</th>
+                  <th className="pb-2.5 text-right font-medium">未領</th>
                 </tr>
               </thead>
               <tbody>
                 {shareholders.map((sh) => (
-                  <tr key={sh.id} className="border-t border-[#252525] text-[#bbb]">
+                  <tr
+                    key={sh.id}
+                    className="border-t border-white/[0.04] text-[#b0b0b0] transition-colors hover:bg-white/[0.02]"
+                  >
                     <td className="py-2.5 pr-2">{sh.name}</td>
-                    <td className="py-2.5 pr-2 text-right tabular-nums">
+                    <td className="py-2.5 pr-2 text-right tabular-nums text-[#909090]">
                       {(sh.ownershipPercent * 100).toFixed(1)}%
                     </td>
                     <td className="py-2.5 pr-2 text-right tabular-nums">${fmt(sh.dividendDue)}</td>
                     <td className="py-2.5 pr-2 text-right tabular-nums">${fmt(sh.dividendPaid)}</td>
-                    <td className="py-2.5 text-right tabular-nums">${fmt(sh.dividendUnpaid)}</td>
+                    <td className="py-2.5 text-right tabular-nums text-[#d0d0d0]">
+                      ${fmt(sh.dividendUnpaid)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
-        <p className="mt-auto pt-3 text-[10px] text-[#555]">
+        <p className="mt-auto pt-4 text-[10px] leading-relaxed text-[#505050]">
           應領＝區間淨利 × 持股；已發放取自「分紅」流水；未領＝應領－已發放。
         </p>
       </PanelCard>
