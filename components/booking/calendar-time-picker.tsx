@@ -75,6 +75,7 @@ export function CalendarTimePicker({
   onChange: (date: Date) => void;
 }) {
   const gridRef = useRef<HTMLDivElement>(null);
+  const scrollLockRef = useRef<{ overflow: string; touchAction: string } | null>(null);
   const [selectedDay, setSelectedDay] = useState(() =>
     startOfDay(value ?? now),
   );
@@ -160,8 +161,28 @@ export function CalendarTimePicker({
     return clampMinutes(ratio * totalMinutes);
   }
 
+  function lockPageScroll() {
+    const main = document.querySelector('main');
+    if (!(main instanceof HTMLElement)) return;
+    scrollLockRef.current = {
+      overflow: main.style.overflow,
+      touchAction: main.style.touchAction,
+    };
+    main.style.overflow = 'hidden';
+    main.style.touchAction = 'none';
+  }
+
+  function unlockPageScroll() {
+    const main = document.querySelector('main');
+    if (!(main instanceof HTMLElement) || !scrollLockRef.current) return;
+    main.style.overflow = scrollLockRef.current.overflow;
+    main.style.touchAction = scrollLockRef.current.touchAction;
+    scrollLockRef.current = null;
+  }
+
   function onGridPointerDown(e: React.PointerEvent) {
     if ((e.target as HTMLElement).closest('[data-drag-block]')) return;
+    e.preventDefault();
     applyMinutes(yToMinutes(e.clientY));
   }
 
@@ -169,7 +190,7 @@ export function CalendarTimePicker({
     e.stopPropagation();
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
-    document.body.style.overflow = 'hidden';
+    lockPageScroll();
     dragRef.current = { startY: e.clientY, startMinutes: startMinutes };
   }
 
@@ -184,11 +205,17 @@ export function CalendarTimePicker({
   function endBlockDrag(e: React.PointerEvent<HTMLDivElement>) {
     if (!dragRef.current) return;
     dragRef.current = null;
-    document.body.style.overflow = '';
+    unlockPageScroll();
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
   }
+
+  useEffect(() => {
+    return () => {
+      unlockPageScroll();
+    };
+  }, []);
 
   const weekdayLabels = ['週日', '週一', '週二', '週三', '週四', '週五', '週六'];
   const upcomingDays = useMemo(() => {
@@ -277,35 +304,34 @@ export function CalendarTimePicker({
         </p>
       </div>
 
-      <div className="relative flex overflow-x-hidden">
+      <div className="relative touch-none overscroll-none pt-1 pb-3">
         <div
-          className="w-[4.5rem] shrink-0 border-r border-primary/15 pt-2"
-          style={{ height: gridHeightPx }}
+          className="relative flex overflow-x-hidden"
+          style={{ height: gridHeightPx + 12 }}
         >
-          {hours.map((hour) => (
-            <div
-              key={hour}
-              className="relative pr-2 text-right text-[11px] leading-none text-muted-foreground"
-              style={{ height: HOUR_HEIGHT_PX }}
-            >
-              <span className="absolute right-2 -top-2 whitespace-nowrap">
-                {bookingHourLabel(hour)}
-              </span>
-            </div>
-          ))}
-          <div className="relative h-0">
-            <span className="absolute right-2 -top-2 whitespace-nowrap text-[11px] text-muted-foreground">
+          <div className="relative w-[4.5rem] shrink-0 border-r border-primary/15 pt-2">
+            {hours.map((hour) => (
+              <div
+                key={hour}
+                className="relative pr-2 text-right text-[11px] leading-none text-muted-foreground"
+                style={{ height: HOUR_HEIGHT_PX }}
+              >
+                <span className="absolute right-2 -top-2 whitespace-nowrap">
+                  {bookingHourLabel(hour)}
+                </span>
+              </div>
+            ))}
+            <span className="absolute bottom-0 right-2 whitespace-nowrap text-[11px] text-muted-foreground">
               {bookingHourLabel(BOOKING_CLOSE_HOUR)}
             </span>
           </div>
-        </div>
 
-        <div
-          ref={gridRef}
-          className="relative flex-1 select-none"
-          style={{ height: gridHeightPx }}
-          onPointerDown={onGridPointerDown}
-        >
+          <div
+            ref={gridRef}
+            className="relative flex-1 select-none"
+            style={{ height: gridHeightPx }}
+            onPointerDown={onGridPointerDown}
+          >
           {Array.from({ length: BOOKING_CLOSE_HOUR - BOOKING_OPEN_HOUR + 1 }, (_, i) => (
             <div
               key={BOOKING_OPEN_HOUR + i}
