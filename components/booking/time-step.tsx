@@ -1,9 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, ChevronRight } from 'lucide-react';
-import { BindSubmitButton } from '@/components/bind-submit-button';
-import { Button } from '@/components/ui/button';
+import { CalendarDays } from 'lucide-react';
 import {
   Card,
   CardContent,
@@ -12,7 +10,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { BOOKING_STAFF_UNASSIGNED } from '@/lib/booking-draft';
-import { serviceDurationLabel } from '@/lib/booking-services';
+import { serviceDisplayMeta } from '@/lib/booking-services';
 import type { Service, Staff } from '@/lib/types/database';
 import { cn } from '@/lib/utils';
 
@@ -82,13 +80,10 @@ export function TimeStep({
   staffName,
   headcount,
   note,
-  onChangeService,
   onSelectSlot,
   onStaffChange,
   onHeadcountChange,
   onNoteChange,
-  onBack,
-  onNext,
 }: {
   service: Service;
   startsAt: Date | null;
@@ -97,13 +92,10 @@ export function TimeStep({
   staffName: string;
   headcount: number;
   note: string;
-  onChangeService: () => void;
   onSelectSlot: (slot: Date) => void;
   onStaffChange: (name: string) => void;
   onHeadcountChange: (count: number) => void;
   onNoteChange: (value: string) => void;
-  onBack: () => void;
-  onNext: () => void;
 }) {
   const days = useMemo(
     () => [0, 1, 2].map((offset) => addDays(startOfDay(now), offset)),
@@ -124,20 +116,10 @@ export function TimeStep({
 
   return (
     <div className="space-y-5">
-      <button
-        type="button"
-        onClick={onChangeService}
-        className="flex w-full items-center justify-between gap-3 rounded-xl border border-primary/25 bg-primary/5 px-4 py-3 text-left transition hover:bg-primary/10"
-      >
-        <div>
-          <p className="text-xs text-muted-foreground">已選服務</p>
-          <p className="font-bold">{serviceDurationLabel(service)}</p>
-        </div>
-        <span className="flex items-center gap-1 text-sm text-primary">
-          更換
-          <ChevronRight className="size-4" />
-        </span>
-      </button>
+      <h2 className="text-lg font-bold">選擇時間與師傅</h2>
+      <p className="-mt-3 text-sm text-muted-foreground">
+        已選：{serviceDisplayMeta(service).title} · {service.duration_minutes} 分鐘
+      </p>
 
       <Card className="glass-card border-primary/15">
         <CardHeader className="pb-3">
@@ -240,15 +222,6 @@ export function TimeStep({
             className="input-neon h-12 border-primary/20 bg-input/50 text-base"
           />
         </div>
-      </div>
-
-      <div className="flex gap-2 pt-2">
-        <Button type="button" variant="outline" className="h-12 flex-1" onClick={onBack}>
-          上一步
-        </Button>
-        <BindSubmitButton type="button" className="flex-[2]" disabled={!startsAt} onClick={onNext}>
-          下一步
-        </BindSubmitButton>
       </div>
     </div>
   );

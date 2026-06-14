@@ -1,11 +1,15 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import liff from '@line/liff';
-import { Check, Copy } from 'lucide-react';
-import { PageShell } from '@/app/components/page-shell';
+import { ChevronLeft, Copy } from 'lucide-react';
 import { useLiff } from '@/app/components/liff-provider';
+import { BookingHero } from '@/components/booking/booking-hero';
+import { BookingNav } from '@/components/booking/booking-nav';
+import { BookingStepIndicator } from '@/components/booking/booking-step-indicator';
+import { BookingSummary } from '@/components/booking/booking-summary';
 import { ServiceStep } from '@/components/booking/service-step';
 import { TimeStep } from '@/components/booking/time-step';
 import { BindSubmitButton } from '@/components/bind-submit-button';
@@ -26,47 +30,8 @@ import {
 } from '@/lib/booking-draft';
 import type { Service, Staff } from '@/lib/types/database';
 import { getLiffIdForStore } from '@/lib/store-liff';
-import { cn } from '@/lib/utils';
 
 type Step = 1 | 2 | 3;
-
-function StepIndicator({ step }: { step: Step }) {
-  const labels = ['選服務', '選時間', '確認送出'];
-  return (
-    <div className="mb-6 flex items-center justify-center gap-2">
-      {labels.map((label, index) => {
-        const n = (index + 1) as Step;
-        const active = step === n;
-        const done = step > n;
-        return (
-          <div key={label} className="flex items-center gap-2">
-            {index > 0 ? <span className="text-muted-foreground/40">—</span> : null}
-            <div
-              className={cn(
-                'flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold',
-                active && 'bg-primary/15 text-primary',
-                done && 'text-primary/70',
-                !active && !done && 'text-muted-foreground',
-              )}
-            >
-              <span
-                className={cn(
-                  'flex size-5 items-center justify-center rounded-full text-[10px]',
-                  active && 'bg-primary text-primary-foreground',
-                  done && 'bg-primary/20 text-primary',
-                  !active && !done && 'bg-muted text-muted-foreground',
-                )}
-              >
-                {done ? <Check className="size-3" /> : n}
-              </span>
-              {label}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 export function BookingFlow() {
   const router = useRouter();
@@ -150,16 +115,6 @@ export function BookingFlow() {
     return buildBookingMessageText(draft);
   }, [client, selectedService, startsAt, staffName, headcount, note, store]);
 
-  function handleServiceSelect(service: Service) {
-    setSelectedService(service);
-    setStartsAt(null);
-    setStep(2);
-  }
-
-  function handleChangeService() {
-    setStep(1);
-  }
-
   async function handleSend() {
     if (!messageText) return;
     setSending(true);
@@ -189,122 +144,160 @@ export function BookingFlow() {
 
   if (sentMode === 'copied') {
     return (
-      <PageShell title="已複製預約訊息" subtitle="本機測試模式：請貼到 LINE 官方帳號" backHref={bookBase}>
-        <Card className="glass-card">
-          <CardHeader>
-            <CardTitle className="text-lg">訊息已複製</CardTitle>
-            <CardDescription>正式環境會直接透過 LINE 送出並關閉視窗</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <pre className="whitespace-pre-wrap rounded-lg border border-border/60 bg-input/40 p-4 font-mono text-sm leading-relaxed">
-              {messageText}
-            </pre>
-            <Button type="button" className="w-full" onClick={() => router.replace(bookBase)}>
-              返回會員中心
-            </Button>
-          </CardContent>
-        </Card>
-      </PageShell>
-    );
-  }
-
-  const subtitles: Record<Step, string> = {
-    1: '點選服務後自動進入選時間',
-    2: '選日期與時段，可指定師傅與人數',
-    3: '確認後送出 LINE 預約訊息',
-  };
-
-  return (
-    <PageShell title="預約" subtitle={subtitles[step]} backHref={bookBase}>
-      <StepIndicator step={step} />
-
-      {catalogError ? (
-        <p className="mb-4 rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          {catalogError}
-        </p>
-      ) : null}
-
-      {step === 1 ? (
-        <ServiceStep
-          services={services}
-          loading={loadingCatalog}
-          client={client}
-          selectedId={selectedService?.id ?? null}
-          onSelect={handleServiceSelect}
-        />
-      ) : null}
-
-      {step === 2 && selectedService ? (
-        <TimeStep
-          service={selectedService}
-          startsAt={startsAt}
-          now={now}
-          staffList={staffList}
-          staffName={staffName}
-          headcount={headcount}
-          note={note}
-          onChangeService={handleChangeService}
-          onSelectSlot={setStartsAt}
-          onStaffChange={setStaffName}
-          onHeadcountChange={setHeadcount}
-          onNoteChange={setNote}
-          onBack={() => setStep(1)}
-          onNext={() => setStep(3)}
-        />
-      ) : null}
-
-      {step === 3 && selectedService && startsAt ? (
-        <div className="space-y-5">
+      <main className="min-h-svh px-5 py-8">
+        <div className="mx-auto max-w-md">
           <Card className="glass-card">
             <CardHeader>
-              <CardTitle className="text-lg">會員資料</CardTitle>
-              <CardDescription>如需修改請至儲值金頁面</CardDescription>
+              <CardTitle className="text-lg">訊息已複製</CardTitle>
+              <CardDescription>本機測試：請貼到 LINE 官方帳號</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-2 text-base">
-              <p>
-                <span className="text-muted-foreground">姓名：</span>
-                {client.name}
-              </p>
-              <p>
-                <span className="text-muted-foreground">電話：</span>
-                {client.phone}
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card className="glass-card border-primary/15">
-            <CardHeader>
-              <CardTitle className="text-lg">預約訊息預覽</CardTitle>
-              <CardDescription>送出後師傅可從 LINE 官方帳號複製此格式</CardDescription>
-            </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <pre className="whitespace-pre-wrap rounded-lg border border-border/60 bg-input/40 p-4 font-mono text-sm leading-relaxed">
                 {messageText}
               </pre>
+              <Button type="button" className="w-full" onClick={() => router.replace(bookBase)}>
+                返回會員中心
+              </Button>
             </CardContent>
           </Card>
+        </div>
+      </main>
+    );
+  }
 
-          {sendError ? (
-            <p className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">{sendError}</p>
-          ) : null}
+  const canNextStep1 = Boolean(selectedService);
+  const canNextStep2 = Boolean(startsAt);
 
-          <div className="flex gap-2">
-            <Button type="button" variant="outline" className="h-12 flex-1" onClick={() => setStep(2)}>
+  return (
+    <main className="min-h-svh pb-10">
+      <div className="mx-auto max-w-md px-5 pt-4">
+        <Link
+          href={bookBase}
+          aria-label="返回"
+          className="mb-4 inline-flex items-center gap-1 text-sm text-muted-foreground transition hover:text-foreground"
+        >
+          <ChevronLeft className="size-5" />
+          返回
+        </Link>
+
+        {step === 1 ? <BookingHero /> : null}
+        <BookingStepIndicator step={step} />
+
+        {catalogError ? (
+          <p className="mb-4 rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            {catalogError}
+          </p>
+        ) : null}
+
+        {step === 1 ? (
+          <ServiceStep
+            services={services}
+            loading={loadingCatalog}
+            client={client}
+            selectedId={selectedService?.id ?? null}
+            onSelect={setSelectedService}
+          />
+        ) : null}
+
+        {step === 2 && selectedService ? (
+          <TimeStep
+            service={selectedService}
+            startsAt={startsAt}
+            now={now}
+            staffList={staffList}
+            staffName={staffName}
+            headcount={headcount}
+            note={note}
+            onSelectSlot={setStartsAt}
+            onStaffChange={setStaffName}
+            onHeadcountChange={setHeadcount}
+            onNoteChange={setNote}
+          />
+        ) : null}
+
+        {step === 3 && selectedService && startsAt ? (
+          <div className="space-y-5">
+            <h2 className="text-lg font-bold">確認並送出</h2>
+            <Card className="glass-card">
+              <CardHeader>
+                <CardTitle className="text-base">會員資料</CardTitle>
+                <CardDescription>如需修改請至儲值金頁面</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2 text-base">
+                <p>
+                  <span className="text-muted-foreground">姓名：</span>
+                  {client.name}
+                </p>
+                <p>
+                  <span className="text-muted-foreground">電話：</span>
+                  {client.phone}
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="glass-card border-primary/15">
+              <CardHeader>
+                <CardTitle className="text-base">預約訊息預覽</CardTitle>
+                <CardDescription>送出後師傅可從 LINE 官方帳號複製此格式</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <pre className="whitespace-pre-wrap rounded-lg border border-border/60 bg-input/40 p-4 font-mono text-sm leading-relaxed">
+                  {messageText}
+                </pre>
+              </CardContent>
+            </Card>
+
+            {sendError ? (
+              <p className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                {sendError}
+              </p>
+            ) : null}
+
+            {!getLiffIdForStore(store.slug) ? (
+              <p className="flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
+                <Copy className="size-3.5" />
+                本機測試會複製訊息到剪貼簿
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {step < 3 ? (
+          <BookingNav
+            showBack={step > 1}
+            onBack={() => setStep((step - 1) as Step)}
+            onNext={() => setStep((step + 1) as Step)}
+            nextDisabled={step === 1 ? !canNextStep1 : !canNextStep2}
+          />
+        ) : (
+          <div className="flex gap-2 py-2">
+            <Button type="button" variant="outline" className="h-11 flex-1" onClick={() => setStep(2)}>
               上一步
             </Button>
-            <BindSubmitButton type="button" className="flex-[2]" loading={sending} onClick={() => void handleSend()}>
+            <BindSubmitButton
+              type="button"
+              className="h-11 flex-[2]"
+              loading={sending}
+              onClick={() => void handleSend()}
+            >
               {sending ? '送出中…' : '送出 LINE 預約'}
             </BindSubmitButton>
           </div>
+        )}
 
-          {!getLiffIdForStore(store.slug) ? (
-            <p className="flex items-center justify-center gap-1.5 text-center text-xs text-muted-foreground">
-              <Copy className="size-3.5" />
-              本機測試會複製訊息到剪貼簿
-            </p>
-          ) : null}
+        <div className="mt-5">
+          <BookingSummary
+            client={client}
+            service={selectedService}
+            staffName={staffName}
+            startsAt={startsAt}
+          />
         </div>
-      ) : null}
-    </PageShell>
+
+        <p className="mt-6 text-center text-xs text-muted-foreground/70">
+          © {new Date().getFullYear()} 筋棧 · {store.name} · 營業時間 10:00 – 21:00
+        </p>
+      </div>
+    </main>
   );
 }
