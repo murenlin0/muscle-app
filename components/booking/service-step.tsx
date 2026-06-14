@@ -33,7 +33,7 @@ export function ServiceStep({
 
   if (!services.length) {
     return (
-      <p className="rounded-2xl border border-border/60 bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
+      <p className="neon-panel px-4 py-8 text-center text-sm text-muted-foreground">
         目前沒有可預約的服務項目
       </p>
     );
@@ -54,10 +54,8 @@ export function ServiceStep({
               type="button"
               onClick={() => onSelect(service)}
               className={cn(
-                'relative w-full rounded-2xl border p-5 text-left transition-all active:scale-[0.995]',
-                selected
-                  ? 'border-primary/70 bg-primary/8 ring-1 ring-primary/40'
-                  : 'border-border/70 bg-card/40 hover:border-primary/35 hover:bg-card/60',
+                'neon-outline-card relative w-full p-5 text-left active:scale-[0.995]',
+                selected && 'neon-outline-card-selected',
               )}
             >
               {badge ? (
@@ -72,15 +70,25 @@ export function ServiceStep({
               ) : null}
 
               <p className={cn('text-base font-bold', badge && 'pr-14')}>{service.name}</p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                單次 {prices.cashLabel}
-                {prices.memberLabel ? ` · 會員 ${prices.memberLabel}` : ''}
-              </p>
-
-              <div className="mt-4 flex items-center gap-1.5 text-sm text-muted-foreground">
-                <Clock className="size-4 text-primary/80" />
+              <div className="mt-2 flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Clock className="size-4 text-primary/70" />
                 {serviceDurationLabel(service)}
               </div>
+
+              <p className="mt-4 font-mono text-base font-semibold tabular-nums text-primary">
+                {prices.highlightMember && prices.memberLabel
+                  ? prices.memberLabel
+                  : prices.cashLabel}
+              </p>
+              {prices.memberLabel && !prices.highlightMember ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  會員 {prices.memberLabel}
+                </p>
+              ) : prices.highlightMember ? (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  單次 {prices.cashLabel}
+                </p>
+              ) : null}
             </button>
           );
         })}

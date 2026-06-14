@@ -99,10 +99,11 @@ export function CalendarTimePicker({
   );
 
   const applyMinutes = useCallback(
-    (minutes: number) => {
+    (minutes: number, day: Date = selectedDay) => {
       const clamped = clampMinutes(minutes);
+      setSelectedDay(day);
       setStartMinutes(clamped);
-      onChange(minutesToDate(selectedDay, clamped));
+      onChange(minutesToDate(day, clamped));
     },
     [clampMinutes, onChange, selectedDay],
   );
@@ -130,15 +131,12 @@ export function CalendarTimePicker({
   function shiftDay(delta: number) {
     const next = addDays(selectedDay, delta);
     if (next.getTime() < minDay.getTime() || next.getTime() > maxDay.getTime()) return;
-    setSelectedDay(next);
-    const mins = defaultStartMinutes(next, now, durationMinutes);
-    applyMinutes(mins);
+    applyMinutes(defaultStartMinutes(next, now, durationMinutes), next);
     setDateMenuOpen(false);
   }
 
   function pickDay(day: Date) {
-    setSelectedDay(day);
-    applyMinutes(defaultStartMinutes(day, now, durationMinutes));
+    applyMinutes(defaultStartMinutes(day, now, durationMinutes), day);
     setDateMenuOpen(false);
   }
 
@@ -186,14 +184,14 @@ export function CalendarTimePicker({
   const currentStart = minutesToDate(selectedDay, startMinutes);
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border/70 bg-card/30">
-      <div className="border-b border-border/50 px-4 py-3">
+    <div className="neon-panel overflow-hidden">
+      <div className="relative z-20 border-b border-primary/20 px-4 py-3">
         <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => shiftDay(-1)}
             disabled={selectedDay.getTime() <= minDay.getTime()}
-            className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted/40 hover:text-foreground disabled:opacity-30"
+            className="rounded-lg p-1.5 text-muted-foreground transition-colors duration-200 hover:bg-primary/10 hover:text-primary disabled:opacity-30"
             aria-label="前一天"
           >
             <ChevronLeft className="size-5" />
@@ -202,11 +200,11 @@ export function CalendarTimePicker({
             <button
               type="button"
               onClick={() => setDateMenuOpen((o) => !o)}
-              className="flex items-center gap-0.5 text-base font-semibold"
+              className="flex items-center gap-0.5 rounded-lg px-1 py-0.5 text-base font-semibold transition-colors duration-200 hover:text-primary"
             >
               {selectedDay.getMonth() + 1}月
               <ChevronDown
-                className={cn('size-4 text-muted-foreground transition', dateMenuOpen && 'rotate-180')}
+                className={cn('size-4 text-muted-foreground transition', dateMenuOpen && 'rotate-180 text-primary')}
               />
             </button>
             {dateMenuOpen ? (
@@ -217,16 +215,19 @@ export function CalendarTimePicker({
                   aria-label="關閉日期選單"
                   onClick={() => setDateMenuOpen(false)}
                 />
-                <div className="absolute left-0 top-full z-50 mt-2 max-h-52 w-44 overflow-y-auto rounded-xl border border-border/70 bg-card py-1 shadow-xl">
+                <div className="absolute left-0 top-full z-50 mt-2 max-h-52 w-44 overflow-y-auto rounded-xl border border-primary/35 bg-card py-1 shadow-[0_8px_32px_oklch(0_0_0/0.55)]">
                   {upcomingDays.map((day) => {
                     const active = day.getTime() === selectedDay.getTime();
                     return (
                       <button
                         key={day.toISOString()}
                         type="button"
-                        onClick={() => pickDay(day)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          pickDay(day);
+                        }}
                         className={cn(
-                          'flex w-full px-3 py-2 text-left text-sm transition hover:bg-muted/50',
+                          'flex w-full px-3 py-2 text-left text-sm transition-colors duration-200 hover:bg-primary/10 hover:text-primary',
                           active && 'bg-primary/15 text-primary',
                         )}
                       >
@@ -242,7 +243,7 @@ export function CalendarTimePicker({
             type="button"
             onClick={() => shiftDay(1)}
             disabled={selectedDay.getTime() >= maxDay.getTime()}
-            className="rounded-lg p-1.5 text-muted-foreground transition hover:bg-muted/40 hover:text-foreground disabled:opacity-30"
+            className="rounded-lg p-1.5 text-muted-foreground transition-colors duration-200 hover:bg-primary/10 hover:text-primary disabled:opacity-30"
             aria-label="後一天"
           >
             <ChevronRight className="size-5" />
@@ -254,8 +255,8 @@ export function CalendarTimePicker({
         </p>
       </div>
 
-      <div className="relative flex max-h-[420px] overflow-y-auto">
-        <div className="w-16 shrink-0 border-r border-border/40 pt-2">
+      <div className="relative flex max-h-[420px] overflow-x-hidden overflow-y-auto">
+        <div className="w-16 shrink-0 border-r border-primary/15 pt-2">
           {hours.map((hour) => (
             <div
               key={hour}
@@ -276,7 +277,7 @@ export function CalendarTimePicker({
           {hours.map((hour) => (
             <div
               key={hour}
-              className="absolute left-0 right-0 border-t border-border/35"
+              className="absolute left-0 right-0 border-t border-primary/12"
               style={{ top: (hour - OPEN_HOUR) * HOUR_HEIGHT_PX }}
             />
           ))}
@@ -286,7 +287,7 @@ export function CalendarTimePicker({
             role="slider"
             aria-label="拖曳選擇開始時間"
             aria-valuetext={formatTimeRange(currentStart, durationMinutes)}
-            className="absolute left-2 right-2 cursor-grab rounded-md border-2 border-foreground/70 bg-primary/12 active:cursor-grabbing"
+            className="absolute left-2 right-2 cursor-grab rounded-md border-2 border-primary/75 bg-primary/12 transition-colors duration-200 hover:border-primary hover:bg-primary/18 active:cursor-grabbing"
             style={{
               top: (startMinutes / 60) * HOUR_HEIGHT_PX,
               height: blockHeightPx,
@@ -296,8 +297,6 @@ export function CalendarTimePicker({
             onPointerUp={onBlockPointerUp}
             onPointerCancel={onBlockPointerUp}
           >
-            <span className="absolute -left-1 -top-1 size-2.5 rounded-full border-2 border-foreground/80 bg-background" />
-            <span className="absolute -bottom-1 -right-1 size-2.5 rounded-full border-2 border-foreground/80 bg-background" />
             <div className="px-2 py-1 text-xs font-medium text-foreground/90">
               {formatTimeRange(currentStart, durationMinutes)}
             </div>
@@ -305,7 +304,7 @@ export function CalendarTimePicker({
         </div>
       </div>
 
-      <p className="border-t border-border/40 px-4 py-2 text-center text-xs text-muted-foreground">
+      <p className="border-t border-primary/15 px-4 py-2 text-center text-xs text-muted-foreground">
         拖曳方框或點擊時段 · 時長 {durationMinutes} 分鐘
       </p>
     </div>

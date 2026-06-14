@@ -31,13 +31,8 @@ export function serviceBadge(service: Service): ServiceBadge | null {
   return null;
 }
 
-export function serviceBadgeClass(tone: ServiceBadgeTone): string {
-  switch (tone) {
-    case 'hot':
-      return 'border-primary/50 bg-primary/15 text-primary';
-    case 'rec':
-      return 'border-emerald-400/45 bg-emerald-500/10 text-emerald-300';
-  }
+export function serviceBadgeClass(_tone: ServiceBadgeTone): string {
+  return 'border-primary/45 bg-primary/12 text-primary';
 }
 
 export interface ServicePriceDisplay {

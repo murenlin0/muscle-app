@@ -6,7 +6,7 @@ const STEPS = ['選服務', '選時間', '確認送出'] as const;
 
 export function BookingStepIndicator({ step }: { step: 1 | 2 | 3 }) {
   return (
-    <div className="mb-8 px-2">
+    <div className="mb-8 px-1">
       <div className="flex items-center">
         {STEPS.map((label, index) => {
           const n = (index + 1) as 1 | 2 | 3;
@@ -17,10 +17,13 @@ export function BookingStepIndicator({ step }: { step: 1 | 2 | 3 }) {
               <div className="flex flex-col items-center gap-1.5">
                 <span
                   className={cn(
-                    'flex size-9 items-center justify-center rounded-full text-sm font-bold transition-colors',
-                    active && 'bg-primary text-primary-foreground shadow-[0_0_16px_oklch(0.58_0.19_252/0.45)]',
-                    done && 'bg-primary/25 text-primary',
-                    !active && !done && 'border border-border/80 bg-muted/30 text-muted-foreground',
+                    'flex size-9 items-center justify-center rounded-full text-sm font-bold transition-all duration-200',
+                    active &&
+                      'border-2 border-primary bg-transparent text-primary shadow-[0_0_14px_oklch(0.58_0.19_252/0.35)]',
+                    done && 'border border-primary/55 bg-primary/12 text-primary',
+                    !active &&
+                      !done &&
+                      'border border-transparent bg-muted/55 text-muted-foreground/75',
                   )}
                 >
                   {n}
@@ -37,8 +40,8 @@ export function BookingStepIndicator({ step }: { step: 1 | 2 | 3 }) {
               {index < STEPS.length - 1 ? (
                 <div
                   className={cn(
-                    'mx-1 h-0.5 flex-1 rounded-full',
-                    step > n ? 'bg-primary/50' : 'bg-border/60',
+                    'mx-1.5 h-px flex-1',
+                    step > n ? 'bg-primary/45' : 'bg-border/70',
                   )}
                 />
               ) : null}

@@ -15,7 +15,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { formatCurrency } from '@/lib/phone';
+import { formatPriceNtd } from '@/lib/booking-services';
 
 export default function BookHomePage() {
   const router = useRouter();
@@ -84,7 +84,8 @@ export default function BookHomePage() {
             href={`${bookBase}/wallet`}
             icon={Wallet}
             title="儲值金"
-            description={`目前餘額 ${formatCurrency(client.balance)}`}
+            description="查看餘額與儲值紀錄"
+            monoHint={formatPriceNtd(client.balance)}
             tone="muted"
           />
         </div>

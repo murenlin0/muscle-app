@@ -202,6 +202,7 @@ export function BookingFlow() {
         {step === 2 && selectedService ? (
           <TimeStep
             service={selectedService}
+            client={client}
             startsAt={startsAt}
             now={now}
             staffList={staffList}

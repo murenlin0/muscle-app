@@ -61,9 +61,9 @@ export function BookingSummary({
   const prices = service ? servicePriceDisplay(service, client) : null;
 
   return (
-    <div className="rounded-2xl border border-border/70 bg-card/50 p-4 backdrop-blur-sm">
+    <div className="neon-panel p-4">
       <p className="mb-1 text-sm font-bold tracking-wide text-foreground">預約摘要</p>
-      <div className="divide-y divide-border/50">
+      <div className="divide-y divide-primary/10">
         <SummaryRow
           icon={Sparkles}
           label="服務"
@@ -89,9 +89,9 @@ export function BookingSummary({
           empty={!startsAt}
         />
       </div>
-      <div className="mt-3 flex items-center justify-between border-t border-border/50 pt-3">
+      <div className="mt-3 flex items-center justify-between border-t border-primary/15 pt-3">
         <span className="text-sm text-muted-foreground">預估金額</span>
-        <span className="text-lg font-bold tabular-nums text-primary">
+        <span className="font-mono text-lg font-bold tabular-nums text-primary">
           {prices?.estimatedLabel ?? '—'}
         </span>
       </div>
