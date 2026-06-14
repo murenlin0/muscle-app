@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getPortalSession, canViewReports } from '@/lib/portal-session';
-import { isGoogleCalendarConfigured, isValidGoogleSetupKey } from '@/lib/google-oauth';
+import { isGoogleCalendarReady } from '@/lib/integration-settings';
+import { isValidGoogleSetupKey } from '@/lib/google-oauth';
 
 export default async function GoogleSetupAdminPage({
   searchParams,
@@ -16,11 +17,13 @@ export default async function GoogleSetupAdminPage({
     redirect('/login?next=/admin/google');
   }
 
-  const configured = isGoogleCalendarConfigured();
+  const configured = await isGoogleCalendarReady();
   const setupKey = process.env.GOOGLE_OAUTH_SETUP_KEY?.trim();
   const authHref = keyAuthorized
-    ? `/api/google/auth?key=${encodeURIComponent(params.key!)}`
-    : '/api/google/connect';
+    ? '/api/google/setup'
+    : configured
+      ? '/api/google/connect'
+      : '/api/google/setup';
   const pageWithKey =
     keyAuthorized && params.key
       ? `/admin/google?key=${encodeURIComponent(params.key)}`

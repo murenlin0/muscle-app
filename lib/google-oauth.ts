@@ -1,3 +1,5 @@
+import { getGoogleRefreshToken } from '@/lib/integration-settings';
+
 /** Google Calendar OAuth（個人 Gmail + 授權碼流程） */
 
 export const GOOGLE_CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar';
@@ -64,11 +66,11 @@ export function isGoogleCalendarConfigured(): boolean {
   );
 }
 
-export async function refreshGoogleAccessToken(): Promise<string> {
+export async function refreshGoogleAccessToken(refreshToken?: string): Promise<string> {
   const clientId = process.env.GOOGLE_CLIENT_ID?.trim();
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET?.trim();
-  const refreshToken = process.env.GOOGLE_REFRESH_TOKEN?.trim();
-  if (!clientId || !clientSecret || !refreshToken) {
+  const token = refreshToken ?? (await getGoogleRefreshToken());
+  if (!clientId || !clientSecret || !token) {
     throw new Error('缺少 GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / GOOGLE_REFRESH_TOKEN');
   }
 
@@ -78,7 +80,7 @@ export async function refreshGoogleAccessToken(): Promise<string> {
     body: new URLSearchParams({
       client_id: clientId,
       client_secret: clientSecret,
-      refresh_token: refreshToken,
+      refresh_token: token,
       grant_type: 'refresh_token',
     }),
   });

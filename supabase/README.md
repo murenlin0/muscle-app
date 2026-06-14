@@ -11,6 +11,10 @@
 | 3 | `02_rls.sql` | GRANT + RLS（**缺此檔會 permission denied**） |
 | 4 | `03_seed.sql` | 分店 + 服務價目 + 師傅 |
 
+### 既有專案升級（Google 日曆 token 儲存）
+
+執行 `09_integration_settings.sql`（不需清空資料）。本機 dev 也會寫入 `.env.local`，正式站建議用資料庫存 refresh token。
+
 ### 既有專案升級（不想清空資料）
 
 執行 `06_multi_store.sql` 後再跑 `02_rls.sql`。既有資料預設歸到 `store1`（民有店）。

@@ -4,6 +4,8 @@ import {
   findStaffByName,
   upsertClientForBooking,
 } from '@/lib/staff-auth-server';
+import { createPendingCheckoutEvent } from '@/lib/google-calendar';
+import { isGoogleCalendarReady } from '@/lib/integration-settings';
 import { requireStaffSession } from '@/lib/portal-api';
 import { getSupabaseAdmin } from '@/lib/supabase';
 
@@ -62,12 +64,40 @@ export async function POST(request: Request) {
 
     if (error) throw new Error(error.message);
 
-    const calendarNote =
-      '已寫入資料庫。接上 Google Calendar 後將自動建立灰色待結帳事件。';
+    let calendarNote = '已寫入資料庫。';
+    let calendarEventId: string | null = null;
+    let calendarHtmlLink: string | null = null;
+
+    if (await isGoogleCalendarReady()) {
+      try {
+        const event = await createPendingCheckoutEvent({
+          title: preview.calendarTitle,
+          startsAt: preview.startsAt,
+          endsAt: preview.endsAt,
+          note: parsed.note,
+          description: body.text.trim(),
+        });
+        calendarEventId = event.id;
+        calendarHtmlLink = event.htmlLink;
+        await supabase
+          .from('appointments')
+          .update({
+            calendar_event_id: event.id,
+            calendar_event_etag: event.etag,
+          })
+          .eq('id', appointment.id);
+        calendarNote = '已建立灰色待結帳日曆事件。';
+      } catch (calErr) {
+        calendarNote = `資料庫已建立；日曆失敗：${calErr instanceof Error ? calErr.message : '未知錯誤'}`;
+      }
+    } else {
+      calendarNote += ' Google 日曆尚未授權，請開 /admin/google 完成串接。';
+    }
 
     return NextResponse.json({
-      appointment,
+      appointment: { ...appointment, calendar_event_id: calendarEventId },
       calendarNote,
+      calendarHtmlLink,
       preview,
     });
   } catch (e) {

@@ -5,6 +5,7 @@ import {
   getGoogleOAuthConfig,
   listGoogleCalendars,
 } from '@/lib/google-oauth';
+import { saveGoogleOAuthTokens } from '@/lib/integration-settings';
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -32,10 +33,18 @@ export async function GET(request: Request) {
     const calendars = await listGoogleCalendars(tokens.access_token);
     const primary = calendars.find((c) => c.primary) ?? calendars[0];
 
-    const refreshBlock = tokens.refresh_token
-      ? `<label class="label">GOOGLE_REFRESH_TOKEN（貼到 .env.local 與 Vercel，勿公開）</label>
-         <textarea readonly rows="4">${escapeHtml(tokens.refresh_token)}</textarea>`
-      : `<p class="warn">這次沒有拿到 refresh token。請到 Google 帳號 → 安全性 → 第三方存取，移除「筋棧」後，再用 /api/google/auth 重試（需 prompt=consent）。</p>`;
+    const suggestedCalendarId = primary?.id ?? 'muscle.com.tw@gmail.com';
+
+    let savedNote =
+      '<p class="warn">未取得 refresh token。請到 Google 帳號移除第三方存取後再試。</p>';
+    if (tokens.refresh_token) {
+      await saveGoogleOAuthTokens({
+        refreshToken: tokens.refresh_token,
+        calendarId: suggestedCalendarId,
+      });
+      savedNote =
+        '<p class="ok"><strong>已完成串接</strong>：token 已寫入 .env.local（及資料庫若可用）。請重啟 dev。</p>';
+    }
 
     const calendarRows = calendars
       .slice(0, 12)
@@ -45,25 +54,18 @@ export async function GET(request: Request) {
       )
       .join('');
 
-    const suggestedCalendarId = primary?.id ?? 'muscle.com.tw@gmail.com';
-
     const body = `
-      <p class="ok">授權成功。程式已能讀取你的日曆列表。</p>
-      ${refreshBlock}
-      <label class="label">建議 GOOGLE_CALENDAR_ID</label>
+      <p class="ok">授權成功。</p>
+      ${savedNote}
+      <label class="label">GOOGLE_CALENDAR_ID</label>
       <textarea readonly rows="2">${escapeHtml(suggestedCalendarId)}</textarea>
       <h2>可寫入的日曆</h2>
       <table>
         <thead><tr><th>名稱</th><th>Calendar ID</th><th></th></tr></thead>
         <tbody>${calendarRows}</tbody>
       </table>
-      <h2>下一步</h2>
-      <ol>
-        <li>把 <code>GOOGLE_REFRESH_TOKEN</code> 和 <code>GOOGLE_CALENDAR_ID</code> 加入 <code>.env.local</code></li>
-        <li>Vercel 專案 Settings → Environment Variables 也加同樣四個變數</li>
-        <li>重啟 dev / 重新部署</li>
-      </ol>
-      <p class="muted">redirect_uri 本次使用：<code>${escapeHtml(config.redirectUri)}</code></p>
+      <p class="muted">redirect_uri：<code>${escapeHtml(config.redirectUri)}</code></p>
+      <p><a href="/admin/google">返回設定頁</a></p>
     `;
 
     return htmlPage('Google 日曆已連線', body);

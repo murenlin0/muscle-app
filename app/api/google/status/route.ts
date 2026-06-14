@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import {
+  getGoogleCalendarId,
+  getGoogleRefreshToken,
+  isGoogleCalendarReady,
+} from '@/lib/integration-settings';
+import {
   getGoogleOAuthConfig,
-  isGoogleCalendarConfigured,
   listGoogleCalendars,
   refreshGoogleAccessToken,
 } from '@/lib/google-oauth';
@@ -14,7 +18,7 @@ export async function GET(request: Request) {
   }
 
   const config = getGoogleOAuthConfig(request);
-  const configured = isGoogleCalendarConfigured();
+  const configured = await isGoogleCalendarReady();
 
   if (!configured) {
     return NextResponse.json({
@@ -26,9 +30,10 @@ export async function GET(request: Request) {
   }
 
   try {
-    const accessToken = await refreshGoogleAccessToken();
+    const refresh = await getGoogleRefreshToken();
+    const accessToken = await refreshGoogleAccessToken(refresh ?? undefined);
     const calendars = await listGoogleCalendars(accessToken);
-    const calendarId = process.env.GOOGLE_CALENDAR_ID?.trim() ?? '';
+    const calendarId = (await getGoogleCalendarId()) ?? '';
     const target = calendars.find((c) => c.id === calendarId);
 
     return NextResponse.json({
