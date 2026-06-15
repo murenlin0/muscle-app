@@ -87,10 +87,16 @@ export default function SuperAdminPage() {
           description="OAuth 授權與 refresh token 設定"
         />
         <AdminHubCard
-          href="/admin/reports"
+          href="/admin/store1/reports"
           icon={BarChart3}
-          title="全店報表"
-          description="民有、文一及跨店彙總（待 GCal 同步後上線）"
+          title="民有店報表"
+          description="林口民有店日營收、師傅業績"
+        />
+        <AdminHubCard
+          href="/admin/store2/reports"
+          icon={BarChart3}
+          title="文一店報表"
+          description="林口文一店日營收、師傅業績"
         />
         <AdminHubCard
           href="/admin/clients"
@@ -101,7 +107,7 @@ export default function SuperAdminPage() {
         {STORE_LIST.map((store) => (
           <AdminHubCard
             key={store.slug}
-            href={`/${store.slug}/admin/import`}
+            href={`/manager/${store.slug}/import`}
             icon={FileSpreadsheet}
             title={`${store.name} · 會員匯入`}
             description="Notion CSV 匯入該店會員"
@@ -113,7 +119,7 @@ export default function SuperAdminPage() {
         {STORE_LIST.map((s, i) => (
           <span key={s.slug}>
             {i > 0 ? ' · ' : ' '}
-            <Link href={`/${s.slug}/admin`} className="text-primary hover:underline">
+            <Link href={`/manager/${s.slug}`} className="text-primary hover:underline">
               {s.name}
             </Link>
           </span>
