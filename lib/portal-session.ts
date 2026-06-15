@@ -118,9 +118,7 @@ export function verifyBootstrapStorePassword(password: string): boolean {
 
 export function portalHomePath(session: PortalSession): string {
   if (session.role === 'staff') return '/staff';
-  if (session.role === 'store') {
-    return session.storeIds.length === 1 ? `/manager/${session.storeIds[0]}` : '/manager';
-  }
+  if (session.role === 'store') return '/manager';
   return '/admin';
 }
 

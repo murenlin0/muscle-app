@@ -31,13 +31,8 @@ export default function ManagerHubPage() {
         router.replace('/admin');
         return;
       }
-      // Single store: redirect directly
       if (s.role === 'store') {
         const ids = s.storeIds ?? (s.storeId ? [s.storeId] : []);
-        if (ids.length === 1) {
-          router.replace(`/manager/${ids[0]}`);
-          return;
-        }
         if (ids.length === 0) {
           router.replace('/login');
           return;

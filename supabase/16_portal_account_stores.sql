@@ -14,6 +14,9 @@ create table if not exists public.portal_account_stores (
 
 grant select, insert, update, delete on public.portal_account_stores to service_role;
 
+-- 與 portal_accounts 相同：僅 service_role 經 API 存取（無 anon policy）
+alter table public.portal_account_stores enable row level security;
+
 -- 2. 遷移現有 portal_accounts.store_id → portal_account_stores
 insert into public.portal_account_stores (account_id, store_id)
 select id, store_id
