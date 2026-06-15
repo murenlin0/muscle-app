@@ -61,7 +61,7 @@ export function useStoreAdminGuard(storeSlug: string, loginPath = '/login') {
         router.replace(loginPath);
         return;
       }
-      if (s.role === 'store' && s.storeId !== storeSlug) {
+      if (s.role === 'store' && !s.storeIds.includes(storeSlug as import('@/lib/stores').StoreSlug)) {
         router.replace(loginPath);
         return;
       }

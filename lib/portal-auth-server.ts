@@ -7,7 +7,7 @@ import {
 } from '@/lib/portal-session';
 import { verifyStaffPin } from '@/lib/staff-pin';
 import { findStaffForLogin, listActiveStaffForRoster } from '@/lib/staff-auth-server';
-import { getStore, type StoreSlug } from '@/lib/stores';
+import { getStore, isStoreSlug, type StoreSlug } from '@/lib/stores';
 
 export { listActiveStaffForRoster };
 
@@ -24,6 +24,28 @@ export async function loginStaff(staffId: string, pin: string): Promise<PortalSe
     staffId: staff.id,
     staffName: staff.display_name,
   };
+}
+
+async function getStoreIdsForAccount(
+  accountId: string,
+  fallbackStoreId: string | null,
+): Promise<StoreSlug[]> {
+  const supabase = getSupabaseAdmin();
+  const { data: rows } = await supabase
+    .from('portal_account_stores')
+    .select('store_id')
+    .eq('account_id', accountId);
+
+  if (rows && rows.length > 0) {
+    return (rows as { store_id: string }[]).map((r) => r.store_id as StoreSlug);
+  }
+
+  // Fallback: use portal_accounts.store_id (pre-migration or junction table not yet created)
+  if (fallbackStoreId && isStoreSlug(fallbackStoreId)) {
+    return [fallbackStoreId as StoreSlug];
+  }
+
+  return [];
 }
 
 /** 總管理／店長同一入口，依密碼判斷角色 */
@@ -50,16 +72,19 @@ export async function loginAdmin(password: string): Promise<PortalSession> {
 
   const { data: storeAccounts, error: storeError } = await supabase
     .from('portal_accounts')
-    .select('display_name, password_hash, store_id')
+    .select('id, display_name, password_hash, store_id')
     .eq('role', 'store')
     .eq('is_active', true);
 
   if (!storeError) {
     for (const account of storeAccounts ?? []) {
       if (verifyPortalPassword(password, account.password_hash)) {
+        const storeIds = await getStoreIdsForAccount(account.id, account.store_id);
+        const storeId = storeIds[0] ?? (account.store_id as StoreSlug) ?? 'store1';
         return {
           role: 'store',
-          storeId: account.store_id as StoreSlug,
+          storeId,
+          storeIds: storeIds.length > 0 ? storeIds : [storeId],
           displayName: account.display_name,
         };
       }
@@ -71,6 +96,7 @@ export async function loginAdmin(password: string): Promise<PortalSession> {
     return {
       role: 'store',
       storeId: 'store1',
+      storeIds: ['store1'],
       displayName: store ? `${store.name} 管理員` : '店長',
     };
   }

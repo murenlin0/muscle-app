@@ -16,12 +16,12 @@ export async function GET(request: Request) {
   const session = await requireReportsAccess(storeParam ?? undefined);
   if (session instanceof NextResponse) return session;
 
-  const storeId =
-    session.role === 'store' ? session.storeId : storeParam ?? undefined;
-
-  if (session.role === 'store' && storeParam && storeParam !== session.storeId) {
+  if (session.role === 'store' && storeParam && !session.storeIds.includes(storeParam)) {
     return NextResponse.json({ error: '無權查看其他分店' }, { status: 403 });
   }
+
+  const storeId =
+    session.role === 'store' ? (storeParam ?? session.storeId) : storeParam ?? undefined;
 
   try {
     const report = await listDailyTransactions(from, to, storeId);

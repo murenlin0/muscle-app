@@ -29,12 +29,12 @@ export async function GET(request: Request) {
   const session = await requireReportsAccess(storeParam ?? undefined);
   if (session instanceof NextResponse) return session;
 
-  const storeId =
-    session.role === 'store' ? session.storeId : storeParam ?? undefined;
-
-  if (session.role === 'store' && storeParam && storeParam !== session.storeId) {
+  if (session.role === 'store' && storeParam && !session.storeIds.includes(storeParam)) {
     return NextResponse.json({ error: '無權查看其他分店' }, { status: 403 });
   }
+
+  const storeId =
+    session.role === 'store' ? (storeParam ?? session.storeId) : storeParam ?? undefined;
 
   const category =
     categoryParam &&
@@ -96,7 +96,7 @@ export async function POST(request: Request) {
   }
 
   const storeId =
-    session.role === 'store' ? session.storeId : body.storeId ?? 'store1';
+    session.role === 'store' ? session.storeId : (body.storeId ?? 'store1');
 
   if (!body.occurredOn || !body.title?.trim()) {
     return NextResponse.json({ error: '請填寫日期與標題' }, { status: 400 });

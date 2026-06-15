@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 import { cookies } from 'next/headers';
-import type { StoreSlug } from '@/lib/stores';
+import { isStoreSlug, type StoreSlug } from '@/lib/stores';
 
 const PORTAL_COOKIE = 'muscle_portal_session';
 
@@ -8,7 +8,7 @@ export type PortalRole = 'super' | 'store' | 'staff';
 
 export type PortalSession =
   | { role: 'super'; displayName: string }
-  | { role: 'store'; storeId: StoreSlug; displayName: string }
+  | { role: 'store'; storeId: StoreSlug; storeIds: StoreSlug[]; displayName: string }
   | { role: 'staff'; staffId: string; staffName: string };
 
 function secret(): string {
@@ -46,7 +46,7 @@ export function createPortalSessionToken(session: PortalSession): string {
     return pack(['super', session.displayName, ts]);
   }
   if (session.role === 'store') {
-    return pack(['store', session.storeId, session.displayName, ts]);
+    return pack(['store', session.storeIds.join(','), session.displayName, ts]);
   }
   return pack(['staff', session.staffId, session.staffName, ts]);
 }
@@ -61,7 +61,9 @@ export function parsePortalSessionToken(token: string | undefined): PortalSessio
     return { role: 'super', displayName: parts[1] };
   }
   if (role === 'store' && parts.length === 4) {
-    return { role: 'store', storeId: parts[1] as StoreSlug, displayName: parts[2] };
+    const storeIds = parts[1].split(',').filter(isStoreSlug) as StoreSlug[];
+    const storeId = storeIds[0] ?? 'store1';
+    return { role: 'store', storeId, storeIds, displayName: parts[2] };
   }
   if (role === 'staff' && parts.length === 4) {
     return { role: 'staff', staffId: parts[1], staffName: parts[2] };
@@ -116,20 +118,22 @@ export function verifyBootstrapStorePassword(password: string): boolean {
 
 export function portalHomePath(session: PortalSession): string {
   if (session.role === 'staff') return '/staff';
-  if (session.role === 'store') return `/manager/${session.storeId}`;
+  if (session.role === 'store') {
+    return session.storeIds.length === 1 ? `/manager/${session.storeIds[0]}` : '/manager';
+  }
   return '/admin';
 }
 
 export function canAccessStore(session: PortalSession, storeId: StoreSlug): boolean {
   if (session.role === 'super') return true;
-  if (session.role === 'store') return session.storeId === storeId;
+  if (session.role === 'store') return session.storeIds.includes(storeId);
   return false;
 }
 
 export function canViewReports(session: PortalSession, storeId?: StoreSlug): boolean {
   if (session.role === 'staff') return false;
   if (session.role === 'super') return true;
-  if (session.role === 'store' && storeId) return session.storeId === storeId;
+  if (session.role === 'store' && storeId) return session.storeIds.includes(storeId);
   if (session.role === 'store') return true;
   return false;
 }
@@ -139,7 +143,7 @@ export function canManageStaff(
   storeId: StoreSlug,
 ): boolean {
   if (session.role === 'super') return true;
-  if (session.role === 'store') return session.storeId === storeId;
+  if (session.role === 'store') return session.storeIds.includes(storeId);
   return false;
 }
 

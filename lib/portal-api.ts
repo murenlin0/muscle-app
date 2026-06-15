@@ -102,10 +102,10 @@ export async function requireClientsAccess(
   }
 
   if (session.role === 'store') {
-    if (storeParam && storeParam !== session.storeId) {
+    if (storeParam && !session.storeIds.includes(storeParam)) {
       return NextResponse.json({ error: '無權查看其他分店' }, { status: 403 });
     }
-    return { session, storeId: session.storeId };
+    return { session, storeId: storeParam ?? session.storeId };
   }
 
   const staff = await findStaffForLogin(session.staffId);

@@ -14,12 +14,12 @@ export async function POST(request: Request) {
     body = {};
   }
 
-  const storeId =
-    session.role === 'store' ? session.storeId : body.storeId ?? 'store1';
-
-  if (session.role === 'store' && body.storeId && body.storeId !== session.storeId) {
+  if (session.role === 'store' && body.storeId && !session.storeIds.includes(body.storeId)) {
     return NextResponse.json({ error: '無權操作其他分店' }, { status: 403 });
   }
+
+  const storeId =
+    session.role === 'store' ? session.storeId : body.storeId ?? 'store1';
 
   try {
     const report = await migrateLedgerData(storeId);

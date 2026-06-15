@@ -80,7 +80,7 @@ export function storeStaffPath(_slug: StoreSlug): string {
 }
 
 export function storeAdminPath(slug: StoreSlug): string {
-  return `/${slug}/admin`;
+  return `/manager/${slug}`;
 }
 
 export function resolveStoreSlugFromMessageLabel(label: string): StoreSlug | null {

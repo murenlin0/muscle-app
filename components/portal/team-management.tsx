@@ -17,6 +17,7 @@ export interface TeamMemberRow {
   accessLevel: AccessLevel;
   staffPin: string;
   adminPassword: string | null;
+  assignedStoreIds: StoreSlug[];
 }
 
 interface MemberDraft {
@@ -24,6 +25,7 @@ interface MemberDraft {
   staffPin: string;
   adminPassword: string;
   accessLevel: AccessLevel;
+  assignedStoreIds: StoreSlug[];
 }
 
 function draftFromMember(m: TeamMemberRow): MemberDraft {
@@ -32,6 +34,7 @@ function draftFromMember(m: TeamMemberRow): MemberDraft {
     staffPin: m.staffPin ?? '',
     adminPassword: m.adminPassword ?? '',
     accessLevel: m.accessLevel,
+    assignedStoreIds: m.assignedStoreIds.length > 0 ? m.assignedStoreIds : [m.storeId],
   };
 }
 
@@ -107,6 +110,7 @@ export function TeamManagement({
         staffPin: draft.staffPin || undefined,
         adminPassword: draft.adminPassword || undefined,
         accessLevel: draft.accessLevel,
+        storeIds: draft.accessLevel === 'store_admin' ? draft.assignedStoreIds : undefined,
       };
     });
 
@@ -188,6 +192,7 @@ export function TeamManagement({
                   <th className="pb-3 pr-3 font-medium">目前權限</th>
                   <th className="pb-3 pr-3 font-medium">師傅 PIN</th>
                   <th className="pb-3 pr-3 font-medium">管理密碼</th>
+                  {canAssignStoreAdmin ? <th className="pb-3 pr-3 font-medium">負責分店</th> : null}
                   <th className="pb-3 font-medium">調整權限</th>
                 </tr>
               </thead>
@@ -253,21 +258,55 @@ export function TeamManagement({
                           className="h-9 w-28"
                         />
                       </td>
+                      {canAssignStoreAdmin ? (
+                        <td className="py-3 pr-3">
+                          {draft.accessLevel === 'store_admin' ? (
+                            <div className="flex flex-col gap-1">
+                              {STORE_LIST.map((s) => (
+                                <label key={s.slug} className="flex items-center gap-1.5 text-xs">
+                                  <input
+                                    type="checkbox"
+                                    checked={draft.assignedStoreIds.includes(s.slug)}
+                                    onChange={(e) => {
+                                      const next = e.target.checked
+                                        ? [...draft.assignedStoreIds, s.slug]
+                                        : draft.assignedStoreIds.filter((id) => id !== s.slug);
+                                      setDrafts((d) => ({
+                                        ...d,
+                                        [m.staffId]: { ...draft, assignedStoreIds: next },
+                                      }));
+                                    }}
+                                    className="accent-primary"
+                                  />
+                                  {s.name}
+                                </label>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </td>
+                      ) : null}
                       <td className="py-3">
                         {permLocked ? (
                           <span className="text-xs text-muted-foreground">僅總管理可調整</span>
                         ) : (
                           <select
                             value={draft.accessLevel}
-                            onChange={(e) =>
+                            onChange={(e) => {
+                              const newLevel = e.target.value as AccessLevel;
                               setDrafts((d) => ({
                                 ...d,
                                 [m.staffId]: {
                                   ...draft,
-                                  accessLevel: e.target.value as AccessLevel,
+                                  accessLevel: newLevel,
+                                  assignedStoreIds:
+                                    newLevel === 'store_admin' && draft.assignedStoreIds.length === 0
+                                      ? [m.storeId]
+                                      : draft.assignedStoreIds,
                                 },
-                              }))
-                            }
+                              }));
+                            }}
                             className="h-9 rounded-md border border-input bg-input px-2 text-xs"
                           >
                             {accessOptions.map((level) => (

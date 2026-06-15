@@ -14,6 +14,8 @@ export interface TeamMember {
   staffPin: string;
   adminPassword: string | null;
   portalAccountId: string | null;
+  /** 店長被指派可管的分店（來自 portal_account_stores；若表未建立則為 [storeId]） */
+  assignedStoreIds: StoreSlug[];
 }
 
 export function accessLevelLabel(level: AccessLevel): string {
@@ -45,7 +47,7 @@ export async function listTeamMembers(storeFilter?: StoreSlug): Promise<TeamMemb
 
   const { data: portalRows, error: portalError } = await supabase
     .from('portal_accounts')
-    .select('id, staff_id, password_plain, is_active')
+    .select('id, staff_id, password_plain, is_active, store_id')
     .eq('role', 'store');
 
   if (portalError) throw new Error(portalError.message);
@@ -54,10 +56,26 @@ export async function listTeamMembers(storeFilter?: StoreSlug): Promise<TeamMemb
     (portalRows ?? []).filter((p) => p.staff_id).map((p) => [p.staff_id as string, p]),
   );
 
+  // Fetch portal_account_stores assignments (gracefully ignore if table doesn't exist)
+  const { data: storeRows } = await supabase
+    .from('portal_account_stores')
+    .select('account_id, store_id');
+
+  const storesByAccountId = new Map<string, StoreSlug[]>();
+  for (const row of (storeRows ?? []) as { account_id: string; store_id: string }[]) {
+    const existing = storesByAccountId.get(row.account_id) ?? [];
+    storesByAccountId.set(row.account_id, [...existing, row.store_id as StoreSlug]);
+  }
+
   return (staffRows ?? []).map((row) => {
     const storeId = row.store_id as StoreSlug;
     const portal = portalByStaffId.get(row.id);
     const hasStoreAdmin = Boolean(portal?.is_active);
+    const assignedStoreIds =
+      portal
+        ? (storesByAccountId.get(portal.id) ??
+           (portal.store_id ? [portal.store_id as StoreSlug] : [storeId]))
+        : [];
 
     return {
       staffId: row.id,
@@ -68,6 +86,7 @@ export async function listTeamMembers(storeFilter?: StoreSlug): Promise<TeamMemb
       staffPin: row.login_pin ?? '',
       adminPassword: portal?.password_plain ?? null,
       portalAccountId: portal?.id ?? null,
+      assignedStoreIds,
     };
   });
 }
@@ -77,6 +96,8 @@ export interface UpdateTeamMemberInput {
   staffPin?: string;
   adminPassword?: string;
   accessLevel: AccessLevel;
+  /** 店長可管哪幾間店（僅超管可設定；為空則維持現有指派） */
+  storeIds?: StoreSlug[];
 }
 
 export async function updateTeamMember(
@@ -164,9 +185,34 @@ export async function updateTeamMember(
         .update(portalPayload)
         .eq('id', existingPortal.id);
       if (error) throw new Error(error.message);
+
+      // 更新分店指派（超管才能傳 storeIds）
+      if (input.storeIds && input.storeIds.length > 0) {
+        await supabase
+          .from('portal_account_stores')
+          .delete()
+          .eq('account_id', existingPortal.id);
+        const inserts = input.storeIds.map((s) => ({
+          account_id: existingPortal.id,
+          store_id: s,
+        }));
+        await supabase.from('portal_account_stores').insert(inserts);
+      }
     } else if (password) {
-      const { error } = await supabase.from('portal_accounts').insert(portalPayload);
+      const { data: newPortal, error } = await supabase
+        .from('portal_accounts')
+        .insert(portalPayload)
+        .select('id')
+        .single();
       if (error) throw new Error(error.message);
+
+      // 建立分店指派
+      const storeIds = input.storeIds ?? [staff.store_id as StoreSlug];
+      if (newPortal && storeIds.length > 0) {
+        await supabase.from('portal_account_stores').insert(
+          storeIds.map((s) => ({ account_id: newPortal.id, store_id: s })),
+        );
+      }
     }
   } else if (existingPortal) {
     const { error } = await supabase
@@ -225,15 +271,26 @@ export async function createTeamMember(
     const password = input.adminPassword?.trim();
     if (!password) throw new Error('店長權限需要管理密碼');
 
-    const { error: portalError } = await supabase.from('portal_accounts').insert({
-      role: 'store',
-      store_id: storeId,
-      display_name: input.displayName.trim(),
-      staff_id: created.id,
-      password_plain: password,
-      password_hash: hashPortalPassword(password),
-      is_active: true,
-    });
+    const { data: newPortal, error: portalError } = await supabase
+      .from('portal_accounts')
+      .insert({
+        role: 'store',
+        store_id: storeId,
+        display_name: input.displayName.trim(),
+        staff_id: created.id,
+        password_plain: password,
+        password_hash: hashPortalPassword(password),
+        is_active: true,
+      })
+      .select('id')
+      .single();
     if (portalError) throw new Error(portalError.message);
+
+    // 建立分店指派
+    if (newPortal) {
+      await supabase.from('portal_account_stores').insert(
+        [storeId].map((s) => ({ account_id: newPortal.id, store_id: s })),
+      );
+    }
   }
 }

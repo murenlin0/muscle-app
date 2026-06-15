@@ -112,6 +112,7 @@ export async function PATCH(request: Request) {
       staffPin?: string;
       adminPassword?: string;
       accessLevel: AccessLevel;
+      storeIds?: StoreSlug[];
     }>;
   };
   try {
@@ -125,7 +126,13 @@ export async function PATCH(request: Request) {
   }
 
   try {
-    await batchUpdateTeamMembers(body.updates, teamOptions(session));
+    await batchUpdateTeamMembers(
+      body.updates.map((u) => ({
+        ...u,
+        storeIds: session.role === 'super' ? u.storeIds : undefined,
+      })),
+      teamOptions(session),
+    );
     return NextResponse.json({ ok: true });
   } catch (e) {
     const message = e instanceof Error ? e.message : '儲存失敗';
