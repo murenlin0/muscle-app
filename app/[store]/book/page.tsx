@@ -81,8 +81,8 @@ export default function BookHomePage() {
           <ActionCard
             href={`${bookBase}/wallet`}
             icon={Wallet}
-            title="儲值與交易紀錄"
-            description="查看儲值、扣款與交易明細"
+            title="儲值金與預約紀錄"
+            description="查看待結帳預約與消費明細"
             tone="wallet"
           />
         </div>

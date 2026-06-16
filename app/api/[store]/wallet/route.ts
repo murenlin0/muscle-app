@@ -43,11 +43,30 @@ export async function GET(
     return NextResponse.json({ error: ledgerError.message }, { status: 500 });
   }
 
+  const { data: appointments, error: apptError } = await supabase
+    .from('appointments')
+    .select(`
+      id,
+      service_label,
+      service_duration_minutes,
+      starts_at,
+      ends_at,
+      note,
+      staff:staff_id(display_name)
+    `)
+    .eq('client_id', client.id)
+    .eq('status', 'pending_checkout')
+    .order('starts_at', { ascending: true });
+
+  if (apptError) {
+    return NextResponse.json({ error: apptError.message }, { status: 500 });
+  }
+
   const enriched = (ledger ?? []).map((row) => ({
     ...row,
     type_label: ledgerTypeLabel(row.type),
     signed_amount: signedLedgerAmount(row.type, row.amount),
   }));
 
-  return NextResponse.json({ client, ledger: enriched });
+  return NextResponse.json({ client, ledger: enriched, appointments: appointments ?? [] });
 }

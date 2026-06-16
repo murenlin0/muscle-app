@@ -3,6 +3,10 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { ClientLedgerTable, type ClientLedgerDisplayRow } from '@/components/client-ledger-table';
+import {
+  ClientPendingAppointments,
+  type ClientPendingAppointment,
+} from '@/components/client-pending-appointments';
 import { PageShell } from '@/app/components/page-shell';
 import { useLiff } from '@/app/components/liff-provider';
 import { LiffStatusGate } from '@/components/liff-status-gate';
@@ -49,6 +53,7 @@ export default function WalletPage() {
   const { status, lineUserId } = useLiff();
   const [client, setClient] = useState<Client | null>(null);
   const [ledger, setLedger] = useState<LedgerRecord[]>([]);
+  const [appointments, setAppointments] = useState<ClientPendingAppointment[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -67,6 +72,7 @@ export default function WalletPage() {
         error?: string;
         client?: Client;
         ledger?: LedgerRecord[];
+        appointments?: ClientPendingAppointment[];
       };
 
       if (!res.ok) {
@@ -77,6 +83,7 @@ export default function WalletPage() {
 
       setClient(data.client ?? null);
       setLedger(data.ledger ?? []);
+      setAppointments(data.appointments ?? []);
       setLoading(false);
     }
 
@@ -95,7 +102,7 @@ export default function WalletPage() {
 
   if (error || !client) {
     return (
-      <PageShell title="儲值與交易紀錄" backHref={bookBase}>
+      <PageShell title="儲值金與預約紀錄" backHref={bookBase}>
         <Card className="glass-card">
           <CardHeader>
             <CardTitle className="text-destructive">無法載入</CardTitle>
@@ -118,20 +125,30 @@ export default function WalletPage() {
   const clientKey = formatClientKey(client);
 
   return (
-    <PageShell title="儲值與交易紀錄" backHref={bookBase}>
+    <PageShell title="儲值金與預約紀錄" backHref={bookBase}>
       <div className="neon-panel mb-5 px-4 py-4">
         <p className="text-sm font-semibold text-foreground">{clientLabel}</p>
         <p className="mt-1 text-xs text-muted-foreground">
-          {rows.length} 筆紀錄 · 餘額 {formatCurrency(client.balance)}
+          餘額 {formatCurrency(client.balance)}
+          {appointments.length > 0 ? ` · ${appointments.length} 筆待結帳預約` : ''}
+          {rows.length > 0 ? ` · ${rows.length} 筆消費紀錄` : ''}
         </p>
         <p className="mt-0.5 font-mono text-[10px] text-muted-foreground/70">{clientKey}</p>
       </div>
 
-      <ClientLedgerTable
-        rows={rows}
-        compact
-        emptyMessage="尚無交易紀錄"
-      />
+      <section className="mb-8">
+        <h2 className="mb-3 text-sm font-semibold text-foreground">目前預約（未結帳）</h2>
+        <ClientPendingAppointments appointments={appointments} />
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-sm font-semibold text-foreground">消費紀錄</h2>
+        <ClientLedgerTable
+          rows={rows}
+          compact
+          emptyMessage="尚無消費紀錄"
+        />
+      </section>
 
       <Separator className="my-8 bg-border/60" />
 
