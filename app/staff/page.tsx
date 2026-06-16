@@ -1,8 +1,8 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { ClipboardPaste, Contact, LogOut } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ClipboardPaste, Contact, ExternalLink, LogOut } from 'lucide-react';
 import Link from 'next/link';
 import { PortalShell } from '@/app/components/portal-shell';
 import {
@@ -12,10 +12,8 @@ import {
 import { StatusBanner } from '@/components/portal/status-banner';
 import { WorkflowSteps, type WorkflowStepId } from '@/components/portal/workflow-steps';
 import { portalLogout, usePortalGuard } from '@/components/portal/use-portal-guard';
-import { StaffAppointmentList } from '@/components/portal/staff-appointment-list';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { formatStoreDateIso } from '@/lib/store-timezone';
 import { STORES } from '@/lib/stores';
 
 const STAFF_API = '/api/staff';
@@ -28,9 +26,7 @@ export default function StaffWorkspacePage() {
   const [loading, setLoading] = useState<'parse' | 'create' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [listKey, setListKey] = useState(0);
-  const [calendarDate, setCalendarDate] = useState<string | undefined>();
-  const calendarRef = useRef<HTMLDivElement>(null);
+  const [calendarLink, setCalendarLink] = useState<string | null>(null);
 
   const staffName = session?.role === 'staff' ? session.staffName : '';
 
@@ -44,6 +40,7 @@ export default function StaffWorkspacePage() {
     setLoading('parse');
     setError(null);
     setSuccess(null);
+    setCalendarLink(null);
     setPreview(null);
 
     const res = await fetch(`${STAFF_API}/bookings/parse`, {
@@ -65,6 +62,7 @@ export default function StaffWorkspacePage() {
     setLoading('create');
     setError(null);
     setSuccess(null);
+    setCalendarLink(null);
 
     const res = await fetch(`${STAFF_API}/bookings/create`, {
       method: 'POST',
@@ -73,6 +71,7 @@ export default function StaffWorkspacePage() {
     });
     const data = (await res.json()) as {
       calendarNote?: string;
+      calendarHtmlLink?: string | null;
       preview?: BookingPreviewData;
       error?: string;
     };
@@ -83,19 +82,11 @@ export default function StaffWorkspacePage() {
       return;
     }
 
-    if (data.preview) {
-      setPreview(data.preview);
-      setCalendarDate(formatStoreDateIso(data.preview.startsAt));
-    }
+    if (data.preview) setPreview(data.preview);
     setSuccess(data.calendarNote ?? '預約已建立');
+    setCalendarLink(data.calendarHtmlLink ?? null);
     setText('');
-    setListKey((k) => k + 1);
   }
-
-  useEffect(() => {
-    if (!success) return;
-    calendarRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, [success, listKey]);
 
   const placeholderStore = STORES.store1.messageStoreLabel;
 
@@ -110,9 +101,9 @@ export default function StaffWorkspacePage() {
   return (
     <PortalShell
       title="建立預約"
-      subtitle={`${staffName} · 分店由訊息自動判斷`}
+      subtitle={`${staffName} · 貼上 LINE 訊息後建立 Google 日曆，結帳請至日曆操作`}
       variant="staff"
-      size="full"
+      size="xl"
       headerActions={
         <Button type="button" variant="ghost" size="sm" onClick={() => void portalLogout(router)}>
           <LogOut className="mr-1.5 size-4" />
@@ -129,11 +120,6 @@ export default function StaffWorkspacePage() {
           <Contact className="size-4" />
           客人資料庫
         </Link>
-      </div>
-
-      {/* 預約日曆（置頂，建立後自動捲動到此） */}
-      <div ref={calendarRef} className="mb-8 glass-card p-5 sm:p-6">
-        <StaffAppointmentList key={listKey} initialDate={calendarDate} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
@@ -153,6 +139,7 @@ export default function StaffWorkspacePage() {
                 setText(e.target.value);
                 setPreview(null);
                 setSuccess(null);
+                setCalendarLink(null);
                 setError(null);
               }}
               onKeyDown={(e) => {
@@ -189,7 +176,23 @@ export default function StaffWorkspacePage() {
 
         <div className="space-y-4">
           {error ? <StatusBanner variant="error">{error}</StatusBanner> : null}
-          {success ? <StatusBanner variant="success">{success}</StatusBanner> : null}
+          {success ? (
+            <StatusBanner variant="success">
+              {success}
+              {calendarLink ? ' 請至 Google 日曆完成結帳。' : null}
+            </StatusBanner>
+          ) : null}
+          {calendarLink ? (
+            <a
+              href={calendarLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-4 text-sm font-medium text-primary transition hover:bg-primary/15"
+            >
+              <ExternalLink className="size-4" />
+              開啟 Google 日曆
+            </a>
+          ) : null}
           <BookingPreviewPanel preview={preview} />
         </div>
       </div>

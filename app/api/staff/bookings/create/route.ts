@@ -86,7 +86,7 @@ export async function POST(request: Request) {
             calendar_event_etag: event.etag,
           })
           .eq('id', appointment.id);
-        calendarNote = '已建立灰色待結帳日曆事件。';
+        calendarNote = '已建立灰色待結帳事件，請至 Google 日曆結帳。';
       } catch (calErr) {
         calendarNote = `資料庫已建立；日曆失敗：${calErr instanceof Error ? calErr.message : '未知錯誤'}`;
       }
