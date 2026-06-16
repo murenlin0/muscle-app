@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ClipboardPaste, Contact, LogOut } from 'lucide-react';
 import Link from 'next/link';
 import { PortalShell } from '@/app/components/portal-shell';
@@ -30,6 +30,7 @@ export default function StaffWorkspacePage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [listKey, setListKey] = useState(0);
   const [calendarDate, setCalendarDate] = useState<string | undefined>();
+  const calendarRef = useRef<HTMLDivElement>(null);
 
   const staffName = session?.role === 'staff' ? session.staffName : '';
 
@@ -91,6 +92,11 @@ export default function StaffWorkspacePage() {
     setListKey((k) => k + 1);
   }
 
+  useEffect(() => {
+    if (!success) return;
+    calendarRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [success, listKey]);
+
   const placeholderStore = STORES.store1.messageStoreLabel;
 
   if (bootstrapping) {
@@ -106,7 +112,7 @@ export default function StaffWorkspacePage() {
       title="建立預約"
       subtitle={`${staffName} · 分店由訊息自動判斷`}
       variant="staff"
-      size="xl"
+      size="full"
       headerActions={
         <Button type="button" variant="ghost" size="sm" onClick={() => void portalLogout(router)}>
           <LogOut className="mr-1.5 size-4" />
@@ -123,6 +129,11 @@ export default function StaffWorkspacePage() {
           <Contact className="size-4" />
           客人資料庫
         </Link>
+      </div>
+
+      {/* 預約日曆（置頂，建立後自動捲動到此） */}
+      <div ref={calendarRef} className="mb-8 glass-card p-5 sm:p-6">
+        <StaffAppointmentList key={listKey} initialDate={calendarDate} />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
@@ -181,11 +192,6 @@ export default function StaffWorkspacePage() {
           {success ? <StatusBanner variant="success">{success}</StatusBanner> : null}
           <BookingPreviewPanel preview={preview} />
         </div>
-      </div>
-
-      {/* 預約日曆 */}
-      <div className="mt-8 glass-card p-5 sm:p-6">
-        <StaffAppointmentList key={listKey} initialDate={calendarDate} />
       </div>
     </PortalShell>
   );

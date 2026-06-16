@@ -155,20 +155,22 @@ export function StaffAppointmentList({ initialDate }: { initialDate?: string }) 
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+          <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
             載入預約中…
           </div>
         ) : error ? (
           <div className="rounded-lg bg-destructive/10 px-4 py-3 text-sm text-destructive">
             {error}
           </div>
-        ) : calendarItems.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-border py-12 text-center text-sm text-muted-foreground">
-            {viewDate === todayIso() ? '今天尚無預約' : '此日期尚無預約'}
-            <p className="mt-2 text-xs">可用左右箭頭切換日期查看</p>
-          </div>
         ) : (
-          <StaffDayCalendar appointments={calendarItems} onSelect={openModal} />
+          <>
+            <StaffDayCalendar appointments={calendarItems} onSelect={openModal} />
+            {calendarItems.length === 0 ? (
+              <p className="mt-3 text-center text-xs text-muted-foreground">
+                {viewDate === todayIso() ? '今天尚無預約' : '此日期尚無預約'} · 可用左右箭頭切換日期
+              </p>
+            ) : null}
+          </>
         )}
       </div>
 
