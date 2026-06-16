@@ -100,6 +100,7 @@ export function ReportsDashboard({
   const [loading, setLoading] = useState(true);
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [normalizing, setNormalizing] = useState(false);
+  const [calSyncing, setCalSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
   const [ledgerPage, setLedgerPage] = useState(0);
@@ -307,6 +308,37 @@ export function ReportsDashboard({
     await load(0);
   }
 
+  async function handleCalendarSync() {
+    setCalSyncing(true);
+    setSyncMsg(null);
+    setError(null);
+    const res = await fetch('/api/portal/reports/sync-calendar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lookbackHours: 72 }),
+    });
+    const data = (await res.json()) as {
+      error?: string;
+      processed?: number;
+      skipped?: number;
+      errors?: string[];
+      titles?: string[];
+    };
+    setCalSyncing(false);
+    if (!res.ok) {
+      setError(data.error ?? '日曆同步失敗');
+      return;
+    }
+    const errNote = data.errors?.length ? `（${data.errors.length} 筆錯誤）` : '';
+    setSyncMsg(
+      `日曆同步完成：新增 ${data.processed ?? 0} 筆、略過 ${data.skipped ?? 0} 筆${errNote}`,
+    );
+    if (data.errors?.length) {
+      setError(data.errors.slice(0, 3).join('；'));
+    }
+    await load(0);
+  }
+
   const totalPages = ledgerMeta
     ? Math.max(1, Math.ceil(ledgerMeta.totalCount / LEDGER_UI_PAGE_SIZE))
     : 1;
@@ -361,6 +393,16 @@ export function ReportsDashboard({
           onClick={() => void handleNormalizeLedger()}
         >
           {normalizing ? '正規化中…' : '正規化流水帳'}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={calSyncing}
+          onClick={() => void handleCalendarSync()}
+          title="同步近 72 小時內已結帳的日曆事件（僅處理師傅 UI 建立的預約）"
+        >
+          {calSyncing ? '同步中…' : '同步日曆結帳'}
         </Button>
       </div>
 
