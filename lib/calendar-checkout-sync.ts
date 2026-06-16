@@ -11,6 +11,23 @@ import type { StoreSlug } from '@/lib/stores';
 import type { TransactionCategory } from '@/lib/transaction-category';
 
 /**
+ * 簡易合寫解析：只要標題含 +N-M 就視為「儲值 N + 使用 M」
+ * 用於師傅 UI 日曆標題（不帶 VIP 後綴），
+ * 例如「仁60分+4000-1000林慕仁0978542704」
+ */
+function parseSimpleTopupUsage(
+  title: string,
+): { topup: number; usage: number } | null {
+  const t = title.replace(/\s/g, '');
+  const m = t.match(/\+(\d+)-(\d+)/);
+  if (!m) return null;
+  const topup = Number(m[1]);
+  const usage = Number(m[2]);
+  if (!topup || !usage) return null;
+  return { topup, usage };
+}
+
+/**
  * Google Calendar colorId → 付款方式 + 類型
  *
  * 師傅在日曆結帳時用顏色表示付款方式：
@@ -188,7 +205,10 @@ export async function syncCalendarCheckouts(
       const occurredOn = formatStoreDateIso(startsAt);
 
       // 嘗試解析合寫標題（+儲值-使用，拆成兩筆）
-      const compound = parseCompoundVipTitle(title);
+      // 先用完整 VIP 格式（仁60分+4000-1000、3000VIP...），
+      // 再 fallback 到簡單格式（仁60分+4000-1000林慕仁...，無 VIP 後綴）
+      const compound =
+        parseCompoundVipTitle(title) ?? parseSimpleTopupUsage(title);
 
       type TxRow = {
         store_id: string;
