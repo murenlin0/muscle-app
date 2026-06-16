@@ -27,6 +27,87 @@ function parseSimpleTopupUsage(
   return { topup, usage };
 }
 
+/** 合寫標題拆成儲值列 / 使用列標題 */
+function buildCalendarSplitTitles(
+  title: string,
+  topup: number,
+  usage: number,
+  clientName: string | null,
+  clientPhone: string | null,
+): { topupTitle: string; usageTitle: string } {
+  const t = title.replace(/\s/g, '');
+  const head = t.match(/^(.+?\d+分)/)?.[1] ?? '';
+  const staffPrefix = head.replace(/\d+分$/, '') || t.match(/^[^\d+]+/)?.[0] || '';
+  const suffix = `${clientName ?? ''}${clientPhone ?? ''}`;
+  return {
+    topupTitle: `${staffPrefix}儲值+${topup}${suffix}`,
+    usageTitle: `${head}-${usage}${suffix}`,
+  };
+}
+
+export interface CalendarRepairInput {
+  storeId: StoreSlug;
+  occurredOn: string;
+  phone: string;
+}
+
+/** 刪除指定日期的日曆同步流水帳，並重設 appointment 為待結帳 */
+export async function repairCalendarCheckout(
+  input: CalendarRepairInput,
+): Promise<{ deletedTx: number; resetAppts: number }> {
+  const supabase = getSupabaseAdmin();
+  const { storeId, occurredOn, phone } = input;
+
+  const { data: txs, error: txErr } = await supabase
+    .from('daily_transactions')
+    .select('id')
+    .eq('store_id', storeId)
+    .eq('occurred_on', occurredOn)
+    .or(`client_phone.eq.${phone},title.ilike.%${phone}%`);
+
+  if (txErr) throw new Error(txErr.message);
+
+  let deletedTx = 0;
+  if (txs?.length) {
+    const { error } = await supabase
+      .from('daily_transactions')
+      .delete()
+      .in(
+        'id',
+        txs.map((r) => r.id as string),
+      );
+    if (error) throw new Error(error.message);
+    deletedTx = txs.length;
+  }
+
+  const dayStart = `${occurredOn}T00:00:00+08:00`;
+  const dayEnd = `${occurredOn}T23:59:59+08:00`;
+  const { data: appts, error: apErr } = await supabase
+    .from('appointments')
+    .select('id')
+    .eq('store_id', storeId)
+    .gte('starts_at', dayStart)
+    .lt('starts_at', dayEnd)
+    .or(`calendar_title.ilike.%${phone}%`);
+
+  if (apErr) throw new Error(apErr.message);
+
+  let resetAppts = 0;
+  if (appts?.length) {
+    const { error } = await supabase
+      .from('appointments')
+      .update({ status: 'pending_checkout' })
+      .in(
+        'id',
+        appts.map((a) => a.id as string),
+      );
+    if (error) throw new Error(error.message);
+    resetAppts = appts.length;
+  }
+
+  return { deletedTx, resetAppts };
+}
+
 /**
  * Google Calendar colorId → 付款方式 + 類型
  *
@@ -227,13 +308,19 @@ export async function syncCalendarCheckouts(
       const rowsToInsert: TxRow[] = [];
 
       if (compound) {
-        // 有 +N-M 合寫：拆成「會員儲值」+ 「會員使用」
         const topupMethods =
           payment.methods.length ? payment.methods : ['現金'];
+        const { topupTitle, usageTitle } = buildCalendarSplitTitles(
+          title,
+          compound.topup,
+          compound.usage,
+          client?.name ?? null,
+          client?.phone ?? null,
+        );
         rowsToInsert.push({
           store_id: storeId,
           occurred_on: occurredOn,
-          title,
+          title: topupTitle,
           amount: compound.topup,
           category: '會員儲值',
           payment_methods: topupMethods,
@@ -246,7 +333,7 @@ export async function syncCalendarCheckouts(
         rowsToInsert.push({
           store_id: storeId,
           occurred_on: occurredOn,
-          title,
+          title: usageTitle,
           amount: compound.usage,
           category: '會員使用',
           payment_methods: [],
