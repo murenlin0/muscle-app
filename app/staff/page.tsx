@@ -12,6 +12,7 @@ import {
 import { StatusBanner } from '@/components/portal/status-banner';
 import { WorkflowSteps, type WorkflowStepId } from '@/components/portal/workflow-steps';
 import { portalLogout, usePortalGuard } from '@/components/portal/use-portal-guard';
+import { StaffAppointmentList } from '@/components/portal/staff-appointment-list';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { STORES } from '@/lib/stores';
@@ -26,6 +27,7 @@ export default function StaffWorkspacePage() {
   const [loading, setLoading] = useState<'parse' | 'create' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [listKey, setListKey] = useState(0);
 
   const staffName = session?.role === 'staff' ? session.staffName : '';
 
@@ -81,6 +83,7 @@ export default function StaffWorkspacePage() {
     if (data.preview) setPreview(data.preview);
     setSuccess(data.calendarNote ?? '預約已建立');
     setText('');
+    setListKey((k) => k + 1);
   }
 
   const placeholderStore = STORES.store1.messageStoreLabel;
@@ -173,6 +176,11 @@ export default function StaffWorkspacePage() {
           {success ? <StatusBanner variant="success">{success}</StatusBanner> : null}
           <BookingPreviewPanel preview={preview} />
         </div>
+      </div>
+
+      {/* 今日預約清單 */}
+      <div className="mt-8 glass-card p-5 sm:p-6">
+        <StaffAppointmentList key={listKey} />
       </div>
     </PortalShell>
   );
