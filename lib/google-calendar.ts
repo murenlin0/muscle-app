@@ -79,3 +79,30 @@ export async function createPendingCheckoutEvent(
     etag: data.etag ?? null,
   };
 }
+
+/** PATCH 日曆事件標題（summary） */
+export async function patchCalendarEventSummary(
+  eventId: string,
+  summary: string,
+): Promise<void> {
+  const calendarId = await getGoogleCalendarId();
+  if (!calendarId) throw new Error('缺少 GOOGLE_CALENDAR_ID');
+
+  const accessToken = await calendarAccessToken();
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ summary }),
+    },
+  );
+
+  if (!res.ok) {
+    const err = (await res.json()) as { error?: { message?: string } };
+    throw new Error(err.error?.message ?? '無法更新日曆事件標題');
+  }
+}

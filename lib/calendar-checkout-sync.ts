@@ -4,7 +4,7 @@ import {
 } from '@/lib/integration-settings';
 import { refreshGoogleAccessToken } from '@/lib/google-oauth';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import { CALENDAR_COLOR_PENDING } from '@/lib/google-calendar';
+import { CALENDAR_COLOR_PENDING, patchCalendarEventSummary } from '@/lib/google-calendar';
 import { parseCompoundVipTitle } from '@/lib/ledger-title-fix';
 import { formatStoreDateIso } from '@/lib/store-timezone';
 import type { StoreSlug } from '@/lib/stores';
@@ -280,6 +280,39 @@ export async function syncCalendarCheckouts(
       if (insertErr) {
         result.errors.push(`[${title}] 寫入失敗：${insertErr.message}`);
         continue;
+      }
+
+      // 有儲值 → 升級客人為 VIP（名字前加 VIP、設 is_vip=true）
+      // 同時更新日曆事件標題與 appointments.calendar_title
+      if (compound && appt.client_id && client) {
+        const oldName = client.name as string;
+        if (oldName && !oldName.startsWith('VIP')) {
+          const vipName = `VIP${oldName}`;
+          // 更新客人資料
+          await supabase
+            .from('clients')
+            .update({ is_vip: true, name: vipName })
+            .eq('id', appt.client_id);
+          // 更新日曆標題（把舊名換成 VIP名）
+          const newTitle = title.replace(oldName, vipName);
+          if (newTitle !== title) {
+            try {
+              await patchCalendarEventSummary(ev.id, newTitle);
+              await supabase
+                .from('appointments')
+                .update({ calendar_title: newTitle })
+                .eq('id', appt.id);
+            } catch {
+              // 日曆標題更新非必要，失敗不中斷流程
+            }
+          }
+        } else if (!client.is_vip) {
+          // 名字已有 VIP 前綴但旗標尚未設定
+          await supabase
+            .from('clients')
+            .update({ is_vip: true })
+            .eq('id', appt.client_id);
+        }
       }
 
       // 更新 appointment 狀態
