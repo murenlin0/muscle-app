@@ -15,6 +15,7 @@ import { portalLogout, usePortalGuard } from '@/components/portal/use-portal-gua
 import { StaffAppointmentList } from '@/components/portal/staff-appointment-list';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { formatStoreDateIso } from '@/lib/store-timezone';
 import { STORES } from '@/lib/stores';
 
 const STAFF_API = '/api/staff';
@@ -28,6 +29,7 @@ export default function StaffWorkspacePage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [listKey, setListKey] = useState(0);
+  const [calendarDate, setCalendarDate] = useState<string | undefined>();
 
   const staffName = session?.role === 'staff' ? session.staffName : '';
 
@@ -80,7 +82,10 @@ export default function StaffWorkspacePage() {
       return;
     }
 
-    if (data.preview) setPreview(data.preview);
+    if (data.preview) {
+      setPreview(data.preview);
+      setCalendarDate(formatStoreDateIso(data.preview.startsAt));
+    }
     setSuccess(data.calendarNote ?? '預約已建立');
     setText('');
     setListKey((k) => k + 1);
@@ -178,9 +183,9 @@ export default function StaffWorkspacePage() {
         </div>
       </div>
 
-      {/* 今日預約清單 */}
+      {/* 預約日曆 */}
       <div className="mt-8 glass-card p-5 sm:p-6">
-        <StaffAppointmentList key={listKey} />
+        <StaffAppointmentList key={listKey} initialDate={calendarDate} />
       </div>
     </PortalShell>
   );

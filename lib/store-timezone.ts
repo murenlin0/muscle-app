@@ -1,5 +1,23 @@
 export const STORE_TIMEZONE = 'Asia/Taipei';
 
+/** ISO 或 Date → 台北日期 YYYY-MM-DD */
+export function formatStoreDateIso(input: Date | string): string {
+  const date = typeof input === 'string' ? new Date(input) : input;
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: STORE_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
+/** YYYY-MM-DD ± days（台北牆鐘） */
+export function shiftStoreDateIso(isoDate: string, days: number): string {
+  const base = new Date(`${isoDate}T12:00:00+08:00`);
+  base.setDate(base.getDate() + days);
+  return formatStoreDateIso(base);
+}
+
 /** 將 YYYY-MM-DD HH:mm 視為店舖當地（台北）牆鐘時間 */
 export function parseStoreDateTime(
   year: number,
