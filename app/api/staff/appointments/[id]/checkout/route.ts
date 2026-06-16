@@ -4,6 +4,14 @@ import { getSupabaseAdmin } from '@/lib/supabase';
 import { isStoreSlug, type StoreSlug } from '@/lib/stores';
 import { STORE_TIMEZONE } from '@/lib/store-timezone';
 
+type CheckoutClient = {
+  id: string;
+  name: string;
+  phone: string;
+  balance: number;
+  is_vip: boolean;
+};
+
 export async function POST(
   request: Request,
   context: { params: Promise<{ id: string }> },
@@ -17,7 +25,7 @@ export async function POST(
     paymentMethod: 'cash' | 'transfer' | 'member';
     useMember: boolean;
     topUpAmount?: number;
-    startsAt?: string; // ISO — 客人臨時變更時間
+    startsAt?: string;
   };
   try {
     body = (await request.json()) as typeof body;
@@ -31,14 +39,12 @@ export async function POST(
 
   const supabase = getSupabaseAdmin();
 
-  // 取得預約
   const { data: appt, error: apptErr } = await supabase
     .from('appointments')
     .select(`
       id, store_id, status, service_label, service_duration_minutes,
       starts_at, ends_at, note, calendar_title, calendar_event_id,
-      staff:staff_id(id, display_name),
-      client:client_id(id, name, phone, balance, is_vip)
+      staff_id, client_id
     `)
     .eq('id', id)
     .maybeSingle();
@@ -54,7 +60,6 @@ export async function POST(
     return NextResponse.json({ error: '無效分店' }, { status: 400 });
   }
 
-  // 師傅只能結自己分店的預約
   const { data: staffRow } = await supabase
     .from('staff')
     .select('store_id')
@@ -64,14 +69,29 @@ export async function POST(
     return NextResponse.json({ error: '無權結帳此預約' }, { status: 403 });
   }
 
-  const client = appt.client as { id: string; name: string; phone: string; balance: number; is_vip: boolean } | null;
-  const staff = appt.staff as { id: string; display_name: string } | null;
+  let client: CheckoutClient | null = null;
+  if (appt.client_id) {
+    const { data: clientRow } = await supabase
+      .from('clients')
+      .select('id, name, phone, balance, is_vip')
+      .eq('id', appt.client_id)
+      .maybeSingle();
+    client = clientRow;
+  }
 
-  // 若有臨時改時間
+  let staffName: string | null = null;
+  if (appt.staff_id) {
+    const { data: staffInfo } = await supabase
+      .from('staff')
+      .select('display_name')
+      .eq('id', appt.staff_id)
+      .maybeSingle();
+    staffName = staffInfo?.display_name ?? null;
+  }
+
   const newStartsAt = body.startsAt ? new Date(body.startsAt) : new Date(appt.starts_at);
   const newEndsAt = new Date(newStartsAt.getTime() + appt.service_duration_minutes * 60_000);
 
-  // 台北時間 YYYY-MM-DD
   const occurredOn = new Intl.DateTimeFormat('en-CA', {
     timeZone: STORE_TIMEZONE,
     year: 'numeric',
@@ -79,7 +99,6 @@ export async function POST(
     day: '2-digit',
   }).format(newStartsAt);
 
-  // 付款方式對應欄位
   const paymentMethods: string[] =
     body.paymentMethod === 'cash'
       ? ['現金']
@@ -92,17 +111,16 @@ export async function POST(
 
   const title = `${client?.name ?? ''}${client?.phone ? ` ${client.phone}` : ''} ${appt.service_label}`;
 
-  // 1. 新增 daily_transactions
   const { data: dt, error: dtErr } = await supabase
     .from('daily_transactions')
     .insert({
       store_id: storeId,
       occurred_on: occurredOn,
       title,
-      amount: 0, // 師傅不輸入金額，金額由後台報表人工管理
+      amount: 0,
       category,
       payment_methods: paymentMethods,
-      staff_name: staff?.display_name ?? null,
+      staff_name: staffName,
       client_name: client?.name ?? null,
       client_phone: client?.phone ?? null,
       is_vip: client?.is_vip ?? false,
@@ -113,9 +131,7 @@ export async function POST(
 
   if (dtErr) return NextResponse.json({ error: dtErr.message }, { status: 500 });
 
-  // 2. 若使用會員儲值，寫 ledger_records 並扣餘額
   if (client && (body.paymentMethod === 'member' || body.useMember)) {
-    // 先儲值（若有）
     if (body.topUpAmount && body.topUpAmount > 0) {
       const { error: topUpErr } = await supabase.from('ledger_records').insert({
         client_id: client.id,
@@ -133,27 +149,19 @@ export async function POST(
         .update({ balance: client.balance + body.topUpAmount })
         .eq('id', client.id);
       if (balUpErr) return NextResponse.json({ error: balUpErr.message }, { status: 500 });
-
-      client.balance += body.topUpAmount;
     }
   }
 
-  // 3. 更新 appointments 狀態
-  const appointmentUpdate: Record<string, unknown> = {
-    status: 'completed',
-    starts_at: newStartsAt.toISOString(),
-    ends_at: newEndsAt.toISOString(),
-  };
-
   const { error: updateErr } = await supabase
     .from('appointments')
-    .update(appointmentUpdate)
+    .update({
+      status: 'completed',
+      starts_at: newStartsAt.toISOString(),
+      ends_at: newEndsAt.toISOString(),
+    })
     .eq('id', id);
 
   if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 });
-
-  // 4. 更新 Google Calendar 顏色（若有 calendar_event_id）
-  // 顏色由客戶端靠 status 決定，不強制更新日曆顏色以避免複雜度
 
   return NextResponse.json({
     ok: true,
