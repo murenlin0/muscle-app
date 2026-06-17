@@ -26,6 +26,7 @@ const keys = [
   'GOOGLE_OAUTH_SETUP_KEY',
   'CRON_SECRET',
   'CALENDAR_SYNC_LOOKBACK_HOURS',
+  'APP_BASE_URL',
 ];
 
 for (const key of keys) {

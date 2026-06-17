@@ -44,6 +44,13 @@ export async function GET(request: Request) {
       });
       savedNote =
         '<p class="ok"><strong>已完成串接</strong>：token 已寫入 .env.local（及資料庫若可用）。請重啟 dev。</p>';
+      try {
+        const { ensureCalendarWatch } = await import('@/lib/google-calendar-watch');
+        const watch = await ensureCalendarWatch();
+        savedNote += `<p class="ok">日曆即時同步已啟用（webhook 效期至 ${new Date(watch.expiration).toLocaleString('zh-TW')}）。</p>`;
+      } catch (watchErr) {
+        savedNote += `<p class="warn">即時 webhook 註冊失敗：${escapeHtml(watchErr instanceof Error ? watchErr.message : '未知錯誤')}（仍可用 Cron 每 5 分鐘同步）</p>`;
+      }
     }
 
     const calendarRows = calendars

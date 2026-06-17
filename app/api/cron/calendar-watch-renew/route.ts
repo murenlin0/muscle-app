@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
-import { runCalendarSync } from '@/lib/calendar-sync-runner';
+import { ensureCalendarWatch } from '@/lib/google-calendar-watch';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 60;
 
 function assertCronAuthorized(request: Request): NextResponse | null {
   const secret = process.env.CRON_SECRET?.trim();
@@ -16,23 +15,21 @@ function assertCronAuthorized(request: Request): NextResponse | null {
   return null;
 }
 
-/** Vercel Cron：每 5 分鐘自動同步日曆刪除與結帳 */
+/** 每日續訂 Google 日曆 webhook（channel 最多 7 天） */
 export async function GET(request: Request) {
   const denied = assertCronAuthorized(request);
   if (denied) return denied;
 
-  const lookbackHours = Number(process.env.CALENDAR_SYNC_LOOKBACK_HOURS ?? 72);
-
   try {
-    const { ensureCalendarWatch } = await import('@/lib/google-calendar-watch');
-    await ensureCalendarWatch().catch((e) => {
-      console.error('[cron/calendar-sync] watch ensure failed', e);
+    const watch = await ensureCalendarWatch();
+    return NextResponse.json({
+      ok: true,
+      channelId: watch.channelId,
+      expiration: new Date(watch.expiration).toISOString(),
+      webhookUrl: watch.webhookUrl,
     });
-
-    const result = await runCalendarSync(lookbackHours);
-    return NextResponse.json({ ok: true, ...result });
   } catch (e) {
-    const message = e instanceof Error ? e.message : '同步失敗';
+    const message = e instanceof Error ? e.message : '續訂失敗';
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
