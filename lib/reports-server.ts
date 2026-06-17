@@ -516,4 +516,15 @@ export function revenueTotalFromRows(rows: DailyTransactionListItem[]): number {
     .reduce((sum, r) => sum + r.amount, 0);
 }
 
+/** 客人 LIFF 消費紀錄：與報表點客人名稱相同篩選邏輯（daily_transactions） */
+export async function listClientTransactions(
+  storeId: StoreSlug,
+  clientPhone: string,
+): Promise<DailyTransactionListItem[]> {
+  const from = (await getEarliestTransactionDate(storeId)) ?? '1970-01-01';
+  const to =
+    (await getLatestTransactionDate(storeId)) ?? new Date().toISOString().slice(0, 10);
+  return fetchTransactionRows(from, to, storeId, undefined, clientPhone);
+}
+
 export { TRANSACTION_CATEGORIES };

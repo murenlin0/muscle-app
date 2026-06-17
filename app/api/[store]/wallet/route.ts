@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { parseStoreFromParamsAsync } from '@/lib/api-store';
-import { ledgerTypeLabel, signedLedgerAmount } from '@/lib/phone';
+import { clientMemberBalance } from '@/lib/ledger-title-balance';
+import { listClientTransactions } from '@/lib/reports-server';
 import { getSupabaseAdmin } from '@/lib/supabase';
 
 export async function GET(
@@ -32,16 +33,28 @@ export async function GET(
     return NextResponse.json({ error: '尚未綁定電話' }, { status: 404 });
   }
 
-  const { data: ledger, error: ledgerError } = await supabase
-    .from('ledger_records')
-    .select('id, client_id, type, amount, payment_method, source, occurred_at, note, created_at')
-    .eq('client_id', client.id)
-    .order('occurred_at', { ascending: false })
-    .limit(50);
-
-  if (ledgerError) {
-    return NextResponse.json({ error: ledgerError.message }, { status: 500 });
+  let transactions;
+  try {
+    transactions = await listClientTransactions(store, client.phone);
+  } catch (e) {
+    const message = e instanceof Error ? e.message : '無法載入消費紀錄';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
+
+  const memberRows = transactions
+    .filter((row) => ['會員儲值', '會員使用', '會員補差額'].includes(row.category))
+    .map((row) => ({
+      id: row.id,
+      occurred_on: row.occurredOn,
+      title: row.title,
+      amount: row.amount,
+      category: row.category,
+      client_name: row.clientName,
+      client_phone: row.clientPhone,
+    }));
+
+  const computedBalance = clientMemberBalance(memberRows, client.phone);
+  const balance = computedBalance ?? client.balance;
 
   const { data: appointments, error: apptError } = await supabase
     .from('appointments')
@@ -62,11 +75,9 @@ export async function GET(
     return NextResponse.json({ error: apptError.message }, { status: 500 });
   }
 
-  const enriched = (ledger ?? []).map((row) => ({
-    ...row,
-    type_label: ledgerTypeLabel(row.type),
-    signed_amount: signedLedgerAmount(row.type, row.amount),
-  }));
-
-  return NextResponse.json({ client, ledger: enriched, appointments: appointments ?? [] });
+  return NextResponse.json({
+    client: { ...client, balance },
+    transactions,
+    appointments: appointments ?? [],
+  });
 }

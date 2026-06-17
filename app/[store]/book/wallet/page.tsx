@@ -18,6 +18,8 @@ import {
   formatClientKey,
   formatClientKeyLabel,
 } from '@/lib/ledger-client-display';
+import type { DailyTransactionListItem } from '@/lib/reports-server';
+import type { TransactionCategory } from '@/lib/transaction-category';
 import { cn } from '@/lib/utils';
 import { formatCurrency } from '@/lib/phone';
 import {
@@ -28,23 +30,16 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import type { Client, LedgerRecord } from '@/lib/types/database';
+import type { Client } from '@/lib/types/database';
 
-const MEMBER_LEDGER_TYPE_STYLE: Record<string, string> = {
-  initial: CATEGORY_NOTION_STYLE['會員儲值'],
-  top_up: CATEGORY_NOTION_STYLE['會員儲值'],
-  deduction: CATEGORY_NOTION_STYLE['會員使用'],
-  adjustment: CATEGORY_NOTION_STYLE['會員補差額'],
-};
-
-function toDisplayRows(ledger: LedgerRecord[]): ClientLedgerDisplayRow[] {
-  return ledger.map((row) => ({
+function toDisplayRows(transactions: DailyTransactionListItem[]): ClientLedgerDisplayRow[] {
+  return transactions.map((row) => ({
     id: row.id,
-    occurredOn: row.occurred_at,
-    title: row.note?.trim() || row.type_label,
-    amount: row.signed_amount,
-    category: row.type_label,
-    categoryClassName: MEMBER_LEDGER_TYPE_STYLE[row.type],
+    occurredOn: row.occurredOn,
+    title: row.title,
+    amount: row.amount,
+    category: row.category,
+    categoryClassName: CATEGORY_NOTION_STYLE[row.category as TransactionCategory],
   }));
 }
 
@@ -52,7 +47,7 @@ export default function WalletPage() {
   const { bookBase, apiBase } = useStore();
   const { status, lineUserId } = useLiff();
   const [client, setClient] = useState<Client | null>(null);
-  const [ledger, setLedger] = useState<LedgerRecord[]>([]);
+  const [transactions, setTransactions] = useState<DailyTransactionListItem[]>([]);
   const [appointments, setAppointments] = useState<ClientPendingAppointment[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -71,7 +66,7 @@ export default function WalletPage() {
       const data = (await res.json()) as {
         error?: string;
         client?: Client;
-        ledger?: LedgerRecord[];
+        transactions?: DailyTransactionListItem[];
         appointments?: ClientPendingAppointment[];
       };
 
@@ -82,7 +77,7 @@ export default function WalletPage() {
       }
 
       setClient(data.client ?? null);
-      setLedger(data.ledger ?? []);
+      setTransactions(data.transactions ?? []);
       setAppointments(data.appointments ?? []);
       setLoading(false);
     }
@@ -90,7 +85,7 @@ export default function WalletPage() {
     void load();
   }, [status, lineUserId, apiBase]);
 
-  const rows = useMemo(() => toDisplayRows(ledger), [ledger]);
+  const rows = useMemo(() => toDisplayRows(transactions), [transactions]);
 
   if (status !== 'ready' || loading) {
     return (
