@@ -9,7 +9,8 @@ import {
 export interface BookingMessageData {
   storeSlug: StoreSlug;
   storeLabel: string;
-  staffName: string;
+  /** 師傅端建立日曆用；客人 LIFF 訊息不含此欄 */
+  staffName?: string | null;
   clientName: string;
   phone: string;
   serviceLabel: string;
@@ -108,7 +109,6 @@ export function parseBookingMessage(text: string): BookingMessageData {
   const storeSlug = resolveStoreSlugFromMessageLabel(storeLine);
   if (!storeSlug) throw new Error(`無法辨識店名：${storeLine}`);
 
-  if (!data.staffName?.trim()) throw new Error('缺少師傅');
   if (!data.clientName?.trim()) throw new Error('缺少姓名');
   if (!data.phone) throw new Error('缺少或無效電話');
   if (!data.serviceLabel || !data.durationMinutes) throw new Error('缺少項目');
@@ -118,13 +118,29 @@ export function parseBookingMessage(text: string): BookingMessageData {
   return {
     storeSlug,
     storeLabel: store?.messageStoreLabel ?? storeLine,
-    staffName: data.staffName.trim(),
+    staffName: data.staffName?.trim() || null,
     clientName: data.clientName.trim(),
     phone: data.phone,
     serviceLabel: data.serviceLabel,
     durationMinutes: data.durationMinutes,
     startsAt: data.startsAt,
     note: data.note ?? null,
+  };
+}
+
+/** 師傅 UI：補上負責師傅與師傅備註後再建日曆 */
+export function finalizeStaffBooking(
+  parsed: BookingMessageData,
+  input: { staffName: string; staffNote?: string | null },
+): BookingMessageData {
+  const staffName = input.staffName.trim();
+  if (!staffName) throw new Error('請選擇負責師傅');
+
+  const noteParts = [parsed.note?.trim(), input.staffNote?.trim()].filter(Boolean);
+  return {
+    ...parsed,
+    staffName,
+    note: noteParts.length ? noteParts.join('；') : null,
   };
 }
 
@@ -138,12 +154,16 @@ export function buildCalendarTitle(input: {
 }
 
 export function buildBookingPreview(data: BookingMessageData): BookingMessagePreview {
+  if (!data.staffName?.trim()) {
+    throw new Error('缺少負責師傅');
+  }
   const endsAt = new Date(data.startsAt.getTime() + data.durationMinutes * 60_000);
   return {
     ...data,
+    staffName: data.staffName.trim(),
     endsAt,
     calendarTitle: buildCalendarTitle({
-      staffName: data.staffName,
+      staffName: data.staffName.trim(),
       durationMinutes: data.durationMinutes,
       clientName: data.clientName,
       phone: data.phone,
@@ -156,7 +176,6 @@ export function formatBookingMessage(data: BookingMessageData): string {
   const lines = [
     '【筋棧預約確認】',
     store?.messageStoreLabel ?? data.storeLabel,
-    `師傅：${data.staffName}`,
     `姓名：${data.clientName}`,
     `電話：${data.phone}`,
     `項目：${data.serviceLabel}`,

@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ClipboardPaste, Contact, ExternalLink, LogOut } from 'lucide-react';
 import Link from 'next/link';
 import { PortalShell } from '@/app/components/portal-shell';
@@ -13,8 +13,10 @@ import { StatusBanner } from '@/components/portal/status-banner';
 import { WorkflowSteps, type WorkflowStepId } from '@/components/portal/workflow-steps';
 import { portalLogout, usePortalGuard } from '@/components/portal/use-portal-guard';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { STORES } from '@/lib/stores';
+import type { Staff } from '@/lib/types/database';
 
 const STAFF_API = '/api/staff';
 
@@ -22,6 +24,9 @@ export default function StaffWorkspacePage() {
   const router = useRouter();
   const { session, loading: bootstrapping } = usePortalGuard('staff');
   const [text, setText] = useState('');
+  const [assignedStaff, setAssignedStaff] = useState('');
+  const [staffNote, setStaffNote] = useState('');
+  const [roster, setRoster] = useState<Staff[]>([]);
   const [preview, setPreview] = useState<BookingPreviewData | null>(null);
   const [loading, setLoading] = useState<'parse' | 'create' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -30,11 +35,29 @@ export default function StaffWorkspacePage() {
 
   const staffName = session?.role === 'staff' ? session.staffName : '';
 
+  useEffect(() => {
+    if (!staffName) return;
+    setAssignedStaff((prev) => prev || staffName);
+  }, [staffName]);
+
+  useEffect(() => {
+    void fetch(`${STAFF_API}/roster`)
+      .then((res) => res.json())
+      .then((data: { staff?: Staff[] }) => setRoster(data.staff ?? []))
+      .catch(() => undefined);
+  }, []);
+
   const workflowStep = useMemo((): WorkflowStepId => {
     if (success) return 'done';
     if (preview) return 'preview';
     return 'paste';
   }, [success, preview]);
+
+  const requestBody = () => ({
+    text,
+    staffName: assignedStaff,
+    staffNote: staffNote.trim() || undefined,
+  });
 
   async function handleParse() {
     setLoading('parse');
@@ -46,7 +69,7 @@ export default function StaffWorkspacePage() {
     const res = await fetch(`${STAFF_API}/bookings/parse`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(requestBody()),
     });
     const data = (await res.json()) as { preview?: BookingPreviewData; error?: string };
 
@@ -67,7 +90,7 @@ export default function StaffWorkspacePage() {
     const res = await fetch(`${STAFF_API}/bookings/create`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify(requestBody()),
     });
     const data = (await res.json()) as {
       calendarNote?: string;
@@ -86,6 +109,7 @@ export default function StaffWorkspacePage() {
     setSuccess(data.calendarNote ?? '預約已建立');
     setCalendarLink(data.calendarHtmlLink ?? null);
     setText('');
+    setStaffNote('');
   }
 
   const placeholderStore = STORES.store1.messageStoreLabel;
@@ -149,9 +173,39 @@ export default function StaffWorkspacePage() {
                 }
               }}
               rows={14}
-              placeholder={`【筋棧預約確認】\n${placeholderStore}\n師傅：仁\n姓名：王小明\n電話：0912345678\n項目：運動按摩 60min\n時間：2026-06-15 14:00`}
+              placeholder={`【筋棧預約確認】\n${placeholderStore}\n姓名：王小明\n電話：0912345678\n項目：運動按摩 60min\n時間：2026-06-15 14:00`}
               className="input-neon w-full resize-y rounded-lg border border-input bg-input/80 px-3 py-3 font-mono text-sm leading-relaxed text-foreground"
             />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="assigned-staff">負責師傅</Label>
+              <select
+                id="assigned-staff"
+                value={assignedStaff}
+                onChange={(e) => setAssignedStaff(e.target.value)}
+                className="input-neon h-11 w-full rounded-lg border border-input bg-input/80 px-3 text-sm"
+              >
+                {roster.map((member) => (
+                  <option key={member.id} value={member.display_name}>
+                    {member.display_name}
+                  </option>
+                ))}
+                {assignedStaff && !roster.some((m) => m.display_name === assignedStaff) ? (
+                  <option value={assignedStaff}>{assignedStaff}</option>
+                ) : null}
+              </select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="staff-note">師傅備註（選填）</Label>
+              <Input
+                id="staff-note"
+                value={staffNote}
+                onChange={(e) => setStaffNote(e.target.value)}
+                placeholder="例如：仁負責"
+                className="input-neon h-11 border-input bg-input/80"
+              />
+            </div>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row">
             <Button

@@ -24,11 +24,10 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import {
-  BOOKING_STAFF_UNASSIGNED,
   buildBookingDraft,
   buildBookingMessageText,
 } from '@/lib/booking-draft';
-import type { Service, Staff } from '@/lib/types/database';
+import type { Service } from '@/lib/types/database';
 import { BOOKING_HOURS_LABEL } from '@/lib/booking-hours';
 import { getLiffIdForStore } from '@/lib/store-liff';
 import { sendBookingToOfficialLine } from '@/lib/line-booking-send';
@@ -42,14 +41,11 @@ export function BookingFlow() {
 
   const [step, setStep] = useState<Step>(1);
   const [services, setServices] = useState<Service[]>([]);
-  const [staffList, setStaffList] = useState<Staff[]>([]);
   const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [catalogError, setCatalogError] = useState<string | null>(null);
 
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [startsAt, setStartsAt] = useState<Date | null>(null);
-  const [staffName, setStaffName] = useState(BOOKING_STAFF_UNASSIGNED);
-  const [headcount, setHeadcount] = useState(1);
   const [note, setNote] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
@@ -77,22 +73,16 @@ export function BookingFlow() {
       setLoadingCatalog(true);
       setCatalogError(null);
       try {
-        const [servicesRes, staffRes] = await Promise.all([
-          fetch(`${apiBase}/services`),
-          fetch(`${apiBase}/staff`),
-        ]);
+        const servicesRes = await fetch(`${apiBase}/services`);
         const servicesData = (await servicesRes.json()) as {
           services?: Service[];
           error?: string;
         };
-        const staffData = (await staffRes.json()) as { staff?: Staff[]; error?: string };
 
         if (!servicesRes.ok) throw new Error(servicesData.error ?? '無法載入服務');
-        if (!staffRes.ok) throw new Error(staffData.error ?? '無法載入師傅');
 
         if (cancelled) return;
         setServices(servicesData.services ?? []);
-        setStaffList(staffData.staff ?? []);
       } catch (e) {
         if (!cancelled) {
           setCatalogError(e instanceof Error ? e.message : '載入失敗');
@@ -113,16 +103,14 @@ export function BookingFlow() {
     const draft = buildBookingDraft({
       storeSlug: store.slug,
       storeLabel: store.messageStoreLabel,
-      staffName,
       clientName: client.name,
       phone: client.phone,
       durationMinutes: selectedService.duration_minutes,
       startsAt,
-      headcount,
       note,
     });
     return buildBookingMessageText(draft);
-  }, [client, selectedService, startsAt, staffName, headcount, note, store]);
+  }, [client, selectedService, startsAt, note, store]);
 
   async function handleSend() {
     if (!messageText) return;
@@ -247,13 +235,8 @@ export function BookingFlow() {
             client={client}
             startsAt={startsAt}
             now={now}
-            staffList={staffList}
-            staffName={staffName}
-            headcount={headcount}
             note={note}
             onSelectSlot={setStartsAt}
-            onStaffChange={setStaffName}
-            onHeadcountChange={setHeadcount}
             onNoteChange={setNote}
           />
         ) : null}
@@ -334,7 +317,6 @@ export function BookingFlow() {
           <BookingSummary
             client={client}
             service={selectedService}
-            staffName={staffName}
             startsAt={startsAt}
           />
         </div>

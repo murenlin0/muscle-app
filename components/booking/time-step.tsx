@@ -4,12 +4,11 @@ import { CalendarTimePicker } from '@/components/booking/calendar-time-picker';
 import { ServicePriceLines } from '@/components/booking/service-price-lines';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { BOOKING_STAFF_UNASSIGNED } from '@/lib/booking-draft';
 import {
   serviceDurationLabel,
   servicePriceDisplay,
 } from '@/lib/booking-services';
-import type { Client, Service, Staff } from '@/lib/types/database';
+import type { Client, Service } from '@/lib/types/database';
 
 function formatSelectedTime(date: Date): string {
   const y = date.getFullYear();
@@ -25,26 +24,16 @@ export function TimeStep({
   client,
   startsAt,
   now,
-  staffList,
-  staffName,
-  headcount,
   note,
   onSelectSlot,
-  onStaffChange,
-  onHeadcountChange,
   onNoteChange,
 }: {
   service: Service;
   client: Client;
   startsAt: Date | null;
   now: Date;
-  staffList: Staff[];
-  staffName: string;
-  headcount: number;
   note: string;
   onSelectSlot: (slot: Date) => void;
-  onStaffChange: (name: string) => void;
-  onHeadcountChange: (count: number) => void;
   onNoteChange: (value: string) => void;
 }) {
   const prices = servicePriceDisplay(service, client);
@@ -75,56 +64,17 @@ export function TimeStep({
         onChange={onSelectSlot}
       />
 
-      <div className="neon-panel space-y-4 p-4">
-        <div className="space-y-2">
-          <Label htmlFor="staff" className="text-muted-foreground">
-            師傅
-          </Label>
-          <select
-            id="staff"
-            value={staffName}
-            onChange={(e) => onStaffChange(e.target.value)}
-            className="neon-field h-12 w-full px-3"
-          >
-            <option value={BOOKING_STAFF_UNASSIGNED}>{BOOKING_STAFF_UNASSIGNED}</option>
-            {staffList.map((member) => (
-              <option key={member.id} value={member.display_name}>
-                {member.display_name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="headcount" className="text-muted-foreground">
-            人數
-          </Label>
-          <select
-            id="headcount"
-            value={headcount}
-            onChange={(e) => onHeadcountChange(Number(e.target.value))}
-            className="neon-field h-12 w-full px-3"
-          >
-            {[1, 2, 3, 4].map((n) => (
-              <option key={n} value={n}>
-                {n} 人
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="note" className="text-muted-foreground">
-            備註（選填）
-          </Label>
-          <Input
-            id="note"
-            value={note}
-            onChange={(e) => onNoteChange(e.target.value)}
-            placeholder="其他需求"
-            className="neon-field h-12 border-primary/30 bg-input/40 text-base"
-          />
-        </div>
+      <div className="neon-panel space-y-2 p-4">
+        <Label htmlFor="note" className="text-muted-foreground">
+          備註（選填）
+        </Label>
+        <Input
+          id="note"
+          value={note}
+          onChange={(e) => onNoteChange(e.target.value)}
+          placeholder="其他需求"
+          className="neon-field h-12 border-primary/30 bg-input/40 text-base"
+        />
       </div>
     </div>
   );

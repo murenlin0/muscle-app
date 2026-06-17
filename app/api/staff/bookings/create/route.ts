@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
-import { buildBookingPreview, parseBookingMessage } from '@/lib/booking-message';
+import {
+  buildBookingPreview,
+  finalizeStaffBooking,
+  parseBookingMessage,
+} from '@/lib/booking-message';
 import {
   findStaffByName,
   upsertClientForBooking,
@@ -13,9 +17,9 @@ export async function POST(request: Request) {
   const session = await requireStaffSession();
   if (session instanceof NextResponse) return session;
 
-  let body: { text?: string };
+  let body: { text?: string; staffName?: string; staffNote?: string };
   try {
-    body = (await request.json()) as { text?: string };
+    body = (await request.json()) as typeof body;
   } catch {
     return NextResponse.json({ error: 'invalid json' }, { status: 400 });
   }
@@ -26,20 +30,24 @@ export async function POST(request: Request) {
 
   try {
     const parsed = parseBookingMessage(body.text);
-    const store = parsed.storeSlug;
-    const preview = buildBookingPreview(parsed);
-    const staff = await findStaffByName(store, parsed.staffName);
+    const finalized = finalizeStaffBooking(parsed, {
+      staffName: body.staffName ?? session.staffName,
+      staffNote: body.staffNote,
+    });
+    const store = finalized.storeSlug;
+    const preview = buildBookingPreview(finalized);
+    const staff = await findStaffByName(store, finalized.staffName!);
     if (!staff) {
       return NextResponse.json(
-        { error: `找不到師傅「${parsed.staffName}」（${parsed.storeLabel}）` },
+        { error: `找不到師傅「${finalized.staffName}」（${finalized.storeLabel}）` },
         { status: 400 },
       );
     }
 
     const clientId = await upsertClientForBooking(
       store,
-      parsed.phone,
-      parsed.clientName,
+      finalized.phone,
+      finalized.clientName,
     );
 
     const supabase = getSupabaseAdmin();
@@ -49,13 +57,13 @@ export async function POST(request: Request) {
         store_id: store,
         staff_id: staff.id,
         client_id: clientId,
-        service_label: parsed.serviceLabel,
-        service_duration_minutes: parsed.durationMinutes,
+        service_label: finalized.serviceLabel,
+        service_duration_minutes: finalized.durationMinutes,
         starts_at: preview.startsAt.toISOString(),
         ends_at: preview.endsAt.toISOString(),
         status: 'pending_checkout',
         calendar_title: preview.calendarTitle,
-        note: parsed.note,
+        note: finalized.note,
         raw_message: body.text.trim(),
         created_by_staff_id: session.staffId,
       })
@@ -74,7 +82,7 @@ export async function POST(request: Request) {
           title: preview.calendarTitle,
           startsAt: preview.startsAt,
           endsAt: preview.endsAt,
-          note: parsed.note,
+          note: finalized.note,
           description: body.text.trim(),
         });
         calendarEventId = event.id;
@@ -102,6 +110,6 @@ export async function POST(request: Request) {
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : '建立失敗';
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }

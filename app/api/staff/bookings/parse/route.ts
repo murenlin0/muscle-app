@@ -1,14 +1,18 @@
 import { NextResponse } from 'next/server';
-import { buildBookingPreview, parseBookingMessage } from '@/lib/booking-message';
+import {
+  buildBookingPreview,
+  finalizeStaffBooking,
+  parseBookingMessage,
+} from '@/lib/booking-message';
 import { requireStaffSession } from '@/lib/portal-api';
 
 export async function POST(request: Request) {
   const session = await requireStaffSession();
   if (session instanceof NextResponse) return session;
 
-  let body: { text?: string };
+  let body: { text?: string; staffName?: string; staffNote?: string };
   try {
-    body = (await request.json()) as { text?: string };
+    body = (await request.json()) as typeof body;
   } catch {
     return NextResponse.json({ error: 'invalid json' }, { status: 400 });
   }
@@ -19,7 +23,11 @@ export async function POST(request: Request) {
 
   try {
     const parsed = parseBookingMessage(body.text);
-    const preview = buildBookingPreview(parsed);
+    const finalized = finalizeStaffBooking(parsed, {
+      staffName: body.staffName ?? session.staffName,
+      staffNote: body.staffNote,
+    });
+    const preview = buildBookingPreview(finalized);
     return NextResponse.json({ preview });
   } catch (e) {
     const message = e instanceof Error ? e.message : '無法解析訊息';

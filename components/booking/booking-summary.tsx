@@ -1,7 +1,6 @@
 'use client';
 
-import { CalendarDays, Clock, Sparkles, UserRound } from 'lucide-react';
-import { BOOKING_STAFF_UNASSIGNED } from '@/lib/booking-draft';
+import { CalendarDays, Clock, Sparkles } from 'lucide-react';
 import {
   serviceDurationLabel,
   servicePriceDisplay,
@@ -51,12 +50,10 @@ function SummaryRow({
 export function BookingSummary({
   client,
   service,
-  staffName,
   startsAt,
 }: {
   client: Client;
   service: Service | null;
-  staffName: string;
   startsAt: Date | null;
 }) {
   const prices = service ? servicePriceDisplay(service, client) : null;
@@ -76,12 +73,6 @@ export function BookingSummary({
           label="時長"
           value={service ? serviceDurationLabel(service) : '—'}
           empty={!service}
-        />
-        <SummaryRow
-          icon={UserRound}
-          label="師傅"
-          value={staffName === BOOKING_STAFF_UNASSIGNED ? '尚未選擇' : staffName}
-          empty={staffName === BOOKING_STAFF_UNASSIGNED}
         />
         <SummaryRow
           icon={CalendarDays}

@@ -86,7 +86,7 @@ export function BookingPreviewPanel({
         <PreviewRow icon={MapPin} label="分店">
           {preview.storeLabel}
         </PreviewRow>
-        <PreviewRow icon={User} label="師傅">
+        <PreviewRow icon={User} label="負責師傅">
           {preview.staffName}
         </PreviewRow>
         <PreviewRow icon={Phone} label="電話">
