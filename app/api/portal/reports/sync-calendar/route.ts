@@ -1,10 +1,7 @@
 import { NextResponse } from 'next/server';
+import { runCalendarSync } from '@/lib/calendar-sync-runner';
+import { repairCalendarCheckout } from '@/lib/calendar-checkout-sync';
 import { requireSuperAdmin } from '@/lib/portal-api';
-import {
-  repairCalendarCheckout,
-  syncCalendarCheckouts,
-  syncCalendarDeletedAppointments,
-} from '@/lib/calendar-checkout-sync';
 import type { StoreSlug } from '@/lib/stores';
 
 export async function POST(request: Request) {
@@ -22,9 +19,7 @@ export async function POST(request: Request) {
   }
 
   const lookbackHours =
-    typeof body.lookbackHours === 'number'
-      ? Math.min(Math.max(body.lookbackHours, 1), 720)
-      : 72;
+    typeof body.lookbackHours === 'number' ? body.lookbackHours : 72;
 
   try {
     let repairResult = null as Awaited<
@@ -39,14 +34,16 @@ export async function POST(request: Request) {
       });
     }
 
-    const deletions = await syncCalendarDeletedAppointments(lookbackHours);
-    const result = await syncCalendarCheckouts(lookbackHours);
+    const sync = await runCalendarSync(lookbackHours);
     return NextResponse.json({
       ok: true,
-      lookbackHours,
       repair: repairResult,
-      deletions,
-      ...result,
+      deletions: sync.deletions,
+      processed: sync.checkouts.processed,
+      skipped: sync.checkouts.skipped,
+      errors: [...sync.deletions.errors, ...sync.checkouts.errors],
+      titles: sync.checkouts.titles,
+      lookbackHours: sync.lookbackHours,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : '同步失敗';
