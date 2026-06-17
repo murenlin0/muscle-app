@@ -323,6 +323,7 @@ export function ReportsDashboard({
       skipped?: number;
       errors?: string[];
       titles?: string[];
+      deletions?: { cancelled?: number; errors?: string[] };
     };
     setCalSyncing(false);
     if (!res.ok) {
@@ -330,8 +331,10 @@ export function ReportsDashboard({
       return;
     }
     const errNote = data.errors?.length ? `（${data.errors.length} 筆錯誤）` : '';
+    const cancelNote =
+      data.deletions?.cancelled ? `、取消預約 ${data.deletions.cancelled} 筆` : '';
     setSyncMsg(
-      `日曆同步完成：新增 ${data.processed ?? 0} 筆、略過 ${data.skipped ?? 0} 筆${errNote}`,
+      `日曆同步完成：新增 ${data.processed ?? 0} 筆、略過 ${data.skipped ?? 0} 筆${cancelNote}${errNote}`,
     );
     if (data.errors?.length) {
       setError(data.errors.slice(0, 3).join('；'));

@@ -3,6 +3,7 @@ import { requireSuperAdmin } from '@/lib/portal-api';
 import {
   repairCalendarCheckout,
   syncCalendarCheckouts,
+  syncCalendarDeletedAppointments,
 } from '@/lib/calendar-checkout-sync';
 import type { StoreSlug } from '@/lib/stores';
 
@@ -38,11 +39,13 @@ export async function POST(request: Request) {
       });
     }
 
+    const deletions = await syncCalendarDeletedAppointments(lookbackHours);
     const result = await syncCalendarCheckouts(lookbackHours);
     return NextResponse.json({
       ok: true,
       lookbackHours,
       repair: repairResult,
+      deletions,
       ...result,
     });
   } catch (e) {

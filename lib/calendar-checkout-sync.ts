@@ -4,7 +4,7 @@ import {
 } from '@/lib/integration-settings';
 import { refreshGoogleAccessToken } from '@/lib/google-oauth';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import { CALENDAR_COLOR_PENDING, patchCalendarEventSummary } from '@/lib/google-calendar';
+import { getCalendarEventStatus, patchCalendarEventSummary } from '@/lib/google-calendar';
 import { parseCompoundVipTitle } from '@/lib/ledger-title-fix';
 import { formatStoreDateIso } from '@/lib/store-timezone';
 import type { StoreSlug } from '@/lib/stores';
@@ -143,6 +143,121 @@ export interface CalendarSyncResult {
   skipped: number;
   errors: string[];
   titles: string[];
+}
+
+export interface CalendarDeletionSyncResult {
+  cancelled: number;
+  errors: string[];
+  titles: string[];
+}
+
+/**
+ * 日曆事件被刪除 → 取消師傅 UI 建立的待結帳預約（客人 LIFF 不再顯示）。
+ * 不修改 daily_transactions（Notion／舊報表資料不受影響）。
+ */
+export async function syncCalendarDeletedAppointments(
+  lookbackHours = 72,
+): Promise<CalendarDeletionSyncResult> {
+  const result: CalendarDeletionSyncResult = {
+    cancelled: 0,
+    errors: [],
+    titles: [],
+  };
+
+  const calendarId = await getGoogleCalendarId();
+  if (!calendarId) throw new Error('缺少 GOOGLE_CALENDAR_ID');
+
+  const refreshToken = await getGoogleRefreshToken();
+  if (!refreshToken) throw new Error('尚未完成 Google OAuth 授權');
+
+  const accessToken = await refreshGoogleAccessToken(refreshToken);
+  const supabase = getSupabaseAdmin();
+
+  const { data: pending, error: pendingErr } = await supabase
+    .from('appointments')
+    .select('id, calendar_event_id, calendar_title')
+    .eq('status', 'pending_checkout')
+    .not('calendar_event_id', 'is', null)
+    .not('created_by_staff_id', 'is', null);
+
+  if (pendingErr) throw new Error(pendingErr.message);
+  if (!pending?.length) return result;
+
+  const pendingByEventId = new Map(
+    pending.map((a) => [a.calendar_event_id as string, a]),
+  );
+  const toCancel = new Map<string, { id: string; title: string }>();
+
+  const updatedMin = new Date(
+    Date.now() - lookbackHours * 3600 * 1000,
+  ).toISOString();
+
+  const params = new URLSearchParams({
+    updatedMin,
+    singleEvents: 'true',
+    showDeleted: 'true',
+    maxResults: '250',
+    fields: 'items(id,summary,status)',
+  });
+
+  const calRes = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+
+  if (!calRes.ok) {
+    const err = (await calRes.json()) as { error?: { message?: string } };
+    throw new Error(err.error?.message ?? 'Google Calendar API 回傳錯誤');
+  }
+
+  const calData = (await calRes.json()) as { items?: GoogleCalendarEvent[] };
+  for (const ev of calData.items ?? []) {
+    if (ev.status !== 'cancelled') continue;
+    const appt = pendingByEventId.get(ev.id);
+    if (!appt) continue;
+    toCancel.set(appt.id as string, {
+      id: appt.id as string,
+      title: (appt.calendar_title as string | null) ?? ev.summary ?? ev.id,
+    });
+  }
+
+  // 補查：待結帳預約若日曆已不存在（含較早刪除、超出 updatedMin）
+  for (const appt of pending) {
+    if (toCancel.has(appt.id as string)) continue;
+    const eventId = appt.calendar_event_id as string;
+    try {
+      const status = await getCalendarEventStatus(eventId);
+      if (status === 'active') continue;
+      toCancel.set(appt.id as string, {
+        id: appt.id as string,
+        title: (appt.calendar_title as string | null) ?? eventId,
+      });
+    } catch (e) {
+      result.errors.push(
+        `[${appt.calendar_title ?? eventId}] 查詢日曆失敗：${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
+  }
+
+  for (const appt of toCancel.values()) {
+    const { error } = await supabase
+      .from('appointments')
+      .update({ status: 'cancelled' })
+      .eq('id', appt.id)
+      .eq('status', 'pending_checkout');
+
+    if (error) {
+      result.errors.push(`[${appt.title}] 取消預約失敗：${error.message}`);
+      continue;
+    }
+
+    result.cancelled++;
+    result.titles.push(appt.title);
+  }
+
+  return result;
 }
 
 /**
