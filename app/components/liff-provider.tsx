@@ -78,7 +78,7 @@ export function LiffProvider({ children }: { children: React.ReactNode }) {
           await withTimeout(
             liff.init({ liffId }),
             20000,
-            'LIFF 初始化逾時。請確認 LINE Developers 的 Endpoint URL 是否為目前 ngrok 網址（需 https）。',
+            'LIFF 初始化逾時。請確認 LINE Developers 的 Endpoint URL 為 https://muscle.com.tw/store1/book',
           );
 
           if (!liff.isInClient() && !liff.isLoggedIn()) {
@@ -87,7 +87,9 @@ export function LiffProvider({ children }: { children: React.ReactNode }) {
 
           if (!liff.isLoggedIn()) {
             setLoadingMessage('正在登入 LINE…');
-            liff.login({ redirectUri: window.location.href });
+            // 只用 pathname，避免 LIFF 回傳參數造成 redirect 迴圈
+            const redirectUri = `${window.location.origin}${window.location.pathname}`;
+            liff.login({ redirectUri });
             return;
           }
 

@@ -32,25 +32,25 @@ export default function BookHomePage() {
     return <LoadingScreen message={loadingMessage} />;
   }
 
-  if (needsBind) {
-    return <LoadingScreen message="前往綁定頁面…" />;
-  }
-
-  if (!client) {
-    return <LoadingScreen message="載入中…" />;
-  }
-
   if (status === 'error') {
     return (
       <main className="flex min-h-svh items-center justify-center p-6">
         <Card className="glass-card max-w-md text-center">
           <CardHeader>
             <CardTitle className="text-xl text-destructive">無法啟動</CardTitle>
-            <CardDescription className="text-base">{error}</CardDescription>
+            <CardDescription className="whitespace-pre-wrap text-base">{error}</CardDescription>
           </CardHeader>
         </Card>
       </main>
     );
+  }
+
+  if (needsBind) {
+    return <LoadingScreen message="前往綁定頁面…" />;
+  }
+
+  if (!client) {
+    return <LoadingScreen message="載入中…" />;
   }
 
   return (
