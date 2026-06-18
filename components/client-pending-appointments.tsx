@@ -69,7 +69,6 @@ export function ClientPendingAppointments({
             <p className="mt-1 text-sm text-primary">{fmtDateTime(appt.starts_at)}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">
               {fmtTime(appt.starts_at)} – {fmtTime(appt.ends_at)} · {appt.service_duration_minutes} 分
-              {appt.staff?.display_name ? ` · 師傅 ${appt.staff.display_name}` : ''}
             </p>
             {appt.note ? (
               <p className="mt-1 text-xs italic text-muted-foreground/80">{appt.note}</p>
