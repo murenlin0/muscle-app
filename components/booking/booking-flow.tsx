@@ -238,14 +238,14 @@ export function BookingFlow() {
             <Card className="glass-card border-primary/15">
               <CardHeader>
                 <CardTitle className="text-base">預約訊息預覽</CardTitle>
-                <CardDescription>
-                  送出後會自動傳到官方 LINE；若無法自動傳送，會開啟對話並帶入文字，請按「傳送」
-                </CardDescription>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-3">
                 <pre className="whitespace-pre-wrap rounded-lg border border-border/60 bg-input/40 p-4 font-mono text-sm leading-relaxed">
                   {messageText}
                 </pre>
+                <p className="rounded-lg border border-orange-400/40 bg-orange-500/10 px-3 py-2.5 text-sm font-semibold leading-relaxed text-orange-300">
+                  注意！預約尚未完成，請確認 LINE 的訊息是否傳出，小編還會跟您做最後確認。
+                </p>
               </CardContent>
             </Card>
 
