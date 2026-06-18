@@ -108,6 +108,35 @@ export async function patchCalendarEventSummary(
 }
 
 /** 查詢日曆事件是否仍存在（404 或 cancelled 視為已刪除） */
+export async function getCalendarEventSummary(
+  eventId: string,
+): Promise<{ status: 'active' | 'cancelled' | 'missing'; summary: string | null }> {
+  const calendarId = await getGoogleCalendarId();
+  if (!calendarId) throw new Error('缺少 GOOGLE_CALENDAR_ID');
+
+  const accessToken = await calendarAccessToken();
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+
+  if (res.status === 404) return { status: 'missing', summary: null };
+
+  const data = (await res.json()) as {
+    status?: string;
+    summary?: string;
+    error?: { message?: string };
+  };
+  if (!res.ok) {
+    throw new Error(data.error?.message ?? '無法查詢日曆事件');
+  }
+  if (data.status === 'cancelled') {
+    return { status: 'cancelled', summary: data.summary ?? null };
+  }
+  return { status: 'active', summary: data.summary ?? null };
+}
+
+/** 查詢日曆事件是否仍存在（404 或 cancelled 視為已刪除） */
 export async function getCalendarEventStatus(
   eventId: string,
 ): Promise<'active' | 'cancelled' | 'missing'> {

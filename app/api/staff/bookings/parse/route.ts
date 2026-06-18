@@ -24,7 +24,7 @@ export async function POST(request: Request) {
   try {
     const parsed = parseBookingMessage(body.text);
     const finalized = finalizeStaffBooking(parsed, {
-      staffName: body.staffName ?? session.staffName,
+      staffName: body.staffName ?? '',
       staffNote: body.staffNote,
     });
     const preview = buildBookingPreview(finalized);

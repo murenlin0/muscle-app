@@ -5,8 +5,12 @@ import {
 } from '@/lib/integration-settings';
 import { refreshGoogleAccessToken } from '@/lib/google-oauth';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import { getCalendarEventStatus, patchCalendarEventSummary } from '@/lib/google-calendar';
+import { getCalendarEventStatus, getCalendarEventSummary, patchCalendarEventSummary } from '@/lib/google-calendar';
+import { parseStaffPrefixFromCalendarTitle } from '@/lib/booking-message';
 import { parseCompoundVipTitle } from '@/lib/ledger-title-fix';
+import { canonicalStaffName } from '@/lib/multi-staff-split';
+import { normalizeStaffName } from '@/lib/notion-title-normalize';
+import { findStaffByName } from '@/lib/staff-auth-server';
 import { formatStoreDateIso } from '@/lib/store-timezone';
 import type { StoreSlug } from '@/lib/stores';
 import type { TransactionCategory } from '@/lib/transaction-category';
@@ -172,6 +176,79 @@ export interface CalendarDeletionSyncResult {
   cancelled: number;
   errors: string[];
   titles: string[];
+}
+
+export interface CalendarStaffSyncResult {
+  updated: number;
+  errors: string[];
+  titles: string[];
+}
+
+export interface CalendarReportStaffSyncResult {
+  updated: number;
+  errors: string[];
+  titles: string[];
+}
+
+function resolveStaffDisplayNameFromTitle(title: string): string | null {
+  const prefix = parseStaffPrefixFromCalendarTitle(title);
+  if (!prefix) return null;
+  const normalized = normalizeStaffName(prefix) ?? prefix;
+  return canonicalStaffName(normalized);
+}
+
+async function resolveStaffRecordFromTitle(
+  storeId: StoreSlug,
+  title: string,
+): Promise<{ id: string; display_name: string } | null> {
+  const displayName = resolveStaffDisplayNameFromTitle(title);
+  if (!displayName) return null;
+
+  const staff = await findStaffByName(storeId, displayName);
+  if (staff) return staff;
+
+  const prefix = parseStaffPrefixFromCalendarTitle(title);
+  if (prefix && prefix !== displayName) {
+    return findStaffByName(storeId, prefix);
+  }
+
+  return null;
+}
+
+async function fetchRecentCalendarEvents(
+  lookbackHours: number,
+  fields = 'items(id,summary,colorId,start,end,updated,status)',
+): Promise<GoogleCalendarEvent[]> {
+  const calendarId = await getGoogleCalendarId();
+  if (!calendarId) throw new Error('缺少 GOOGLE_CALENDAR_ID');
+
+  const refreshToken = await getGoogleRefreshToken();
+  if (!refreshToken) throw new Error('尚未完成 Google OAuth 授權');
+
+  const accessToken = await refreshGoogleAccessToken(refreshToken);
+  const updatedMin = new Date(
+    Date.now() - lookbackHours * 3600 * 1000,
+  ).toISOString();
+
+  const params = new URLSearchParams({
+    updatedMin,
+    singleEvents: 'true',
+    maxResults: '250',
+    fields,
+  });
+
+  const calRes = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events?${params}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  );
+
+  if (!calRes.ok) {
+    const err = (await calRes.json()) as { error?: { message?: string } };
+    throw new Error(err.error?.message ?? 'Google Calendar API 回傳錯誤');
+  }
+
+  const calData = (await calRes.json()) as { items?: GoogleCalendarEvent[] };
+  return calData.items ?? [];
 }
 
 /**
@@ -361,6 +438,278 @@ export async function syncClientCalendarDeletions(
   return result;
 }
 
+async function applyPendingStaffFromCalendarTitle(
+  appt: {
+    id: string;
+    store_id: string;
+    calendar_title: string | null;
+    staff_id: string | null;
+  },
+  newTitle: string,
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  result: CalendarStaffSyncResult,
+): Promise<void> {
+  if (!newTitle || newTitle === appt.calendar_title) return;
+
+  const storeId = appt.store_id as StoreSlug;
+  const staff = await resolveStaffRecordFromTitle(storeId, newTitle);
+
+  const payload: {
+    calendar_title: string;
+    staff_id?: string;
+  } = { calendar_title: newTitle };
+  if (staff) payload.staff_id = staff.id;
+
+  const { error: updateErr } = await supabase
+    .from('appointments')
+    .update(payload)
+    .eq('id', appt.id)
+    .eq('status', 'pending_checkout');
+
+  if (updateErr) {
+    result.errors.push(`[${newTitle}] 更新師傅失敗：${updateErr.message}`);
+    return;
+  }
+
+  result.updated++;
+  result.titles.push(newTitle);
+}
+
+/**
+ * 待結帳：日曆標題改師傅 → 更新 appointments.staff_id / calendar_title（客人端同步顯示）。
+ */
+export async function syncCalendarPendingStaffChanges(
+  lookbackHours = 72,
+  clientId?: string,
+): Promise<CalendarStaffSyncResult> {
+  const result: CalendarStaffSyncResult = {
+    updated: 0,
+    errors: [],
+    titles: [],
+  };
+
+  if (!(await isGoogleCalendarReady())) return result;
+
+  const supabase = getSupabaseAdmin();
+  let query = supabase
+    .from('appointments')
+    .select('id, store_id, calendar_event_id, calendar_title, staff_id')
+    .eq('status', 'pending_checkout')
+    .not('calendar_event_id', 'is', null)
+    .not('created_by_staff_id', 'is', null);
+
+  if (clientId) query = query.eq('client_id', clientId);
+
+  const { data: pending, error } = await query;
+  if (error) throw new Error(error.message);
+  if (!pending?.length) return result;
+
+  if (clientId) {
+    for (const appt of pending) {
+      try {
+        const event = await getCalendarEventSummary(appt.calendar_event_id as string);
+        if (event.status !== 'active' || !event.summary) continue;
+        await applyPendingStaffFromCalendarTitle(
+          appt as {
+            id: string;
+            store_id: string;
+            calendar_title: string | null;
+            staff_id: string | null;
+          },
+          event.summary.trim(),
+          supabase,
+          result,
+        );
+      } catch (e) {
+        result.errors.push(
+          `[${appt.calendar_title ?? appt.calendar_event_id}] ${
+            e instanceof Error ? e.message : String(e)
+          }`,
+        );
+      }
+    }
+    return result;
+  }
+
+  const pendingByEventId = new Map(
+    pending.map((a) => [a.calendar_event_id as string, a]),
+  );
+
+  let events: GoogleCalendarEvent[];
+  try {
+    events = await fetchRecentCalendarEvents(lookbackHours);
+  } catch (e) {
+    throw e instanceof Error ? e : new Error(String(e));
+  }
+
+  for (const ev of events) {
+    if (ev.status === 'cancelled') continue;
+    const appt = pendingByEventId.get(ev.id);
+    if (!appt) continue;
+
+    const newTitle = ev.summary?.trim();
+    if (!newTitle) continue;
+
+    await applyPendingStaffFromCalendarTitle(
+      appt as {
+        id: string;
+        store_id: string;
+        calendar_title: string | null;
+        staff_id: string | null;
+      },
+      newTitle,
+      supabase,
+      result,
+    );
+  }
+
+  return result;
+}
+
+/**
+ * 已結帳：日曆標題事後改師傅 → 更新 daily_transactions.staff_name（報表同步）。
+ */
+export async function syncCalendarCompletedStaffRenames(
+  lookbackHours = 72,
+): Promise<CalendarReportStaffSyncResult> {
+  const result: CalendarReportStaffSyncResult = {
+    updated: 0,
+    errors: [],
+    titles: [],
+  };
+
+  if (!(await isGoogleCalendarReady())) return result;
+
+  const supabase = getSupabaseAdmin();
+  const { data: completed, error: apptErr } = await supabase
+    .from('appointments')
+    .select('id, store_id, calendar_event_id, starts_at, client_id')
+    .eq('status', 'completed')
+    .not('calendar_event_id', 'is', null)
+    .not('created_by_staff_id', 'is', null);
+
+  if (apptErr) throw new Error(apptErr.message);
+  if (!completed?.length) return result;
+
+  const completedByEventId = new Map(
+    completed.map((a) => [a.calendar_event_id as string, a]),
+  );
+
+  const clientIds = [
+    ...new Set(completed.map((a) => a.client_id).filter(Boolean)),
+  ] as string[];
+  const clientMap = new Map<string, { phone: string }>();
+  if (clientIds.length) {
+    const { data } = await supabase
+      .from('clients')
+      .select('id, phone')
+      .in('id', clientIds);
+    for (const row of data ?? []) {
+      clientMap.set(row.id as string, { phone: row.phone as string });
+    }
+  }
+
+  let events: GoogleCalendarEvent[];
+  try {
+    events = await fetchRecentCalendarEvents(lookbackHours);
+  } catch (e) {
+    throw e instanceof Error ? e : new Error(String(e));
+  }
+
+  for (const ev of events) {
+    if (ev.status === 'cancelled') continue;
+    const color = ev.colorId ?? '';
+    if (!(color in COLOR_TO_PAYMENT)) continue;
+
+    const appt = completedByEventId.get(ev.id);
+    if (!appt) continue;
+
+    const title = ev.summary?.trim();
+    if (!title) continue;
+
+    const newStaffName = resolveStaffDisplayNameFromTitle(title);
+    if (!newStaffName) continue;
+
+    const client = appt.client_id
+      ? clientMap.get(appt.client_id as string)
+      : null;
+    if (!client?.phone) continue;
+
+    const startsAt = ev.start.dateTime
+      ? new Date(ev.start.dateTime)
+      : new Date(appt.starts_at as string);
+    const occurredOn = formatStoreDateIso(startsAt);
+    const storeId = appt.store_id as StoreSlug;
+
+    const { data: txs, error: txErr } = await supabase
+      .from('daily_transactions')
+      .select('id, staff_name')
+      .eq('store_id', storeId)
+      .eq('occurred_on', occurredOn)
+      .eq('client_phone', client.phone)
+      .eq('source', 'calendar_sync');
+
+    if (txErr) {
+      result.errors.push(`[${title}] 查詢報表失敗：${txErr.message}`);
+      continue;
+    }
+    if (!txs?.length) continue;
+
+    const toUpdate = txs.filter(
+      (tx) => (tx.staff_name as string | null) !== newStaffName,
+    );
+    if (!toUpdate.length) continue;
+
+    const { error: updateErr } = await supabase
+      .from('daily_transactions')
+      .update({ staff_name: newStaffName })
+      .in(
+        'id',
+        toUpdate.map((tx) => tx.id as string),
+      );
+
+    if (updateErr) {
+      result.errors.push(`[${title}] 更新報表師傅失敗：${updateErr.message}`);
+      continue;
+    }
+
+    result.updated += toUpdate.length;
+    result.titles.push(title);
+  }
+
+  return result;
+}
+
+/**
+ * 客人開啟儲值金頁：日曆刪除取消預約 + 日曆改師傅同步待結帳。
+ */
+export async function syncClientCalendarAppointments(
+  clientId: string,
+  lookbackHours = 72,
+): Promise<{
+  cancelled: number;
+  staffUpdated: number;
+  errors: string[];
+}> {
+  const deletions = await syncClientCalendarDeletions(clientId);
+  let staffUpdated = 0;
+  const errors = [...deletions.errors];
+
+  try {
+    const staff = await syncCalendarPendingStaffChanges(lookbackHours, clientId);
+    staffUpdated = staff.updated;
+    errors.push(...staff.errors);
+  } catch (e) {
+    errors.push(e instanceof Error ? e.message : String(e));
+  }
+
+  return {
+    cancelled: deletions.cancelled,
+    staffUpdated,
+    errors,
+  };
+}
+
 /**
  * 同步 Google 日曆結帳事件 → daily_transactions
  *
@@ -489,9 +838,10 @@ export async function syncCalendarCheckouts(
       const title = ev.summary ?? (appt.calendar_title as string | null) ?? '';
       const storeId = appt.store_id as StoreSlug;
       const staffName =
-        appt.staff_id
+        resolveStaffDisplayNameFromTitle(title) ??
+        (appt.staff_id
           ? (staffMap.get(appt.staff_id as string)?.display_name ?? null)
-          : null;
+          : null);
       const client = appt.client_id
         ? clientMap.get(appt.client_id as string) ?? null
         : null;

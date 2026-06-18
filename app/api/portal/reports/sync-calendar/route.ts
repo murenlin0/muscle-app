@@ -41,7 +41,12 @@ export async function POST(request: Request) {
       deletions: sync.deletions,
       processed: sync.checkouts.processed,
       skipped: sync.checkouts.skipped,
-      errors: [...sync.deletions.errors, ...sync.checkouts.errors],
+      errors: [
+        ...sync.deletions.errors,
+        ...sync.pendingStaff.errors,
+        ...sync.checkouts.errors,
+        ...sync.reportStaff.errors,
+      ],
       titles: sync.checkouts.titles,
       lookbackHours: sync.lookbackHours,
     });

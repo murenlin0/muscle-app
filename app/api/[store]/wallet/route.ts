@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { parseStoreFromParamsAsync } from '@/lib/api-store';
-import { syncClientCalendarDeletions } from '@/lib/calendar-checkout-sync';
+import { syncClientCalendarAppointments } from '@/lib/calendar-checkout-sync';
 import { clientMemberBalance } from '@/lib/ledger-title-balance';
 import { listClientTransactions } from '@/lib/reports-server';
 import { getSupabaseAdmin } from '@/lib/supabase';
@@ -58,7 +58,7 @@ export async function GET(
   const balance = computedBalance ?? client.balance;
 
   try {
-    await syncClientCalendarDeletions(client.id);
+    await syncClientCalendarAppointments(client.id);
   } catch {
     // 日曆查詢失敗不阻擋 wallet 載入
   }

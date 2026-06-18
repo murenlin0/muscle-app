@@ -15,16 +15,18 @@ import { portalLogout, usePortalGuard } from '@/components/portal/use-portal-gua
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { UNASSIGNED_STAFF_LABEL } from '@/lib/booking-message';
 import { STORES } from '@/lib/stores';
 import type { Staff } from '@/lib/types/database';
 
 const STAFF_API = '/api/staff';
+const STAFF_NAME_REQUIRED = '沒有輸入師傅名稱';
 
 export default function StaffWorkspacePage() {
   const router = useRouter();
   const { session, loading: bootstrapping } = usePortalGuard('staff');
   const [text, setText] = useState('');
-  const [assignedStaff, setAssignedStaff] = useState('');
+  const [assignedStaff, setAssignedStaff] = useState(UNASSIGNED_STAFF_LABEL);
   const [staffNote, setStaffNote] = useState('');
   const [roster, setRoster] = useState<Staff[]>([]);
   const [preview, setPreview] = useState<BookingPreviewData | null>(null);
@@ -34,11 +36,6 @@ export default function StaffWorkspacePage() {
   const [calendarLink, setCalendarLink] = useState<string | null>(null);
 
   const staffName = session?.role === 'staff' ? session.staffName : '';
-
-  useEffect(() => {
-    if (!staffName) return;
-    setAssignedStaff((prev) => prev || staffName);
-  }, [staffName]);
 
   useEffect(() => {
     void fetch(`${STAFF_API}/roster`)
@@ -59,12 +56,25 @@ export default function StaffWorkspacePage() {
     staffNote: staffNote.trim() || undefined,
   });
 
+  function ensureAssignedStaffSelected(): boolean {
+    if (!assignedStaff.trim() || assignedStaff === UNASSIGNED_STAFF_LABEL) {
+      setError(STAFF_NAME_REQUIRED);
+      return false;
+    }
+    return true;
+  }
+
   async function handleParse() {
     setLoading('parse');
     setError(null);
     setSuccess(null);
     setCalendarLink(null);
     setPreview(null);
+
+    if (!ensureAssignedStaffSelected()) {
+      setLoading(null);
+      return;
+    }
 
     const res = await fetch(`${STAFF_API}/bookings/parse`, {
       method: 'POST',
@@ -86,6 +96,11 @@ export default function StaffWorkspacePage() {
     setError(null);
     setSuccess(null);
     setCalendarLink(null);
+
+    if (!ensureAssignedStaffSelected()) {
+      setLoading(null);
+      return;
+    }
 
     const res = await fetch(`${STAFF_API}/bookings/create`, {
       method: 'POST',
@@ -186,6 +201,7 @@ export default function StaffWorkspacePage() {
                 onChange={(e) => setAssignedStaff(e.target.value)}
                 className="input-neon h-11 w-full rounded-lg border border-input bg-input/80 px-3 text-sm"
               >
+                <option value={UNASSIGNED_STAFF_LABEL}>{UNASSIGNED_STAFF_LABEL}</option>
                 {roster.map((member) => (
                   <option key={member.id} value={member.display_name}>
                     {member.display_name}

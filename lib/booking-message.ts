@@ -128,13 +128,17 @@ export function parseBookingMessage(text: string): BookingMessageData {
   };
 }
 
+export const UNASSIGNED_STAFF_LABEL = '未指定';
+
 /** 師傅 UI：補上負責師傅與師傅備註後再建日曆 */
 export function finalizeStaffBooking(
   parsed: BookingMessageData,
   input: { staffName: string; staffNote?: string | null },
 ): BookingMessageData {
   const staffName = input.staffName.trim();
-  if (!staffName) throw new Error('請選擇負責師傅');
+  if (!staffName || staffName === UNASSIGNED_STAFF_LABEL) {
+    throw new Error('沒有輸入師傅名稱');
+  }
 
   const noteParts = [parsed.note?.trim(), input.staffNote?.trim()].filter(Boolean);
   return {
@@ -151,6 +155,15 @@ export function buildCalendarTitle(input: {
   phone: string;
 }): string {
   return `${input.staffName}${input.durationMinutes}分${input.clientName}${input.phone}`;
+}
+
+/** 從日曆標題解析師傅前綴，例如「仁120分2100…」→「仁」 */
+export function parseStaffPrefixFromCalendarTitle(title: string): string | null {
+  const t = stripAllSpaces(title);
+  const head = t.match(/^(.+?\d+分)/)?.[1];
+  if (!head) return null;
+  const prefix = head.replace(/\d+分$/, '');
+  return prefix || null;
 }
 
 export function buildBookingPreview(data: BookingMessageData): BookingMessagePreview {
