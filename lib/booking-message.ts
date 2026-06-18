@@ -4,6 +4,7 @@ import {
   extractFlexibleBookingFields,
   normalizeBookingText,
   parseFlexibleDateTime,
+  validateRequiredBookingFields,
 } from '@/lib/booking-message-flex';
 import { parseStoreDateTime } from '@/lib/store-timezone';
 import {
@@ -121,7 +122,7 @@ function parseStructuredBookingMessage(text: string): BookingMessageData {
     }
   }
 
-  const flexFields = extractFlexibleBookingFields(normalized);
+  const flexFields = extractFlexibleBookingFields(text);
   if (!data.startsAt && flexFields.startsAt) data.startsAt = flexFields.startsAt;
   if (!data.durationMinutes && flexFields.durationMinutes) {
     data.durationMinutes = flexFields.durationMinutes;
@@ -130,14 +131,26 @@ function parseStructuredBookingMessage(text: string): BookingMessageData {
   if (!data.clientName && flexFields.clientName) data.clientName = flexFields.clientName;
   if (!data.phone && flexFields.phone) data.phone = flexFields.phone;
 
-  if (!storeLine) throw new Error('缺少店名行（例如：筋棧民有店）');
+  if (!storeLine) {
+    if (flexFields.storeLabel) storeLine = flexFields.storeLabel;
+    else throw new Error('缺少店名（例如：筋棧民有店）');
+  }
   const storeSlug = resolveStoreSlugFromMessageLabel(storeLine);
   if (!storeSlug) throw new Error(`無法辨識店名：${storeLine}`);
 
-  if (!data.clientName?.trim()) throw new Error('缺少姓名');
-  if (!data.phone) throw new Error('缺少或無效電話');
+  validateRequiredBookingFields({
+    storeLabel: storeLine,
+    storeSlug,
+    clientName: data.clientName ?? null,
+    phone: data.phone ?? null,
+    durationMinutes: data.durationMinutes ?? null,
+    serviceLabel: data.serviceLabel ?? null,
+    startsAt: data.startsAt ?? null,
+    staffName: data.staffName ?? null,
+    note: data.note ?? null,
+  });
+
   if (!data.serviceLabel || !data.durationMinutes) throw new Error('缺少項目');
-  if (!data.startsAt) throw new Error('缺少時間');
 
   const store = getStore(storeSlug);
   return {

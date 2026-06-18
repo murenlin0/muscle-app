@@ -303,6 +303,7 @@ function extractClientName(text: string, phone: string | null): string | null {
 
 function extractStore(text: string): { storeLabel: string; storeSlug: StoreSlug } | null {
   const normalized = normalizeBookingText(text);
+
   for (const store of STORE_LIST) {
     if (normalized.includes(store.messageStoreLabel)) {
       return { storeLabel: store.messageStoreLabel, storeSlug: store.slug };
@@ -314,15 +315,6 @@ function extractStore(text: string): { storeLabel: string; storeSlug: StoreSlug 
     const label = generic[0];
     const slug = resolveStoreSlugFromMessageLabel(label);
     if (slug) return { storeLabel: label, storeSlug: slug };
-  }
-
-  if (/民有/.test(normalized)) {
-    const store = STORE_LIST.find((s) => s.slug === 'store1');
-    if (store) return { storeLabel: store.messageStoreLabel, storeSlug: store.slug };
-  }
-  if (/文一/.test(normalized)) {
-    const store = STORE_LIST.find((s) => s.slug === 'store2');
-    if (store) return { storeLabel: store.messageStoreLabel, storeSlug: store.slug };
   }
 
   return null;
@@ -359,6 +351,20 @@ export function extractFlexibleBookingFields(
   };
 }
 
+export function validateRequiredBookingFields(fields: FlexibleBookingFields): void {
+  const missing: string[] = [];
+  if (!fields.storeSlug || !fields.storeLabel) {
+    missing.push('店名（例如：筋棧民有店）');
+  }
+  if (!fields.clientName?.trim()) missing.push('姓名');
+  if (!fields.phone) missing.push('電話');
+  if (!fields.durationMinutes) missing.push('時長（30/60/90 分鐘或 min）');
+  if (!fields.startsAt) missing.push('預約時間');
+  if (missing.length) {
+    throw new Error(`缺少必要資訊：${missing.join('、')}`);
+  }
+}
+
 export function buildFromFlexibleFields(
   fields: FlexibleBookingFields,
 ): {
@@ -372,29 +378,19 @@ export function buildFromFlexibleFields(
   staffName: string | null;
   note: string | null;
 } {
-  if (!fields.storeSlug || !fields.storeLabel) {
-    throw new Error('缺少店名（例如：筋棧民有店）');
-  }
-  if (!fields.clientName?.trim()) throw new Error('缺少姓名');
-  if (!fields.phone) throw new Error('缺少或無效電話');
-  if (!fields.durationMinutes) {
-    throw new Error('缺少時長（請包含 30/60/90 分鐘或 min）');
-  }
-  if (!fields.startsAt) {
-    throw new Error('缺少或無法辨識預約時間（例如：6/19 下午3:00、2026-06-19 15:00）');
-  }
+  validateRequiredBookingFields(fields);
   if (!fields.serviceLabel) {
     throw new Error('缺少項目');
   }
 
   return {
-    storeSlug: fields.storeSlug,
-    storeLabel: fields.storeLabel,
-    clientName: fields.clientName.trim(),
-    phone: fields.phone,
+    storeSlug: fields.storeSlug!,
+    storeLabel: fields.storeLabel!,
+    clientName: fields.clientName!.trim(),
+    phone: fields.phone!,
     serviceLabel: fields.serviceLabel,
-    durationMinutes: fields.durationMinutes,
-    startsAt: fields.startsAt,
+    durationMinutes: fields.durationMinutes!,
+    startsAt: fields.startsAt!,
     staffName: fields.staffName?.trim() || null,
     note: fields.note ?? null,
   };
