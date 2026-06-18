@@ -1,6 +1,7 @@
 import {
   getGoogleCalendarId,
   getGoogleRefreshToken,
+  isGoogleCalendarReady,
 } from '@/lib/integration-settings';
 import { refreshGoogleAccessToken } from '@/lib/google-oauth';
 import { getSupabaseAdmin } from '@/lib/supabase';
@@ -243,26 +244,6 @@ export async function syncCalendarDeletedAppointments(
     });
   }
 
-  // 補查：待結帳預約若日曆已不存在（含較早刪除、超出 updatedMin）
-  for (const appt of pending) {
-    if (toCancel.has(appt.id as string)) continue;
-    const eventId = appt.calendar_event_id as string;
-    try {
-      const status = await getCalendarEventStatus(eventId);
-      if (status === 'active') continue;
-      toCancel.set(appt.id as string, {
-        id: appt.id as string,
-        title: (appt.calendar_title as string | null) ?? eventId,
-      });
-    } catch (e) {
-      result.errors.push(
-        `[${appt.calendar_title ?? eventId}] 查詢日曆失敗：${
-          e instanceof Error ? e.message : String(e)
-        }`,
-      );
-    }
-  }
-
   for (const appt of toCancel.values()) {
     const { error } = await supabase
       .from('appointments')
@@ -277,6 +258,104 @@ export async function syncCalendarDeletedAppointments(
 
     result.cancelled++;
     result.titles.push(appt.title);
+  }
+
+  // 補查：待結帳預約若日曆已不存在（含較早刪除、超出 updatedMin）
+  for (const appt of pending) {
+    if (toCancel.has(appt.id as string)) continue;
+    try {
+      const outcome = await cancelPendingIfCalendarGone({
+        id: appt.id as string,
+        calendar_event_id: appt.calendar_event_id as string,
+        calendar_title: appt.calendar_title as string | null,
+      });
+      if (outcome === 'cancelled') {
+        result.cancelled++;
+        result.titles.push(
+          (appt.calendar_title as string | null) ??
+            (appt.calendar_event_id as string),
+        );
+      }
+    } catch (e) {
+      result.errors.push(
+        `[${appt.calendar_title ?? appt.calendar_event_id}] 查詢日曆失敗：${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
+  }
+
+  return result;
+}
+
+type PendingCalendarAppt = {
+  id: string;
+  calendar_event_id: string;
+  calendar_title: string | null;
+};
+
+async function cancelPendingIfCalendarGone(
+  appt: PendingCalendarAppt,
+): Promise<'cancelled' | 'active' | 'error'> {
+  const supabase = getSupabaseAdmin();
+  const eventId = appt.calendar_event_id;
+
+  try {
+    const status = await getCalendarEventStatus(eventId);
+    if (status === 'active') return 'active';
+
+    const { error } = await supabase
+      .from('appointments')
+      .update({ status: 'cancelled' })
+      .eq('id', appt.id)
+      .eq('status', 'pending_checkout');
+
+    if (error) throw new Error(error.message);
+    return 'cancelled';
+  } catch (e) {
+    throw e instanceof Error ? e : new Error(String(e));
+  }
+}
+
+/**
+ * 客人開啟儲值金頁時：只檢查該客人的待結帳預約，
+ * 日曆事件已刪除 → 立即取消（不需等 Cron／Webhook）。
+ */
+export async function syncClientCalendarDeletions(
+  clientId: string,
+): Promise<{ cancelled: number; errors: string[] }> {
+  const result = { cancelled: 0, errors: [] as string[] };
+
+  if (!(await isGoogleCalendarReady())) return result;
+
+  const supabase = getSupabaseAdmin();
+  const { data: pending, error } = await supabase
+    .from('appointments')
+    .select('id, calendar_event_id, calendar_title')
+    .eq('client_id', clientId)
+    .eq('status', 'pending_checkout')
+    .not('calendar_event_id', 'is', null)
+    .not('created_by_staff_id', 'is', null);
+
+  if (error) throw new Error(error.message);
+  if (!pending?.length) return result;
+
+  for (const row of pending) {
+    const appt: PendingCalendarAppt = {
+      id: row.id as string,
+      calendar_event_id: row.calendar_event_id as string,
+      calendar_title: row.calendar_title as string | null,
+    };
+    try {
+      const outcome = await cancelPendingIfCalendarGone(appt);
+      if (outcome === 'cancelled') result.cancelled++;
+    } catch (e) {
+      result.errors.push(
+        `[${appt.calendar_title ?? appt.calendar_event_id}] ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
   }
 
   return result;

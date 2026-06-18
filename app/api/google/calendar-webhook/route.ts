@@ -24,7 +24,7 @@ export async function POST(request: Request) {
 
   // exists = 事件新增/更新（含改色結帳）；not_exists = 事件刪除
   if (resourceState === 'exists' || resourceState === 'not_exists') {
-    const lookbackHours = Number(process.env.CALENDAR_SYNC_LOOKBACK_HOURS ?? 2);
+    const lookbackHours = Number(process.env.CALENDAR_SYNC_LOOKBACK_HOURS ?? 72);
     after(async () => {
       try {
         await runCalendarSync(lookbackHours);
