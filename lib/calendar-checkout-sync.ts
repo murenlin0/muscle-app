@@ -27,7 +27,6 @@ function parseSimpleTopupUsage(
   return { topup, usage };
 }
 
-/** 合寫標題拆成儲值列 / 使用列標題 */
 function buildCalendarSplitTitles(
   title: string,
   topup: number,
@@ -43,6 +42,29 @@ function buildCalendarSplitTitles(
     topupTitle: `${staffPrefix}儲值+${topup}${suffix}`,
     usageTitle: `${head}-${usage}${suffix}`,
   };
+}
+
+/**
+ * 單次結帳標題金額（無 +儲值-使用 合寫）：
+ *   現金／轉帳：仁120分2100林慕仁0978542704 → 2100
+ *   純會員使用：仁60分-1000林慕仁0978542704 → 1000
+ */
+function parseSingleCheckoutAmount(
+  title: string,
+  category: TransactionCategory,
+): number {
+  const t = title.replace(/\s/g, '');
+  if (/\+\d+-\d+/.test(t)) return 0;
+
+  if (category === '會員使用') {
+    const usage = t.match(/\d+分-(\d+)/);
+    if (usage) return Number(usage[1]);
+  }
+
+  const cash = t.match(/\d+分(\d+)(?!\+|-)/);
+  if (cash) return Number(cash[1]);
+
+  return 0;
 }
 
 export interface CalendarRepairInput {
@@ -459,12 +481,12 @@ export async function syncCalendarCheckouts(
           source: 'calendar_sync',
         });
       } else {
-        // 單一付款（無合寫金額）
+        const amount = parseSingleCheckoutAmount(title, payment.defaultCategory);
         rowsToInsert.push({
           store_id: storeId,
           occurred_on: occurredOn,
           title,
-          amount: 0,
+          amount,
           category: payment.defaultCategory,
           payment_methods: payment.methods,
           staff_name: staffName,
