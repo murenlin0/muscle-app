@@ -16,7 +16,7 @@ function assertCronAuthorized(request: Request): NextResponse | null {
   return null;
 }
 
-/** Vercel Cron：每 5 分鐘自動同步日曆刪除與結帳 */
+/** 外部排程或手動呼叫：同步日曆刪除與結帳（Hobby 無法用 Vercel Cron 每 5 分鐘） */
 export async function GET(request: Request) {
   const denied = assertCronAuthorized(request);
   if (denied) return denied;
