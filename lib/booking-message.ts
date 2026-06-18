@@ -45,8 +45,12 @@ function parseDurationMinutes(serviceLine: string): number {
   return Number(match[1]);
 }
 
+function normalizeTimeFieldValue(raw: string): string {
+  return raw.replace('T', ' ').replace(/：/g, ':').trim();
+}
+
 function parseStartsAt(timeLine: string): Date {
-  const raw = parseFieldValue(timeLine).replace('T', ' ');
+  const raw = normalizeTimeFieldValue(parseFieldValue(timeLine));
   const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})$/);
   if (!match) {
     throw new Error('時間格式須為 YYYY-MM-DD HH:mm，例如：2026-06-15 14:00');
