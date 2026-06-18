@@ -1,4 +1,10 @@
 import { normalizePhone, stripAllSpaces } from '@/lib/phone';
+import {
+  buildFromFlexibleFields,
+  extractFlexibleBookingFields,
+  normalizeBookingText,
+  parseFlexibleDateTime,
+} from '@/lib/booking-message-flex';
 import { parseStoreDateTime } from '@/lib/store-timezone';
 import {
   getStore,
@@ -27,10 +33,10 @@ export interface BookingMessagePreview extends BookingMessageData {
 const FIELD_PATTERNS: Record<string, RegExp> = {
   store: /^筋棧.+店$/,
   staff: /^師傅[：:]/,
-  name: /^姓名[：:]/,
-  phone: /^電話[：:]/,
-  service: /^項目[：:]/,
-  time: /^時間[：:]/,
+  name: /^姓名[：:]?/,
+  phone: /^電話[：:]?/,
+  service: /^項目[：:]?/,
+  time: /^時間[：:]?/,
   note: /^備註[：:]/,
 };
 
@@ -40,7 +46,7 @@ function parseFieldValue(line: string): string {
 }
 
 function parseDurationMinutes(serviceLine: string): number {
-  const match = serviceLine.match(/(\d+)\s*min/i);
+  const match = serviceLine.match(/(30|60|90|120)\s*(?:min|minutes|分鐘|分钟|分)\b/i);
   if (!match) throw new Error('項目須包含時長，例如：運動按摩 60min');
   return Number(match[1]);
 }
@@ -50,18 +56,24 @@ function normalizeTimeFieldValue(raw: string): string {
 }
 
 function parseStartsAt(timeLine: string): Date {
-  const raw = normalizeTimeFieldValue(parseFieldValue(timeLine));
+  const raw = normalizeTimeFieldValue(
+    timeLine.includes('時間') ? parseFieldValue(timeLine) : timeLine,
+  );
   const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})$/);
-  if (!match) {
-    throw new Error('時間格式須為 YYYY-MM-DD HH:mm，例如：2026-06-15 14:00');
+  if (match) {
+    const [, y, mo, d, h, mi] = match;
+    return parseStoreDateTime(Number(y), Number(mo), Number(d), Number(h), Number(mi));
   }
-  const [, y, mo, d, h, mi] = match;
-  return parseStoreDateTime(Number(y), Number(mo), Number(d), Number(h), Number(mi));
+
+  const flexible = parseFlexibleDateTime(raw);
+  if (flexible) return flexible;
+
+  throw new Error('時間格式須為 YYYY-MM-DD HH:mm，例如：2026-06-15 14:00');
 }
 
-export function parseBookingMessage(text: string): BookingMessageData {
+function parseStructuredBookingMessage(text: string): BookingMessageData {
   const lines = text
-    .split(/\r?\n/)
+    .split(/\n/)
     .map((l) => l.trim())
     .filter(Boolean);
 
@@ -85,29 +97,38 @@ export function parseBookingMessage(text: string): BookingMessageData {
       continue;
     }
     if (FIELD_PATTERNS.name.test(line)) {
-      data.clientName = stripAllSpaces(parseFieldValue(line));
+      data.clientName = stripAllSpaces(line.replace(/^姓名[：:\s]*/, ''));
       continue;
     }
     if (FIELD_PATTERNS.phone.test(line)) {
-      const phone = normalizePhone(parseFieldValue(line));
+      const phone = normalizePhone(line.replace(/^電話[：:\s]*/, ''));
       if (!phone) throw new Error('電話須為 09 開頭 10 碼');
       data.phone = phone;
       continue;
     }
     if (FIELD_PATTERNS.service.test(line)) {
-      const serviceLabel = parseFieldValue(line);
+      const serviceLabel = line.replace(/^項目[：:\s]*/, '').trim();
       data.serviceLabel = serviceLabel;
       data.durationMinutes = parseDurationMinutes(serviceLabel);
       continue;
     }
     if (FIELD_PATTERNS.time.test(line)) {
-      data.startsAt = parseStartsAt(line);
+      data.startsAt = parseStartsAt(line.replace(/^時間[：:\s]*/, '時間: '));
       continue;
     }
     if (FIELD_PATTERNS.note.test(line)) {
       data.note = parseFieldValue(line) || null;
     }
   }
+
+  const flexFields = extractFlexibleBookingFields(normalized);
+  if (!data.startsAt && flexFields.startsAt) data.startsAt = flexFields.startsAt;
+  if (!data.durationMinutes && flexFields.durationMinutes) {
+    data.durationMinutes = flexFields.durationMinutes;
+    data.serviceLabel = flexFields.serviceLabel ?? undefined;
+  }
+  if (!data.clientName && flexFields.clientName) data.clientName = flexFields.clientName;
+  if (!data.phone && flexFields.phone) data.phone = flexFields.phone;
 
   if (!storeLine) throw new Error('缺少店名行（例如：筋棧民有店）');
   const storeSlug = resolveStoreSlugFromMessageLabel(storeLine);
@@ -130,6 +151,21 @@ export function parseBookingMessage(text: string): BookingMessageData {
     startsAt: data.startsAt,
     note: data.note ?? null,
   };
+}
+
+export function parseBookingMessage(text: string): BookingMessageData {
+  const normalized = normalizeBookingText(text);
+  const flexible = extractFlexibleBookingFields(normalized);
+
+  try {
+    if (normalized.includes('筋棧預約確認')) {
+      return parseStructuredBookingMessage(normalized);
+    }
+  } catch {
+    // 結構化格式不完整時改走彈性解析
+  }
+
+  return buildFromFlexibleFields(flexible);
 }
 
 export const UNASSIGNED_STAFF_LABEL = '未指定';
