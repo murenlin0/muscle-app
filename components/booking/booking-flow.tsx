@@ -8,6 +8,7 @@ import { ChevronLeft, Copy } from 'lucide-react';
 import { useLiff } from '@/app/components/liff-provider';
 import { BookingHero } from '@/components/booking/booking-hero';
 import { BookingNav } from '@/components/booking/booking-nav';
+import { BookingSendChatOpened, BookingSendCopied } from '@/components/booking/booking-send-result';
 import { BookingStepIndicator } from '@/components/booking/booking-step-indicator';
 import { BookingSummary } from '@/components/booking/booking-summary';
 import { ServiceStep } from '@/components/booking/service-step';
@@ -120,7 +121,7 @@ export function BookingFlow() {
     try {
       const liffId = getLiffIdForStore(store.slug);
       if (liffId && liff.isInClient()) {
-        const result = await sendBookingToOfficialLine(messageText, store.lineOfficialUrl);
+        const result = await sendBookingToOfficialLine(messageText, store.lineOfficialUrl, store.slug);
         if (result.mode === 'sent') {
           setSentMode('line');
           liff.closeWindow();
@@ -149,49 +150,22 @@ export function BookingFlow() {
 
   if (sentMode === 'chat_opened') {
     return (
-      <main className="min-h-svh px-5 py-8">
-        <div className="mx-auto max-w-md">
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="text-lg">請按傳送</CardTitle>
-              <CardDescription>
-                已開啟官方 LINE 對話並帶入預約文字，請確認後按一下「傳送」
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <pre className="whitespace-pre-wrap rounded-lg border border-border/60 bg-input/40 p-4 font-mono text-sm leading-relaxed">
-                {messageText}
-              </pre>
-              <Button type="button" className="w-full" onClick={() => router.replace(bookBase)}>
-                返回會員中心
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </main>
+      <BookingSendChatOpened
+        messageText={messageText}
+        onDone={() => router.replace(bookBase)}
+      />
     );
   }
 
   if (sentMode === 'copied') {
     return (
-      <main className="min-h-svh px-5 py-8">
-        <div className="mx-auto max-w-md">
-          <Card className="glass-card">
-            <CardHeader>
-              <CardTitle className="text-lg">訊息已複製</CardTitle>
-              <CardDescription>已複製到剪貼簿，請貼到 LINE 官方帳號對話</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <pre className="whitespace-pre-wrap rounded-lg border border-border/60 bg-input/40 p-4 font-mono text-sm leading-relaxed">
-                {messageText}
-              </pre>
-              <Button type="button" className="w-full" onClick={() => router.replace(bookBase)}>
-                返回會員中心
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </main>
+      <BookingSendCopied
+        messageText={messageText}
+        storeSlug={store.slug}
+        lineOfficialUrl={store.lineOfficialUrl}
+        onDone={() => router.replace(bookBase)}
+        onRetryOpenChat={() => setSentMode('chat_opened')}
+      />
     );
   }
 
@@ -265,7 +239,7 @@ export function BookingFlow() {
               <CardHeader>
                 <CardTitle className="text-base">預約訊息預覽</CardTitle>
                 <CardDescription>
-                  送出後會自動傳到官方 LINE；若無法自動傳送會改開啟對話並帶入文字
+                  送出後會自動傳到官方 LINE；若無法自動傳送，會開啟對話並帶入文字，請按「傳送」
                 </CardDescription>
               </CardHeader>
               <CardContent>

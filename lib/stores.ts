@@ -24,7 +24,7 @@ export const STORES: Record<StoreSlug, StoreConfig> = {
     name: '林口民有店',
     messageStoreLabel: '筋棧民有店',
     area: '新北市林口區',
-    lineOfficialUrl: 'https://line.me/R/ti/p/@REPLACE_MINYOU',
+    lineOfficialUrl: 'https://line.me/R/ti/p/@440fmgpo',
     googleMapsUrl: 'https://maps.google.com/?q=筋棧+林口民有',
     heroImage: '/stores/store1/hero.jpg',
     galleryImage: '/stores/store1/gallery.jpg',
