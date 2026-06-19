@@ -1,4 +1,21 @@
 import type { StoreSlug } from '@/lib/stores';
+import {
+  getNotionProperty,
+  getNotionPropertyName,
+  resolveCanonicalPaymentMethods,
+} from '@/lib/notion-store-schema';
+
+export {
+  NOTION_CANONICAL_FIELDS,
+  NOTION_SCHEMA_BY_STORE,
+  STORE2_PAYMENT_LOCATION_MAP,
+  getNotionFieldSchema,
+  getNotionProperty,
+  getNotionPropertyName,
+  mapStore2PaymentLocation,
+  resolveCanonicalPaymentMethods,
+} from '@/lib/notion-store-schema';
+export type { NotionCanonicalField, NotionFieldSchema } from '@/lib/notion-store-schema';
 
 const NOTION_VERSION = '2022-06-28';
 const NOTION_VERSION_MULTI_SOURCE = '2025-09-03';
@@ -18,6 +35,10 @@ export const NOTION_DAILY_DB_BY_STORE: Record<StoreSlug, string> = {
 
 export function getNotionDailyDbId(storeId: StoreSlug): string {
   return NOTION_DAILY_DB_BY_STORE[storeId];
+}
+
+export function storeIdFromNotionDailyDbId(databaseId: string): StoreSlug {
+  return databaseId === NOTION_STORE2_DAILY_DATA_SOURCE_ID ? 'store2' : 'store1';
 }
 
 function isDataSourceQueryId(id: string): boolean {
@@ -241,8 +262,6 @@ export async function probeNotionConnection(
   };
 }
 
-const NOTION_STAFF_PROPERTY = '師傅';
-
 /** 從 Notion 每日紀錄資料庫讀取「師傅」select 選項（與 Notion UI 下拉一致） */
 export async function fetchNotionStaffSelectOptions(
   storeId: StoreSlug,
@@ -251,6 +270,7 @@ export async function fetchNotionStaffSelectOptions(
   if (!token) return [];
 
   const databaseId = getNotionDailyDbId(storeId);
+  const staffProperty = getNotionPropertyName('師傅', storeId);
   const res = await fetch(probeUrlForId(databaseId), {
     headers: {
       Authorization: `Bearer ${token}`,
@@ -265,7 +285,7 @@ export async function fetchNotionStaffSelectOptions(
       { type?: string; select?: { options?: { name: string }[] } }
     >;
   };
-  const prop = data.properties?.[NOTION_STAFF_PROPERTY];
+  const prop = data.properties?.[staffProperty];
   if (prop?.type !== 'select' || !prop.select?.options) return [];
 
   return prop.select.options
@@ -312,10 +332,6 @@ function selectName(prop: { select?: { name: string } | null } | undefined): str
   return prop?.select?.name ?? null;
 }
 
-function multiSelectNames(prop: { multi_select?: { name: string }[] } | undefined): string[] {
-  return (prop?.multi_select ?? []).map((o) => o.name);
-}
-
 function numberValue(prop: { number?: number | null } | undefined): number {
   const n = prop?.number;
   return typeof n === 'number' && Number.isFinite(n) ? n : 0;
@@ -335,56 +351,39 @@ function checkboxValue(prop: { checkbox?: boolean } | undefined): boolean {
   return Boolean(prop?.checkbox);
 }
 
-/** 文一店「使用位置」→ 民有店「付款方式」語意 */
-function mapStore2PaymentLocation(location: string | null): string[] {
-  if (!location) return [];
-  switch (location) {
-    case '現金':
-      return ['現金'];
-    case '郵局':
-      return ['富邦'];
-    case 'VIP':
-      return ['會員使用'];
-    case 'Line':
-      return ['Line'];
-    default:
-      return [location];
-  }
-}
-
-function resolvePaymentMethods(props: Record<string, unknown>): string[] {
-  const multi = multiSelectNames(
-    props['付款方式'] as { multi_select?: { name: string }[] } | undefined,
-  );
-  if (multi.length) return multi;
-  return mapStore2PaymentLocation(
-    selectName(props['使用位置'] as { select?: { name: string } | null } | undefined),
-  );
-}
-
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mapNotionPage(page: any): NotionDailyRow {
-  const props = page.properties ?? {};
+function mapNotionPage(page: any, storeId: StoreSlug): NotionDailyRow {
+  const props = (page.properties ?? {}) as Record<string, unknown>;
+  const titleProp = getNotionProperty(props, '名稱電話', storeId);
   const title =
-    textFromRich(props['名稱電話']) ||
-    textFromRich(props['Name']) ||
+    textFromRich(titleProp as { title?: { plain_text: string }[] } | undefined) ||
     page.id;
 
-  const amount =
-    numberValueOrNull(props['金額數字']) ??
-    numberValueOrNull(props['金額']) ??
-    0;
+  const amountProp = getNotionProperty(props, '金額數字', storeId);
+  const amount = numberValueOrNull(
+    amountProp as { number?: number | null } | undefined,
+  ) ?? 0;
+
+  const serviceTypeProp = getNotionProperty(props, '消費類型', storeId);
+  const staffProp = getNotionProperty(props, '師傅', storeId);
+  const designatedProp = getNotionProperty(props, '指定', storeId);
+  const noteProp = getNotionProperty(props, '會員備註', storeId);
+  const dateProp = getNotionProperty(props, 'Date', storeId);
 
   return {
     pageId: page.id,
     title,
-    dateStart: dateStart(props['Date']),
+    dateStart: dateStart(dateProp as { date?: { start: string } | null } | undefined),
     amount,
-    serviceType: selectName(props['消費類型']) ?? selectName(props['類型']),
-    paymentMethods: resolvePaymentMethods(props),
-    staffName: selectName(props['師傅']),
-    isDesignated: checkboxValue(props['指定']),
-    memberNote: textFromNote(props['會員備註']) || textFromNote(props['備註']) || null,
+    serviceType: selectName(
+      serviceTypeProp as { select?: { name: string } | null } | undefined,
+    ),
+    paymentMethods: resolveCanonicalPaymentMethods(props, storeId, title),
+    staffName: selectName(staffProp as { select?: { name: string } | null } | undefined),
+    isDesignated: checkboxValue(designatedProp as { checkbox?: boolean } | undefined),
+    memberNote:
+      textFromNote(noteProp as { rich_text?: { plain_text: string }[]; text?: string } | undefined) ||
+      null,
     lastEdited: page.last_edited_time ?? null,
   };
 }
@@ -393,6 +392,7 @@ export async function queryNotionDatabaseAll(
   databaseId: string,
   pageSize = 100,
 ): Promise<NotionDailyRow[]> {
+  const storeId = storeIdFromNotionDailyDbId(databaseId);
   const rows: NotionDailyRow[] = [];
   let cursor: string | undefined;
 
@@ -423,7 +423,7 @@ export async function queryNotionDatabaseAll(
     };
 
     for (const page of data.results) {
-      rows.push(mapNotionPage(page));
+      rows.push(mapNotionPage(page, storeId));
     }
 
     cursor = data.has_more ? (data.next_cursor ?? undefined) : undefined;
