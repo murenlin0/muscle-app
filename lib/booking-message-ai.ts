@@ -216,7 +216,12 @@ async function callGeminiParse(
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
     if (response.status === 429) {
-      throw new BookingParseIncompleteError('AI 額度已用完，請至 Google AI Studio 確認配額或稍後再試');
+      if (detail.includes('limit: 0')) {
+        throw new BookingParseIncompleteError(
+          'AI 金鑰無法使用（免費額度為 0），請至 Google AI Studio 重新建立金鑰（AIzaSy 開頭）',
+        );
+      }
+      throw new BookingParseIncompleteError('AI 額度已用完，請稍後再試');
     }
     if (response.status === 401 || response.status === 403) {
       throw new BookingParseIncompleteError('AI 金鑰無效，請檢查 GEMINI_API_KEY');
@@ -273,5 +278,20 @@ export async function parseBookingMessageWithAi(
 }
 
 export function isGeminiConfigured(): boolean {
-  return Boolean(process.env.GEMINI_API_KEY?.trim());
+  const key = process.env.GEMINI_API_KEY?.trim();
+  return Boolean(key?.startsWith('AIzaSy'));
+}
+
+export function assertGeminiConfigured(): void {
+  const key = process.env.GEMINI_API_KEY?.trim();
+  if (!key) {
+    throw new BookingParseIncompleteError(
+      'AI 解析尚未啟用，請在 Vercel 或 .env.local 設定 GEMINI_API_KEY',
+    );
+  }
+  if (!key.startsWith('AIzaSy')) {
+    throw new BookingParseIncompleteError(
+      'GEMINI_API_KEY 格式不正確，請至 Google AI Studio 建立金鑰（以 AIzaSy 開頭）',
+    );
+  }
 }

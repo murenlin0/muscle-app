@@ -1,5 +1,6 @@
 import { parseBookingMessage, type BookingMessageData } from '@/lib/booking-message';
 import {
+  assertGeminiConfigured,
   BookingParseIncompleteError,
   isGeminiConfigured,
   parseBookingMessageWithAiEx,
@@ -38,9 +39,7 @@ export async function parseBookingForStaffPreview(
   options?: { roster?: StaffRosterEntry[] },
 ): Promise<BookingParseResult> {
   if (!isGeminiConfigured()) {
-    throw new BookingParseIncompleteError(
-      'AI 解析尚未啟用，請在 Vercel 或 .env.local 設定 GEMINI_API_KEY',
-    );
+    assertGeminiConfigured();
   }
   const roster = options?.roster ?? (await listActiveStaffForRoster());
   const result = await parseBookingMessageWithAiEx(text, roster);
