@@ -93,6 +93,8 @@ export function ReportsDashboard({
   const [store, setStore] = useState<StoreSlug>(storeFilter ?? 'store1');
   const [category, setCategory] = useState<TransactionCategory | ''>('');
   const [ledgerPresetFilter, setLedgerPresetFilter] = useState<LedgerPresetFilter | null>(null);
+  const [staffFilter, setStaffFilter] = useState<string | null>(null);
+  const [aiCategoryFilter, setAiCategoryFilter] = useState<TransactionCategory[] | null>(null);
   const [report, setReport] = useState<ReportList | null>(null);
   const [overview, setOverview] = useState<FinancialOverview | null>(null);
   const [stats, setStats] = useState({ totalRows: 0, totalAmount: 0 });
@@ -126,8 +128,9 @@ export function ReportsDashboard({
       if (cats) return cats;
     }
     if (category) return [category];
+    if (aiCategoryFilter?.length) return aiCategoryFilter;
     return null;
-  }, [ledgerPresetFilter, category]);
+  }, [ledgerPresetFilter, category, aiCategoryFilter]);
 
   const activeAccount = useMemo(
     () => (ledgerPresetFilter ? accountForLedgerPreset(ledgerPresetFilter) : null),
@@ -138,7 +141,7 @@ export function ReportsDashboard({
 
   const filterPresetLabel = ledgerPresetFilter ? labelForLedgerPreset(ledgerPresetFilter) : null;
 
-  const showFilterBar = Boolean(filterCategories?.length || activeAccount);
+  const showFilterBar = Boolean(filterCategories?.length || activeAccount || staffFilter);
 
   const displayRows = useMemo(() => {
     const rows = report?.rows ?? [];
@@ -175,6 +178,7 @@ export function ReportsDashboard({
         qs.set('categories', activeCategories.join(','));
       }
       if (activeAccount) qs.set('account', activeAccount);
+      if (staffFilter) qs.set('staffName', staffFilter);
 
       try {
         const txRes = await fetch(`/api/portal/reports/transactions?${qs}`, { cache: 'no-store' });
@@ -224,7 +228,7 @@ export function ReportsDashboard({
         setLoading(false);
       }
     },
-    [from, to, activeStore, activeCategories, activeAccount],
+    [from, to, activeStore, activeCategories, activeAccount, staffFilter],
   );
 
   const loadOverview = useCallback(async () => {
@@ -261,7 +265,7 @@ export function ReportsDashboard({
   useEffect(() => {
     void load(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [from, to, activeStore, activeCategories, activeAccount]);
+  }, [from, to, activeStore, activeCategories, activeAccount, staffFilter]);
 
   useEffect(() => {
     if (!ledgerPresetFilter) return;
@@ -376,15 +380,24 @@ export function ReportsDashboard({
     if (showStorePicker && filter.store) {
       setStore(filter.store);
     }
+    setStaffFilter(filter.staffName?.trim() || null);
+
     if (filter.account) {
       setLedgerPresetFilter(filter.account === '現金' ? 'cash' : 'fubon');
       setCategory('');
+      setAiCategoryFilter(null);
     } else if (filter.categories && filter.categories.length === 1) {
       setCategory(filter.categories[0]!);
+      setLedgerPresetFilter(null);
+      setAiCategoryFilter(null);
+    } else if (filter.categories && filter.categories.length > 1) {
+      setAiCategoryFilter(filter.categories);
+      setCategory('');
       setLedgerPresetFilter(null);
     } else {
       setCategory('');
       setLedgerPresetFilter(null);
+      setAiCategoryFilter(null);
     }
   }
 
@@ -479,7 +492,10 @@ export function ReportsDashboard({
           ledgerPresetFilter={ledgerPresetFilter}
           onLedgerPresetFilter={(preset) => {
             setLedgerPresetFilter(preset);
-            if (preset) setCategory('');
+            if (preset) {
+              setCategory('');
+              setAiCategoryFilter(null);
+            }
           }}
         />
       </section>
@@ -495,6 +511,7 @@ export function ReportsDashboard({
                 onChange={(e) => {
                   const next = e.target.value as TransactionCategory | '';
                   setCategory(next);
+                  setAiCategoryFilter(null);
                   if (next) setLedgerPresetFilter(null);
                 }}
                 className="flex h-9 min-w-[8rem] rounded-md border border-[#444] bg-[#252525] px-2 text-sm"
@@ -541,12 +558,22 @@ export function ReportsDashboard({
             {filterPresetLabel ? (
               <span className="text-xs text-[#666]">（{filterPresetLabel}）</span>
             ) : null}
+            {staffFilter ? (
+              <>
+                <span className="text-sm text-[#666]">師傅</span>
+                <span className="inline-flex shrink-0 rounded-full border border-primary/40 bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
+                  {staffFilter}
+                </span>
+              </>
+            ) : null}
             <button
               type="button"
               className="ml-auto rounded px-2 py-0.5 text-xs text-[#888] hover:bg-[#252525] hover:text-[#ccc]"
               onClick={() => {
                 setLedgerPresetFilter(null);
                 setCategory('');
+                setAiCategoryFilter(null);
+                setStaffFilter(null);
               }}
             >
               清除篩選

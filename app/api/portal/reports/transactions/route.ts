@@ -18,6 +18,7 @@ export async function GET(request: Request) {
   const pageParam = url.searchParams.get('page');
   const pageSizeParam = url.searchParams.get('pageSize');
   const clientPhoneParam = url.searchParams.get('clientPhone');
+  const staffNameParam = url.searchParams.get('staffName');
   const accountParam = url.searchParams.get('account');
   const skipMeta = url.searchParams.get('meta') === '0';
   const mode = pageParam !== null ? 'page' as const : 'all' as const;
@@ -63,6 +64,7 @@ export async function GET(request: Request) {
       page: pageParam !== null ? Number(pageParam) : undefined,
       pageSize: pageSizeParam ? Number(pageSizeParam) : undefined,
       clientPhone: clientPhoneParam ?? undefined,
+      staffName: staffNameParam?.trim() || undefined,
       ledgerAccount,
       includeVipPhones: !skipMeta,
       skipMeta,

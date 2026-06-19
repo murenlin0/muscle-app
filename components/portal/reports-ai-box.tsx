@@ -19,6 +19,7 @@ const SAMPLES = [
   '今年到現在的總營業額',
   '上個月工資支出多少',
   '仁今年的服務有幾筆',
+  '只看這個月的會員儲值',
 ];
 
 export function ReportsAiBox({
@@ -70,9 +71,12 @@ export function ReportsAiBox({
 
   return (
     <div className="space-y-3 rounded-md border border-primary/30 bg-[#161616] p-3">
-      <div className="flex items-center gap-2 text-sm font-medium text-primary">
+      <div className="flex flex-wrap items-center gap-2 text-sm font-medium text-primary">
         <Sparkles className="size-4" />
         AI 報表助手
+        <span className="rounded-full border border-[#444] px-2 py-0.5 text-[10px] font-normal text-[#888]">
+          僅查詢與篩選，不會修改資料
+        </span>
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row">

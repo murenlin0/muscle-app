@@ -121,6 +121,7 @@ async function sumTransactionAmounts(
   category?: TransactionCategoryFilter,
   clientPhone?: string,
   ledgerAccount?: LedgerAccountFilter,
+  staffName?: string,
 ): Promise<number> {
   const supabase = getSupabaseAdmin();
   const amounts = await fetchAllPages<{
@@ -138,6 +139,7 @@ async function sumTransactionAmounts(
     q = applyCategoryFilter(q, category);
     q = applyLedgerAccountDbFilter(q, ledgerAccount);
     if (clientPhone) q = applyClientPhoneQuery(q, clientPhone);
+    if (staffName) q = applyStaffNameQuery(q, staffName);
     return q;
   });
   return amounts
@@ -168,6 +170,14 @@ function applyClientPhoneQuery<T extends { or: (filters: string) => T }>(
   clientPhone: string,
 ): T {
   return q.or(`client_phone.eq.${clientPhone},title.ilike.%${clientPhone}%`);
+}
+
+function applyStaffNameQuery<T extends { or: (filters: string) => T }>(
+  q: T,
+  staffName: string,
+): T {
+  const safe = staffName.trim().replace(/[%,()]/g, '');
+  return q.or(`staff_name.ilike.%${safe}%,title.ilike.%${safe}%`);
 }
 
 function mapTxRow(row: TxDbRow): DailyTransactionListItem {
@@ -235,11 +245,12 @@ async function countTransactions(
   category?: TransactionCategoryFilter,
   clientPhone?: string,
   ledgerAccount?: LedgerAccountFilter,
+  staffName?: string,
 ): Promise<number> {
   if (ledgerAccount) {
     const rows = await fetchAllPages<{ category: string; payment_methods: string[] }>(
       async (offset, pageSize) => {
-        let q = supabaseCountQuery(from, to, storeId, category, clientPhone, ledgerAccount);
+        let q = supabaseCountQuery(from, to, storeId, category, clientPhone, ledgerAccount, staffName);
         return q.range(offset, offset + pageSize - 1);
       },
     );
@@ -255,6 +266,7 @@ async function countTransactions(
   if (storeId) q = q.eq('store_id', storeId);
   q = applyCategoryFilter(q, category);
   if (clientPhone) q = applyClientPhoneQuery(q, clientPhone);
+  if (staffName) q = applyStaffNameQuery(q, staffName);
   const { count, error } = await q;
   if (error) throw new Error(error.message);
   return count ?? 0;
@@ -267,6 +279,7 @@ function supabaseCountQuery(
   category?: TransactionCategoryFilter,
   clientPhone?: string,
   ledgerAccount?: LedgerAccountFilter,
+  staffName?: string,
 ) {
   const supabase = getSupabaseAdmin();
   let q = supabase
@@ -278,6 +291,7 @@ function supabaseCountQuery(
   q = applyCategoryFilter(q, category);
   q = applyLedgerAccountDbFilter(q, ledgerAccount);
   if (clientPhone) q = applyClientPhoneQuery(q, clientPhone);
+  if (staffName) q = applyStaffNameQuery(q, staffName);
   return q;
 }
 
@@ -288,6 +302,7 @@ async function fetchTransactionRows(
   category?: TransactionCategoryFilter,
   clientPhone?: string,
   ledgerAccount?: LedgerAccountFilter,
+  staffName?: string,
 ): Promise<DailyTransactionListItem[]> {
   const supabase = getSupabaseAdmin();
 
@@ -307,6 +322,7 @@ async function fetchTransactionRows(
     q = applyCategoryFilter(q, category);
     q = applyLedgerAccountDbFilter(q, ledgerAccount);
     if (clientPhone) q = applyClientPhoneQuery(q, clientPhone);
+    if (staffName) q = applyStaffNameQuery(q, staffName);
     return q;
   });
 
@@ -328,6 +344,7 @@ async function fetchTransactionPage(
   pageSize: number,
   clientPhone?: string,
   ledgerAccount?: LedgerAccountFilter,
+  staffName?: string,
 ): Promise<DailyTransactionListItem[]> {
   const supabase = getSupabaseAdmin();
   const offset = page * pageSize;
@@ -342,6 +359,7 @@ async function fetchTransactionPage(
   q = applyCategoryFilter(q, category);
   q = applyLedgerAccountDbFilter(q, ledgerAccount);
   if (clientPhone) q = applyClientPhoneQuery(q, clientPhone);
+  if (staffName) q = applyStaffNameQuery(q, staffName);
   q = q
     .order('occurred_on', { ascending: false })
     .order('created_at', { ascending: false })
@@ -371,6 +389,7 @@ export async function listDailyTransactions(
     mode?: 'all' | 'page';
     clientPhone?: string;
     ledgerAccount?: LedgerAccountFilter;
+    staffName?: string;
     includeVipPhones?: boolean;
     /** 翻頁時略過統計查詢（count／sum／VIP／最新日期），只抓當頁列 */
     skipMeta?: boolean;
@@ -380,6 +399,7 @@ export async function listDailyTransactions(
   const mode = options?.mode ?? 'all';
   const clientPhone = options?.clientPhone;
   const ledgerAccount = options?.ledgerAccount;
+  const staffName = options?.staffName;
 
   if (mode === 'page' && options?.skipMeta) {
     const page = options?.page ?? 0;
@@ -392,6 +412,7 @@ export async function listDailyTransactions(
       pageSize,
       clientPhone,
       ledgerAccount,
+      staffName,
     );
     return {
       from,
@@ -412,8 +433,8 @@ export async function listDailyTransactions(
 
   const page = options?.page ?? 0;
   const [totalCount, totalAmount, vipMemberPhones, latestRecordDate, rows] = await Promise.all([
-    countTransactions(from, to, storeId, category, clientPhone, ledgerAccount),
-    sumTransactionAmounts(from, to, storeId, category, clientPhone, ledgerAccount),
+    countTransactions(from, to, storeId, category, clientPhone, ledgerAccount, staffName),
+    sumTransactionAmounts(from, to, storeId, category, clientPhone, ledgerAccount, staffName),
     options?.includeVipPhones && storeId
       ? getVipMemberPhones(storeId)
       : Promise.resolve(undefined),
@@ -428,8 +449,9 @@ export async function listDailyTransactions(
           pageSize,
           clientPhone,
           ledgerAccount,
+          staffName,
         )
-      : fetchTransactionRows(from, to, storeId, category, clientPhone, ledgerAccount),
+      : fetchTransactionRows(from, to, storeId, category, clientPhone, ledgerAccount, staffName),
   ]);
 
   if (mode === 'page') {
