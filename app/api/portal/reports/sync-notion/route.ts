@@ -3,6 +3,7 @@ import { requireSuperAdmin } from '@/lib/portal-api';
 import {
   buildNotionStaffUpdate,
   buildNotionTitleUpdate,
+  batchSyncNotionServiceHours,
   getNotionDailyDbId,
   queryNotionDatabaseAll,
   updateNotionPageProperties,
@@ -14,6 +15,7 @@ import {
 } from '@/lib/notion-daily-import';
 import { migrateLedgerData } from '@/lib/ledger-migrate-server';
 import { normalizeStaffName } from '@/lib/notion-title-normalize';
+import { mapNotionServiceTypeToCategory } from '@/lib/transaction-category';
 import { isStoreSlug, type StoreSlug } from '@/lib/stores';
 
 export async function POST(request: Request) {
@@ -64,6 +66,15 @@ export async function POST(request: Request) {
       }
     }
 
+    let serviceHoursUpdated = 0;
+    if (!dryRun) {
+      serviceHoursUpdated = await batchSyncNotionServiceHours(
+        notionRows,
+        storeId,
+        (row) => mapNotionServiceTypeToCategory(row.serviceType, row.paymentMethods),
+      );
+    }
+
     const transactions = notionRows.map((row) =>
       mapNotionRowToTransaction(
         { ...row, staffName: normalizeStaffName(row.staffName) },
@@ -104,6 +115,7 @@ export async function POST(request: Request) {
       notionRows: notionRows.length,
       notionNormalizeCandidates: previews.length,
       notionUpdated: dryRun ? 0 : notionUpdated,
+      serviceHoursUpdated: dryRun ? 0 : serviceHoursUpdated,
       upserted: dryRun ? 0 : upserted,
       wiped: dryRun ? 0 : wiped,
       migrateReport,

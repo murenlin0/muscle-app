@@ -9,6 +9,7 @@ import {
   ReportsAiError,
   type ReportQueryIntent,
 } from '@/lib/reports-ai';
+import { minutesFromTitle } from '@/lib/service-hours';
 import { getStore, type StoreSlug } from '@/lib/stores';
 
 export const dynamic = 'force-dynamic';
@@ -25,11 +26,8 @@ function staffMatches(rowStaff: string | null, target: string): boolean {
 }
 
 /** 從標題解析服務分鐘數，例如「仁60分王小明0912…」→ 60 */
-function minutesFromTitle(title: string): number {
-  const m = title.match(/(\d{2,3})\s*分/);
-  if (!m) return 0;
-  const n = Number(m[1]);
-  return Number.isFinite(n) ? n : 0;
+function titleMinutes(title: string): number {
+  return minutesFromTitle(title) ?? 0;
 }
 
 const SERVICE_CATEGORIES = ['一般消費', '會員使用', '會員補差額'] as const;
@@ -138,7 +136,7 @@ async function computeAnswer(
     let beforeMinutes = 0;
     let afterMinutes = 0;
     for (const r of rows) {
-      const mins = minutesFromTitle(r.title);
+      const mins = titleMinutes(r.title);
       totalMinutes += mins;
       if (intent.rateEffectiveFrom && intent.priorRate) {
         if (r.occurredOn >= intent.rateEffectiveFrom) afterMinutes += mins;

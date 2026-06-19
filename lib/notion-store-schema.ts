@@ -10,6 +10,7 @@ export const NOTION_CANONICAL_FIELDS = [
   '師傅',
   '指定',
   '會員備註',
+  '時數',
 ] as const;
 
 export type NotionCanonicalField = (typeof NOTION_CANONICAL_FIELDS)[number];
@@ -41,6 +42,7 @@ export interface NotionFieldSchema {
  * | 師傅 | 師傅 | 師傅 | ✓ select | 選項文字不同（normalizeStaffName 處理） |
  * | 指定 | 指定 | 指定 | ✓ checkbox | 同名 |
  * | 會員備註 | 會員備註 | 備註 | ✓ text | 文一欄位名不同 |
+ * | 時數 | 時數 | 時數 | ✓ number | 由標題分鐘數計算，僅一般消費／會員使用 |
  *
  * 文一店僅有、無民有對應：介紹、優惠卷/特約、上課簽到、工資結構、公式欄（10M*、六抽、餘額計算…）
  * 民有店僅有、無文一對應：付款方式選項（仁中信、街口）、會員餘額公式、150/180 分 VIP 等
@@ -58,6 +60,7 @@ export const NOTION_SCHEMA_BY_STORE: Record<
     師傅: { notionProperty: '師傅', notionType: 'select' },
     指定: { notionProperty: '指定', notionType: 'checkbox' },
     會員備註: { notionProperty: '會員備註', notionType: 'text' },
+    時數: { notionProperty: '時數', notionType: 'number' },
   },
   store2: {
     名稱電話: { notionProperty: '名稱電話', notionType: 'title' },
@@ -68,6 +71,7 @@ export const NOTION_SCHEMA_BY_STORE: Record<
     師傅: { notionProperty: '師傅', notionType: 'select' },
     指定: { notionProperty: '指定', notionType: 'checkbox' },
     會員備註: { notionProperty: '備註', notionType: 'text' },
+    時數: { notionProperty: '時數', notionType: 'number' },
   },
 };
 

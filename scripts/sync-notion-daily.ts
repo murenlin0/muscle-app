@@ -13,6 +13,7 @@ loadEnvLocal();
 import {
   buildNotionStaffUpdate,
   buildNotionTitleUpdate,
+  batchSyncNotionServiceHours,
   getNotionDailyDbId,
   queryNotionDatabaseAll,
   updateNotionPageProperties,
@@ -27,6 +28,7 @@ import {
   normalizeNotionTitle,
   normalizeStaffName,
 } from '../lib/notion-title-normalize';
+import { mapNotionServiceTypeToCategory } from '../lib/transaction-category';
 import { isStoreSlug, type StoreSlug } from '../lib/stores';
 
 const dryRun = process.argv.includes('--dry-run');
@@ -69,6 +71,15 @@ async function main() {
       }
     }
     console.log(`Notion 已更新 ${updated} 筆`);
+  }
+
+  if (!dryRun) {
+    const serviceHoursUpdated = await batchSyncNotionServiceHours(
+      rows,
+      storeId,
+      (row) => mapNotionServiceTypeToCategory(row.serviceType, row.paymentMethods),
+    );
+    console.log(`Notion 時數已更新 ${serviceHoursUpdated} 筆`);
   }
 
   const transactions = rows.map((row) =>

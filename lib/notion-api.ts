@@ -1,5 +1,9 @@
 import type { StoreSlug } from '@/lib/stores';
 import {
+  computeServiceHours,
+  serviceHoursEqual,
+} from '@/lib/service-hours';
+import {
   getNotionProperty,
   getNotionPropertyName,
   resolveCanonicalPaymentMethods,
@@ -74,6 +78,7 @@ export interface NotionDailyRow {
   isDesignated: boolean;
   memberNote: string | null;
   lastEdited: string | null;
+  serviceHours: number | null;
 }
 
 const NOTION_KEY_ENV_NAMES = [
@@ -369,6 +374,7 @@ function mapNotionPage(page: any, storeId: StoreSlug): NotionDailyRow {
   const designatedProp = getNotionProperty(props, '指定', storeId);
   const noteProp = getNotionProperty(props, '會員備註', storeId);
   const dateProp = getNotionProperty(props, 'Date', storeId);
+  const serviceHoursProp = getNotionProperty(props, '時數', storeId);
 
   return {
     pageId: page.id,
@@ -385,6 +391,9 @@ function mapNotionPage(page: any, storeId: StoreSlug): NotionDailyRow {
       textFromNote(noteProp as { rich_text?: { plain_text: string }[]; text?: string } | undefined) ||
       null,
     lastEdited: page.last_edited_time ?? null,
+    serviceHours: numberValueOrNull(
+      serviceHoursProp as { number?: number | null } | undefined,
+    ),
   };
 }
 
@@ -484,6 +493,10 @@ export async function createNotionDailyPage(
   if (input.paymentMethods?.length) {
     properties['付款方式'] = { multi_select: input.paymentMethods.map((name) => ({ name })) };
   }
+  const hours = computeServiceHours(input.title, input.serviceType);
+  if (hours != null) {
+    properties['時數'] = { number: hours };
+  }
 
   const res = await fetch('https://api.notion.com/v1/pages', {
     method: 'POST',
@@ -517,6 +530,48 @@ export function buildNotionPaymentUpdate(paymentMethods: string[]) {
       multi_select: paymentMethods.map((name) => ({ name })),
     },
   };
+}
+
+export function buildNotionServiceHoursUpdate(
+  hours: number | null,
+  storeId: StoreSlug,
+): Record<string, unknown> {
+  const propName = getNotionPropertyName('時數', storeId);
+  return {
+    [propName]: { number: hours },
+  };
+}
+
+export async function syncNotionServiceHours(
+  pageId: string,
+  storeId: StoreSlug,
+  title: string,
+  category: string,
+): Promise<void> {
+  const hours = computeServiceHours(title, category);
+  await updateNotionPageProperties(
+    pageId,
+    buildNotionServiceHoursUpdate(hours, storeId),
+  );
+}
+
+/** 同步 Notion 時數欄位；僅在計算值與現值不同時寫入 */
+export async function batchSyncNotionServiceHours(
+  rows: NotionDailyRow[],
+  storeId: StoreSlug,
+  getCategory: (row: NotionDailyRow) => string,
+): Promise<number> {
+  let updated = 0;
+  for (const row of rows) {
+    const computed = computeServiceHours(row.title, getCategory(row));
+    if (serviceHoursEqual(computed, row.serviceHours)) continue;
+    await updateNotionPageProperties(
+      row.pageId,
+      buildNotionServiceHoursUpdate(computed, storeId),
+    );
+    updated += 1;
+  }
+  return updated;
 }
 
 /** 封存（刪除）Notion 頁面 */

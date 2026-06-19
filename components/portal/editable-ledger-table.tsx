@@ -14,6 +14,10 @@ import {
   normalizeLedgerAmount,
   shouldShowLedgerAccount,
 } from '@/lib/ledger-amount';
+import {
+  computeServiceHours,
+  formatServiceHours,
+} from '@/lib/service-hours';
 import type { StoreSlug } from '@/lib/stores';
 import {
   TRANSACTION_CATEGORIES,
@@ -33,7 +37,7 @@ export interface LedgerRow {
   clientPhone: string | null;
 }
 
-type ColKey = 'date' | 'title' | 'amount' | 'category' | 'payment' | 'staff' | 'client';
+type ColKey = 'date' | 'title' | 'amount' | 'category' | 'payment' | 'staff' | 'serviceHours' | 'client';
 type RowStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 const COL_LABELS: Record<ColKey, string> = {
@@ -43,10 +47,11 @@ const COL_LABELS: Record<ColKey, string> = {
   category: '類型',
   payment: '更動的帳戶',
   staff: '人員',
+  serviceHours: '時數',
   client: '客人',
 };
 
-const colOrder: ColKey[] = ['date', 'title', 'amount', 'category', 'payment', 'staff', 'client'];
+const colOrder: ColKey[] = ['date', 'title', 'amount', 'category', 'payment', 'staff', 'serviceHours', 'client'];
 
 const DEFAULT_WIDTHS: Record<ColKey, number> = {
   date: 132,
@@ -55,6 +60,7 @@ const DEFAULT_WIDTHS: Record<ColKey, number> = {
   category: 120,
   payment: 80,
   staff: 88,
+  serviceHours: 56,
   client: 140,
 };
 
@@ -65,6 +71,7 @@ const MIN_WIDTHS: Record<ColKey, number> = {
   category: 108,
   payment: 76,
   staff: 64,
+  serviceHours: 48,
   client: 96,
 };
 
@@ -488,10 +495,10 @@ export function EditableLedgerTable({
                   key={col}
                   className={cn(
                     'relative select-none px-0 py-0 font-medium',
-                    col === 'amount' ? 'text-right' : 'text-left',
+                    col === 'amount' || col === 'serviceHours' ? 'text-right' : 'text-left',
                   )}
                 >
-                  <div className={cn('flex h-9 items-center px-2', col === 'amount' && 'justify-end')}>
+                  <div className={cn('flex h-9 items-center px-2', (col === 'amount' || col === 'serviceHours') && 'justify-end')}>
                     {COL_LABELS[col]}
                   </div>
                   <div
@@ -509,13 +516,13 @@ export function EditableLedgerTable({
           <tbody>
             {showInitialEmpty ? (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-[#888]">
+                <td colSpan={9} className="px-4 py-10 text-center text-[#888]">
                   載入中…
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={8} className="px-4 py-10 text-center text-[#888]">
+                <td colSpan={9} className="px-4 py-10 text-center text-[#888]">
                   尚無資料，請按下方新增一列。
                 </td>
               </tr>
@@ -650,6 +657,16 @@ export function EditableLedgerTable({
                           <option value={row.staffName}>{row.staffName}</option>
                         ) : null}
                       </select>
+                    </td>
+                    <td className="p-0 align-middle">
+                      <span
+                        className="block px-2 py-1.5 text-right tabular-nums text-[#bbb]"
+                        title="由標題分鐘數自動計算"
+                      >
+                        {formatServiceHours(
+                          computeServiceHours(row.title, row.category),
+                        )}
+                      </span>
                     </td>
                     <td className="p-0 align-middle">
                       {(() => {

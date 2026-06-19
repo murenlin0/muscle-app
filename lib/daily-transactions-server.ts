@@ -1,4 +1,9 @@
 import { syncClientFieldsFromTitle } from '@/lib/ledger-client-detect';
+import {
+  buildNotionServiceHoursUpdate,
+  updateNotionPageProperties,
+} from '@/lib/notion-api';
+import { computeServiceHours } from '@/lib/service-hours';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { normalizeLedgerAccounts } from '@/lib/ledger-accounts';
 import { normalizeLedgerAmount } from '@/lib/ledger-amount';
@@ -91,12 +96,13 @@ export async function updateDailyTransaction(
   let existingTitle = '';
   let existingClientName: string | null = null;
   let existingClientPhone: string | null = null;
+  let existingNotionPageId: string | null = null;
 
   if (needsExisting) {
     const { data, error: fetchErr } = await supabase
       .from('daily_transactions')
       .select(
-        'category, amount, payment_methods, title, client_name, client_phone',
+        'category, amount, payment_methods, title, client_name, client_phone, notion_page_id',
       )
       .eq('id', id)
       .eq('store_id', storeId)
@@ -108,6 +114,7 @@ export async function updateDailyTransaction(
     existingTitle = (data.title as string) ?? '';
     existingClientName = (data.client_name as string | null) ?? null;
     existingClientPhone = (data.client_phone as string | null) ?? null;
+    existingNotionPageId = (data.notion_page_id as string | null) ?? null;
   }
 
   const category =
@@ -160,6 +167,24 @@ export async function updateDailyTransaction(
     .eq('store_id', storeId);
 
   if (error) throw new Error(error.message);
+
+  const titleChanged = input.title !== undefined;
+  const categoryChanged = input.category !== undefined;
+  if ((titleChanged || categoryChanged) && existingNotionPageId) {
+    const pageId = existingNotionPageId.split('#')[0];
+    const effectiveTitle =
+      input.title !== undefined ? input.title.trim() : existingTitle;
+    const effectiveCategory = category ?? existingCategory ?? '一般消費';
+    const hours = computeServiceHours(effectiveTitle, effectiveCategory);
+    try {
+      await updateNotionPageProperties(
+        pageId,
+        buildNotionServiceHoursUpdate(hours, storeId),
+      );
+    } catch {
+      // Notion 時數同步失敗不阻擋 DB 更新
+    }
+  }
 }
 
 export async function deleteDailyTransaction(id: string, storeId: StoreSlug) {
