@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { migrateLedgerData } from '@/lib/ledger-migrate-server';
-import { requireReportsAccess } from '@/lib/portal-api';
+import { parseReportStoreParam, requireReportsAccess } from '@/lib/portal-api';
 import type { StoreSlug } from '@/lib/stores';
 
 export async function POST(request: Request) {
@@ -19,7 +19,13 @@ export async function POST(request: Request) {
   }
 
   const storeId =
-    session.role === 'store' ? session.storeId : body.storeId ?? 'store1';
+    session.role === 'store'
+      ? session.storeId
+      : parseReportStoreParam(body.storeId);
+
+  if (!storeId) {
+    return NextResponse.json({ error: '請提供 storeId' }, { status: 400 });
+  }
 
   try {
     const report = await migrateLedgerData(storeId);

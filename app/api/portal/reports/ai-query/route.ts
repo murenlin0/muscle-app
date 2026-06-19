@@ -1,15 +1,15 @@
 import { NextResponse } from 'next/server';
-import { requireReportsAccess } from '@/lib/portal-api';
+import { parseReportStoreParam, requireReportsAccess } from '@/lib/portal-api';
 import { listActiveStaffForRoster } from '@/lib/staff-auth-server';
 import { listDailyTransactions } from '@/lib/reports-server';
 import {
+  asksAllStoresReport,
   extractReportQuery,
   isReportsAiConfigured,
   ReportsAiError,
   type ReportQueryIntent,
 } from '@/lib/reports-ai';
-import type { StoreSlug } from '@/lib/stores';
-import { getStore, isStoreSlug } from '@/lib/stores';
+import { getStore, type StoreSlug } from '@/lib/stores';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,35 +54,41 @@ export async function POST(request: Request) {
     );
   }
 
-  const session = await requireReportsAccess(body.store ?? undefined);
+  const session = await requireReportsAccess(parseReportStoreParam(body.store) ?? undefined);
   if (session instanceof NextResponse) return session;
 
   try {
     const roster = await listActiveStaffForRoster();
     const intent = await extractReportQuery(question, roster);
+    const wantsAllStores = asksAllStoresReport(question);
 
-    // 權限：店家帳號只能查自己分店；管理員未指定分店時沿用畫面目前分店
-    let store = intent.store;
+    // 權限：店家帳號只能查自己分店；其餘預設沿用畫面目前分店
+    let store: StoreSlug | undefined;
     if (session.role === 'store') {
       const allowed = session.storeIds;
-      if (store && !allowed.includes(store)) {
+      if (intent.store && !allowed.includes(intent.store)) {
         return NextResponse.json({ error: '無權查看其他分店' }, { status: 403 });
       }
-      store = store ?? session.storeId;
-    } else if (!store && body.store && isStoreSlug(body.store)) {
-      store = body.store;
+      store = intent.store ?? session.storeId;
+    } else if (wantsAllStores) {
+      store = intent.store ?? undefined;
+    } else {
+      store = intent.store ?? parseReportStoreParam(body.store) ?? undefined;
+      if (!store) {
+        return NextResponse.json({ error: '請指定分店' }, { status: 400 });
+      }
     }
 
     const filter = {
       from: intent.from,
       to: intent.to,
-      store: store ?? null,
+      store: wantsAllStores && !store ? null : (store ?? null),
       staffName: intent.staffName,
       categories: intent.categories,
       account: intent.account,
     };
 
-    const answer = await computeAnswer(intent, store ?? undefined);
+    const answer = await computeAnswer(intent, store, wantsAllStores && !store);
 
     return NextResponse.json({ filter, intent, answer });
   } catch (e) {
@@ -97,9 +103,16 @@ export async function POST(request: Request) {
 async function computeAnswer(
   intent: ReportQueryIntent,
   store: StoreSlug | undefined,
+  allowAllStores: boolean,
 ): Promise<string> {
   const storeLabel = store ? getStore(store)?.name ?? store : '全部分店';
   const range = `${intent.from} ~ ${intent.to}`;
+  const listOptions = {
+    mode: 'all' as const,
+    skipMeta: false,
+    includeVipPhones: false,
+    allowAllStores,
+  };
 
   // salary：估算師傅薪資（依服務時長 × 時薪）
   if (intent.intent === 'salary') {
@@ -114,7 +127,7 @@ async function computeAnswer(
       intent.to,
       store,
       [...SERVICE_CATEGORIES],
-      { mode: 'all', skipMeta: false, includeVipPhones: false },
+      { ...listOptions },
     );
     const rows = report.rows.filter((r) => staffMatches(r.staffName, intent.staffName!));
     if (!rows.length) {
@@ -163,9 +176,7 @@ async function computeAnswer(
     store,
     intent.categories ?? undefined,
     {
-      mode: 'all',
-      skipMeta: false,
-      includeVipPhones: false,
+      ...listOptions,
       ledgerAccount: intent.account ?? undefined,
     },
   );

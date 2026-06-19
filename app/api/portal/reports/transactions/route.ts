@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { portalJson, requireReportsAccess } from '@/lib/portal-api';
+import { parseReportStoreParam, portalJson, requireReportsAccess, resolveReportStoreId } from '@/lib/portal-api';
 
 export const dynamic = 'force-dynamic';
 import { createDailyTransaction } from '@/lib/daily-transactions-server';
@@ -27,15 +27,14 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: '請提供 from、to（YYYY-MM-DD）' }, { status: 400 });
   }
 
-  const session = await requireReportsAccess(storeParam ?? undefined);
+  const session = await requireReportsAccess(parseReportStoreParam(storeParam) ?? undefined);
   if (session instanceof NextResponse) return session;
 
-  if (session.role === 'store' && storeParam && !session.storeIds.includes(storeParam)) {
-    return NextResponse.json({ error: '無權查看其他分店' }, { status: 403 });
+  const resolved = resolveReportStoreId(session, storeParam);
+  if (!resolved.ok) {
+    return NextResponse.json({ error: resolved.error }, { status: resolved.status });
   }
-
-  const storeId =
-    session.role === 'store' ? (storeParam ?? session.storeId) : storeParam ?? undefined;
+  const storeId = resolved.storeId;
 
   const category =
     categoryParam &&
@@ -98,7 +97,13 @@ export async function POST(request: Request) {
   }
 
   const storeId =
-    session.role === 'store' ? session.storeId : (body.storeId ?? 'store1');
+    session.role === 'store'
+      ? session.storeId
+      : parseReportStoreParam(body.storeId);
+
+  if (!storeId) {
+    return NextResponse.json({ error: '請提供 storeId' }, { status: 400 });
+  }
 
   if (!body.occurredOn || !body.title?.trim()) {
     return NextResponse.json({ error: '請填寫日期與標題' }, { status: 400 });

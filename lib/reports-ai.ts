@@ -26,6 +26,11 @@ export class ReportsAiError extends Error {
   }
 }
 
+/** 使用者明確要求跨店合計（僅此時可不加 store 篩選） */
+export function asksAllStoresReport(question: string): boolean {
+  return /全部分店|兩店合計|全部店|兩店總|所有分店|各店合計|兩店加總/.test(question);
+}
+
 /** AI 解析出的報表查詢意圖 */
 export interface ReportQueryIntent {
   /** filter＝只設篩選；sum＝加總金額；count＝筆數；salary＝估算師傅薪資 */

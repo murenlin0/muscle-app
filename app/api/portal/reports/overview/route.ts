@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { portalJson, requireReportsAccess } from '@/lib/portal-api';
+import { parseReportStoreParam, portalJson, requireReportsAccess, resolveReportStoreId } from '@/lib/portal-api';
 
 export const dynamic = 'force-dynamic';
 import { getFinancialOverview } from '@/lib/financial-summary-server';
@@ -15,15 +15,14 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: '請提供 from、to（YYYY-MM-DD）' }, { status: 400 });
   }
 
-  const session = await requireReportsAccess(storeParam ?? undefined);
+  const session = await requireReportsAccess(parseReportStoreParam(storeParam) ?? undefined);
   if (session instanceof NextResponse) return session;
 
-  if (session.role === 'store' && storeParam && !session.storeIds.includes(storeParam)) {
-    return NextResponse.json({ error: '無權查看其他分店' }, { status: 403 });
+  const resolved = resolveReportStoreId(session, storeParam);
+  if (!resolved.ok) {
+    return NextResponse.json({ error: resolved.error }, { status: resolved.status });
   }
-
-  const storeId =
-    session.role === 'store' ? (storeParam ?? session.storeId) : storeParam ?? 'store1';
+  const storeId = resolved.storeId;
 
   try {
     const overview = await getFinancialOverview(from, to, storeId);

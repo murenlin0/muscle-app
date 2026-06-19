@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireReportsAccess } from '@/lib/portal-api';
+import { parseReportStoreParam, requireReportsAccess } from '@/lib/portal-api';
 import {
   deleteDailyTransaction,
   updateDailyTransaction,
@@ -11,9 +11,9 @@ import type { StoreSlug } from '@/lib/stores';
 function resolveStoreId(
   session: Exclude<Awaited<ReturnType<typeof requireReportsAccess>>, NextResponse>,
   storeParam: StoreSlug | null,
-): StoreSlug {
+): StoreSlug | null {
   if (session.role === 'store') return session.storeId;
-  return storeParam ?? 'store1';
+  return parseReportStoreParam(storeParam);
 }
 
 export async function PATCH(
@@ -42,6 +42,9 @@ export async function PATCH(
   }
 
   const storeId = resolveStoreId(session, body.storeId ?? null);
+  if (!storeId) {
+    return NextResponse.json({ error: '請提供 storeId' }, { status: 400 });
+  }
 
   if (body.category && !(TRANSACTION_CATEGORIES as readonly string[]).includes(body.category)) {
     return NextResponse.json({ error: '無效的類型' }, { status: 400 });
@@ -76,6 +79,9 @@ export async function DELETE(
   const url = new URL(request.url);
   const storeParam = url.searchParams.get('store') as StoreSlug | null;
   const storeId = resolveStoreId(session, storeParam);
+  if (!storeId) {
+    return NextResponse.json({ error: '請提供 store 參數' }, { status: 400 });
+  }
 
   try {
     await deleteDailyTransaction(id, storeId);

@@ -9,8 +9,10 @@ export async function GET(request: Request) {
 
   const url = new URL(request.url);
   const storeParam = url.searchParams.get('store');
-  const storeId: StoreSlug =
-    storeParam && isStoreSlug(storeParam) ? storeParam : 'store1';
+  if (!storeParam || !isStoreSlug(storeParam)) {
+    return NextResponse.json({ error: '請提供 store 參數' }, { status: 400 });
+  }
+  const storeId = storeParam;
   const databaseId = getNotionDailyDbId(storeId);
 
   const result = await probeNotionConnection(databaseId);

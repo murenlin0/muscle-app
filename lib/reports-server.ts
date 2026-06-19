@@ -393,8 +393,14 @@ export async function listDailyTransactions(
     includeVipPhones?: boolean;
     /** 翻頁時略過統計查詢（count／sum／VIP／最新日期），只抓當頁列 */
     skipMeta?: boolean;
+    /** 僅 AI 明確問「全部分店／兩店合計」時允許不帶 storeId */
+    allowAllStores?: boolean;
   },
 ): Promise<ReportListResult> {
+  if (!storeId && !options?.allowAllStores) {
+    throw new Error('必須指定分店 storeId');
+  }
+
   const pageSize = options?.pageSize ?? TX_PAGE_SIZE;
   const mode = options?.mode ?? 'all';
   const clientPhone = options?.clientPhone;

@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { requireReportsAccess } from '@/lib/portal-api';
+import { parseReportStoreParam, requireReportsAccess, resolveReportStoreId } from '@/lib/portal-api';
 import { listDailyTransactions, revenueTotalFromRows } from '@/lib/reports-server';
 import type { StoreSlug } from '@/lib/stores';
 
@@ -13,22 +13,21 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: '請提供 from、to（YYYY-MM-DD）' }, { status: 400 });
   }
 
-  const session = await requireReportsAccess(storeParam ?? undefined);
+  const session = await requireReportsAccess(parseReportStoreParam(storeParam) ?? undefined);
   if (session instanceof NextResponse) return session;
 
-  if (session.role === 'store' && storeParam && !session.storeIds.includes(storeParam)) {
-    return NextResponse.json({ error: '無權查看其他分店' }, { status: 403 });
+  const resolved = resolveReportStoreId(session, storeParam);
+  if (!resolved.ok) {
+    return NextResponse.json({ error: resolved.error }, { status: resolved.status });
   }
-
-  const storeId =
-    session.role === 'store' ? (storeParam ?? session.storeId) : storeParam ?? undefined;
+  const storeId = resolved.storeId;
 
   try {
     const report = await listDailyTransactions(from, to, storeId);
     const summary = {
       from,
       to,
-      storeId: storeId ?? 'all',
+      storeId,
       totalRevenue: revenueTotalFromRows(report.rows),
       transactionCount: report.totalRows,
       latestRecordDate: report.latestRecordDate,

@@ -27,8 +27,11 @@ export async function POST(request: Request) {
     > | null;
 
     if (body.repair?.occurredOn && body.repair?.phone) {
+      if (!body.repair.storeId) {
+        return NextResponse.json({ error: 'repair 請提供 storeId' }, { status: 400 });
+      }
       repairResult = await repairCalendarCheckout({
-        storeId: body.repair.storeId ?? 'store1',
+        storeId: body.repair.storeId,
         occurredOn: body.repair.occurredOn,
         phone: body.repair.phone,
       });

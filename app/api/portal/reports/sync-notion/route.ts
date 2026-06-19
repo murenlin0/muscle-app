@@ -33,8 +33,11 @@ export async function POST(request: Request) {
     body = {};
   }
 
-  const storeId: StoreSlug =
-    body.storeId && isStoreSlug(body.storeId) ? body.storeId : 'store1';
+  if (!body.storeId || !isStoreSlug(body.storeId)) {
+    return NextResponse.json({ error: '請提供 storeId' }, { status: 400 });
+  }
+
+  const storeId = body.storeId;
   const databaseId = body.databaseId ?? getNotionDailyDbId(storeId);
   const fixNotion = body.fixNotion === true;
   const dryRun = Boolean(body.dryRun);

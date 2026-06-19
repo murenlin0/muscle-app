@@ -9,7 +9,7 @@ import {
   type PortalSession,
 } from '@/lib/portal-session';
 import { findStaffForLogin } from '@/lib/staff-auth-server';
-import type { StoreSlug } from '@/lib/stores';
+import { isStoreSlug, type StoreSlug } from '@/lib/stores';
 
 const NO_STORE_HEADERS = {
   'Cache-Control': 'no-store, no-cache, must-revalidate',
@@ -84,6 +84,38 @@ export async function requireReportsAccess(
     return NextResponse.json({ error: '師傅無法查看報表' }, { status: 403 });
   }
   return session;
+}
+
+export function parseReportStoreParam(
+  value: string | null | undefined,
+): StoreSlug | null {
+  if (value && isStoreSlug(value)) return value;
+  return null;
+}
+
+export type ResolvedReportStore =
+  | { ok: true; storeId: StoreSlug }
+  | { ok: false; error: string; status: 400 | 403 };
+
+/** 報表 API 分店解析：店家帳號可省略 store（用 session）；總管理員必須明確指定 */
+export function resolveReportStoreId(
+  session: PortalSession,
+  storeParam: string | null | undefined,
+): ResolvedReportStore {
+  const parsed = parseReportStoreParam(storeParam);
+
+  if (session.role === 'store') {
+    const storeId = parsed ?? session.storeId;
+    if (parsed && !session.storeIds.includes(parsed)) {
+      return { ok: false, error: '無權查看其他分店', status: 403 };
+    }
+    return { ok: true, storeId };
+  }
+
+  if (!parsed) {
+    return { ok: false, error: '請提供 store 參數', status: 400 };
+  }
+  return { ok: true, storeId: parsed };
 }
 
 export type ClientsAccessContext = {
