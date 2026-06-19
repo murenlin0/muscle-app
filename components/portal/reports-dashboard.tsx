@@ -412,8 +412,6 @@ export function ReportsDashboard({
       {error ? <StatusBanner variant="error">{error}</StatusBanner> : null}
       {syncMsg ? <StatusBanner variant="success">{syncMsg}</StatusBanner> : null}
 
-      <ReportsAiBox store={activeStore} onApplyFilter={handleApplyAiFilter} />
-
       <div className="flex flex-wrap items-end gap-3 rounded-md border border-[#333] bg-[#1c1c1c] p-3">
         <div className="space-y-1">
           <Label htmlFor="from" className="text-xs text-[#888]">
@@ -499,6 +497,8 @@ export function ReportsDashboard({
           }}
         />
       </section>
+
+      <ReportsAiBox store={activeStore} onApplyFilter={handleApplyAiFilter} />
 
       <section ref={ledgerSectionRef} className="space-y-3 border-t border-[#333] pt-5 scroll-mt-4">
         <div className="flex flex-wrap items-end justify-between gap-3">
