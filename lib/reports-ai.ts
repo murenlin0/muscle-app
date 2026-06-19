@@ -33,8 +33,8 @@ export function asksAllStoresReport(question: string): boolean {
 
 /** AI 解析出的報表查詢意圖 */
 export interface ReportQueryIntent {
-  /** filter＝只設篩選；sum＝加總金額；count＝筆數；salary＝估算師傅薪資 */
-  intent: 'filter' | 'sum' | 'count' | 'salary';
+  /** filter＝只設篩選；sum＝加總金額；count＝筆數；salary＝估算師傅薪資；staff_hours＝各師傅服務時數 */
+  intent: 'filter' | 'sum' | 'count' | 'salary' | 'staff_hours';
   from: string;
   to: string;
   store: StoreSlug | null;
@@ -87,7 +87,7 @@ ${staffLines}
 
 只回傳 JSON 物件，欄位：
 {
-  "intent": "filter" | "sum" | "count" | "salary",
+  "intent": "filter" | "sum" | "count" | "salary" | "staff_hours",
   "from": "YYYY-MM-DD",
   "to": "YYYY-MM-DD",
   "store": store 代碼或 null,
@@ -101,8 +101,10 @@ ${staffLines}
 }
 
 規則：
-- intent 判斷：問「多少錢/加總/總共」→ sum；問「幾筆/次數」→ count；問「薪水/薪資且有提到時薪」→ salary；只是要看明細→ filter
+- intent 判斷：問「多少錢/加總/總共（金額）」→ sum；問「幾筆/次數」→ count；問「薪水/薪資且有提到時薪」→ salary；問「每個/各/全部師傅的總時數/時數/工時/服務時數」→ staff_hours（不是 sum）；只是要看明細→ filter
+- 「6/1~6/15」「6月1日到15日」等未寫年份的日期 → ${year}-06-01 ~ ${year}-06-15（未指定年份則用 ${year}）
 - 「今年」= ${year}-01-01 ~ ${today}；「上個月/本月」依今天推算；沒講日期就用今年至今
+- staff_hours：categories 固定 null（後端會依服務時數規則篩選）；staffName 固定 null（要列出全部師傅）
 - salary：hourlyRate 為調整後時薪，rateEffectiveFrom 為調薪生效日，priorRate 為調整前時薪（沒提到就 null）
 - 只輸出 JSON，不要 markdown 或多餘文字
 
@@ -125,7 +127,10 @@ function normalizeIntent(raw: Record<string, unknown>): ReportQueryIntent {
 
   const intentRaw = asString(raw.intent);
   const intent: ReportQueryIntent['intent'] =
-    intentRaw === 'sum' || intentRaw === 'count' || intentRaw === 'salary'
+    intentRaw === 'sum' ||
+    intentRaw === 'count' ||
+    intentRaw === 'salary' ||
+    intentRaw === 'staff_hours'
       ? intentRaw
       : 'filter';
 

@@ -9,7 +9,13 @@ import {
   ReportsAiError,
   type ReportQueryIntent,
 } from '@/lib/reports-ai';
-import { minutesFromTitle } from '@/lib/service-hours';
+import {
+  computeServiceHours,
+  formatServiceHours,
+  minutesFromTitle,
+  SERVICE_HOURS_CATEGORIES,
+} from '@/lib/service-hours';
+import type { TransactionCategory } from '@/lib/transaction-category';
 import { getStore, type StoreSlug } from '@/lib/stores';
 
 export const dynamic = 'force-dynamic';
@@ -77,13 +83,15 @@ export async function POST(request: Request) {
       }
     }
 
+    const isStaffHours = intent.intent === 'staff_hours';
+    const serviceHourCategories: TransactionCategory[] = [...SERVICE_HOURS_CATEGORIES];
     const filter = {
       from: intent.from,
       to: intent.to,
       store: wantsAllStores && !store ? null : (store ?? null),
-      staffName: intent.staffName,
-      categories: intent.categories,
-      account: intent.account,
+      staffName: isStaffHours ? null : intent.staffName,
+      categories: isStaffHours ? serviceHourCategories : intent.categories,
+      account: isStaffHours ? null : intent.account,
     };
 
     const answer = await computeAnswer(intent, store, wantsAllStores && !store);
@@ -164,6 +172,45 @@ async function computeAnswer(
       `· ${totalHours.toFixed(1)} 小時 × ${fmtMoney(intent.hourlyRate)} = 約 ${fmtMoney(pay)}`,
       `· 共 ${rows.length} 筆服務`,
       `※ 工時依帳目標題的「分鐘數」推算，僅供參考。`,
+    ].join('\n');
+  }
+
+  // staff_hours：依師傅分組加總服務時數
+  if (intent.intent === 'staff_hours') {
+    const report = await listDailyTransactions(
+      intent.from,
+      intent.to,
+      store,
+      [...SERVICE_HOURS_CATEGORIES],
+      { ...listOptions },
+    );
+
+    const byStaff = new Map<string, number>();
+    for (const r of report.rows) {
+      const hours = computeServiceHours(r.title, r.category);
+      if (hours == null) continue;
+      const name = r.staffName?.trim() || '（未指定）';
+      byStaff.set(name, (byStaff.get(name) ?? 0) + hours);
+    }
+
+    if (!byStaff.size) {
+      return `${storeLabel}，${range}，各師傅服務時數（一般消費、會員使用）\n此期間無可計算時數的服務紀錄。`;
+    }
+
+    const entries = [...byStaff.entries()].sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return a[0].localeCompare(b[0], 'zh-Hant');
+    });
+
+    const totalHours = entries.reduce((sum, [, hours]) => sum + hours, 0);
+    const lines = entries.map(
+      ([name, hours]) => `· ${name}：${formatServiceHours(hours)} 小時`,
+    );
+
+    return [
+      `${storeLabel}，${range}，各師傅服務時數（一般消費、會員使用）：`,
+      ...lines,
+      `合計 ${formatServiceHours(totalHours)} 小時`,
     ].join('\n');
   }
 
