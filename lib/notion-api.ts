@@ -1,18 +1,45 @@
 import type { StoreSlug } from '@/lib/stores';
 
 const NOTION_VERSION = '2022-06-28';
+const NOTION_VERSION_MULTI_SOURCE = '2025-09-03';
 
 export const NOTION_STORE1_DAILY_DB_ID = 'bba35d9c-9bb4-4299-80e8-c91fbd23f5ce';
-/** 筋棧文一店每日紀錄 */
+/** 文一店資料庫容器（含多個 data source，不可直接 query） */
 export const NOTION_STORE2_DAILY_DB_ID = '13507d21-c964-80e0-944c-f8d1d2953ff0';
+/** 文一店「筋棧文一店每日紀錄」data source（實際流水資料） */
+export const NOTION_STORE2_DAILY_DATA_SOURCE_ID = '13507d21-c964-8180-9711-000bee4840f8';
+
+const NOTION_DATA_SOURCE_QUERY_IDS = new Set([NOTION_STORE2_DAILY_DATA_SOURCE_ID]);
 
 export const NOTION_DAILY_DB_BY_STORE: Record<StoreSlug, string> = {
   store1: NOTION_STORE1_DAILY_DB_ID,
-  store2: NOTION_STORE2_DAILY_DB_ID,
+  store2: NOTION_STORE2_DAILY_DATA_SOURCE_ID,
 };
 
 export function getNotionDailyDbId(storeId: StoreSlug): string {
   return NOTION_DAILY_DB_BY_STORE[storeId];
+}
+
+function isDataSourceQueryId(id: string): boolean {
+  return NOTION_DATA_SOURCE_QUERY_IDS.has(id);
+}
+
+function notionVersionForQueryId(id: string): string {
+  return isDataSourceQueryId(id) ? NOTION_VERSION_MULTI_SOURCE : NOTION_VERSION;
+}
+
+function queryUrlForId(id: string): string {
+  if (isDataSourceQueryId(id)) {
+    return `https://api.notion.com/v1/data_sources/${id}/query`;
+  }
+  return `https://api.notion.com/v1/databases/${id}/query`;
+}
+
+function probeUrlForId(id: string): string {
+  if (isDataSourceQueryId(id)) {
+    return `https://api.notion.com/v1/data_sources/${id}`;
+  }
+  return `https://api.notion.com/v1/databases/${id}`;
 }
 
 export interface NotionDailyRow {
@@ -156,20 +183,25 @@ export async function probeNotionConnection(
   }
 
   const token = notionToken();
+  const apiVersion = notionVersionForQueryId(databaseId);
 
-  const res = await fetch(`https://api.notion.com/v1/databases/${databaseId}`, {
+  const res = await fetch(probeUrlForId(databaseId), {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${token}`,
-      'Notion-Version': NOTION_VERSION,
+      'Notion-Version': apiVersion,
     },
   });
 
   if (res.ok) {
     const data = (await res.json()) as {
       title?: { plain_text: string }[];
+      name?: string;
     };
-    const databaseTitle = (data.title ?? []).map((t) => t.plain_text).join('');
+    const databaseTitle =
+      data.name ||
+      (data.title ?? []).map((t) => t.plain_text).join('') ||
+      undefined;
     return {
       ...base,
       ok: true,
@@ -194,6 +226,9 @@ export async function probeNotionConnection(
   } else if (res.status === 404) {
     hint =
       '金鑰有效但找不到資料庫。請在 Notion 每日紀錄資料庫 → ⋯ → Connect to → 選同一個 Integration（民有店、文一店都要連）。';
+  } else if (notionCode === 'multiple_data_sources_for_database') {
+    hint =
+      '此 Notion 資料庫含多個 data source，請改用文一店每日紀錄的 data source ID 查詢（程式已自動處理，若仍失敗請 Redeploy 最新版）。';
   }
 
   return {
@@ -215,6 +250,11 @@ function wrapNotionError(status: number, body: string): Error {
   if (status === 404) {
     return new Error(
       '找不到 Notion 資料庫 (404)。請在該店「每日紀錄」右上角 ⋯ → Connect to → 選你的 Integration。',
+    );
+  }
+  if (status === 400 && body.includes('multiple_data_sources_for_database')) {
+    return new Error(
+      '文一店 Notion 資料庫含多個 data source，請 Redeploy 最新版程式後再同步。',
     );
   }
   return new Error(`Notion query 失敗 (${status}): ${body}`);
@@ -325,11 +365,11 @@ export async function queryNotionDatabaseAll(
   let cursor: string | undefined;
 
   do {
-    const res = await fetch(`https://api.notion.com/v1/databases/${databaseId}/query`, {
+    const res = await fetch(queryUrlForId(databaseId), {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${notionToken()}`,
-        'Notion-Version': NOTION_VERSION,
+        'Notion-Version': notionVersionForQueryId(databaseId),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
