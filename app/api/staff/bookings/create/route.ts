@@ -37,17 +37,6 @@ export async function POST(request: Request) {
     });
     const store = finalized.storeSlug;
     const preview = buildBookingPreview(finalized);
-
-    const now = Date.now();
-    const startsMs = preview.startsAt.getTime();
-    const minutesFromNow = (startsMs - now) / 60_000;
-    if (startsMs < now) {
-      return NextResponse.json({ error: `預約時間（${preview.startsAt.toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })}）已過，請確認時間` }, { status: 400 });
-    }
-    if (minutesFromNow < 30) {
-      return NextResponse.json({ error: `距現在僅剩 ${Math.round(minutesFromNow)} 分鐘，至少需提前 30 分鐘預約` }, { status: 400 });
-    }
-
     const staff = await findStaffByName(store, finalized.staffName!);
     if (!staff) {
       return NextResponse.json(
