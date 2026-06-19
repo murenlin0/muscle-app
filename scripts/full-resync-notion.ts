@@ -1,6 +1,7 @@
 /**
  * 從 Notion 完整重匯 daily_transactions（先清空該店再 upsert）
  * npx tsx scripts/full-resync-notion.ts
+ * npx tsx scripts/full-resync-notion.ts --store store2
  */
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
@@ -10,8 +11,9 @@ import {
   upsertDailyTransactions,
 } from '../lib/notion-daily-import';
 import { migrateLedgerData } from '../lib/ledger-migrate-server';
-import { NOTION_STORE1_DAILY_DB_ID, queryNotionDatabaseAll } from '../lib/notion-api';
+import { getNotionDailyDbId, queryNotionDatabaseAll } from '../lib/notion-api';
 import { sumLedgerAccountBalances } from '../lib/ledger-balances';
+import { isStoreSlug, type StoreSlug } from '../lib/stores';
 
 function loadEnv() {
   const raw = readFileSync(resolve(process.cwd(), '.env.local'), 'utf8');
@@ -19,6 +21,16 @@ function loadEnv() {
     const m = line.match(/^([^#=]+)=(.*)$/);
     if (m) process.env[m[1].trim()] = m[2].trim().replace(/^["']|["']$/g, '');
   }
+}
+
+function parseStoreArg(): StoreSlug {
+  const idx = process.argv.indexOf('--store');
+  const value = idx >= 0 ? process.argv[idx + 1] : 'store1';
+  if (!value || !isStoreSlug(value)) {
+    console.error(`無效分店：${value ?? '(未指定)'}（請用 store1 或 store2）`);
+    process.exit(1);
+  }
+  return value;
 }
 
 async function printBalances(storeId: string) {
@@ -43,11 +55,11 @@ async function printBalances(storeId: string) {
 
 async function main() {
   loadEnv();
-  const storeId = 'store1';
+  const storeId = parseStoreArg();
   const sb = getSupabaseAdmin();
 
-  console.log('抓取 Notion…');
-  const notionRows = await queryNotionDatabaseAll(NOTION_STORE1_DAILY_DB_ID);
+  console.log(`[${storeId}] 抓取 Notion…`);
+  const notionRows = await queryNotionDatabaseAll(getNotionDailyDbId(storeId));
   console.log(`Notion ${notionRows.length} 筆`);
 
   console.log('清空本店流水帳…');

@@ -1,6 +1,7 @@
 /**
  * 增量同步 Notion → Supabase（不清空，upsert + migrate）
  * npx tsx scripts/sync-notion-incremental.ts
+ * npx tsx scripts/sync-notion-incremental.ts --store store2
  */
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
@@ -10,8 +11,9 @@ import {
   upsertDailyTransactions,
 } from '../lib/notion-daily-import';
 import { migrateLedgerData } from '../lib/ledger-migrate-server';
-import { NOTION_STORE1_DAILY_DB_ID, queryNotionDatabaseAll } from '../lib/notion-api';
+import { getNotionDailyDbId, queryNotionDatabaseAll } from '../lib/notion-api';
 import { sumLedgerAccountBalances } from '../lib/ledger-balances';
+import { isStoreSlug, type StoreSlug } from '../lib/stores';
 
 function loadEnv() {
   const raw = readFileSync(resolve(process.cwd(), '.env.local'), 'utf8');
@@ -21,9 +23,19 @@ function loadEnv() {
   }
 }
 
+function parseStoreArg(): StoreSlug {
+  const idx = process.argv.indexOf('--store');
+  const value = idx >= 0 ? process.argv[idx + 1] : 'store1';
+  if (!value || !isStoreSlug(value)) {
+    console.error(`無效分店：${value ?? '(未指定)'}（請用 store1 或 store2）`);
+    process.exit(1);
+  }
+  return value;
+}
+
 async function main() {
   loadEnv();
-  const storeId = 'store1';
+  const storeId = parseStoreArg();
   const sb = getSupabaseAdmin();
 
   const { data: beforeLatest } = await sb
@@ -33,10 +45,10 @@ async function main() {
     .order('occurred_on', { ascending: false })
     .limit(1)
     .maybeSingle();
-  console.log('同步前最新日期:', beforeLatest?.occurred_on ?? '(無)');
+  console.log(`[${storeId}] 同步前最新日期:`, beforeLatest?.occurred_on ?? '(無)');
 
   console.log('抓取 Notion…');
-  const notionRows = await queryNotionDatabaseAll(NOTION_STORE1_DAILY_DB_ID);
+  const notionRows = await queryNotionDatabaseAll(getNotionDailyDbId(storeId));
   console.log(`Notion ${notionRows.length} 筆`);
 
   const transactions = notionRows.map((row) => mapNotionRowToTransaction(row, storeId));

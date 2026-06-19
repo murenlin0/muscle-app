@@ -10,6 +10,7 @@ export const RETIRED_LEDGER_ACCOUNTS = ['仁中信', '街口', 'Line'] as const;
 const ACCOUNT_ALIASES: Record<string, LedgerAccount> = {
   現金: '現金',
   富邦: '富邦',
+  郵局: '富邦',
   轉帳: '富邦',
   仁中信: '仁中信',
   街口: '街口',

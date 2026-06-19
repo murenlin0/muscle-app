@@ -1,6 +1,19 @@
+import type { StoreSlug } from '@/lib/stores';
+
 const NOTION_VERSION = '2022-06-28';
 
 export const NOTION_STORE1_DAILY_DB_ID = 'bba35d9c-9bb4-4299-80e8-c91fbd23f5ce';
+/** 筋棧文一店每日紀錄 */
+export const NOTION_STORE2_DAILY_DB_ID = '13507d21-c964-80e0-944c-f8d1d2953ff0';
+
+export const NOTION_DAILY_DB_BY_STORE: Record<StoreSlug, string> = {
+  store1: NOTION_STORE1_DAILY_DB_ID,
+  store2: NOTION_STORE2_DAILY_DB_ID,
+};
+
+export function getNotionDailyDbId(storeId: StoreSlug): string {
+  return NOTION_DAILY_DB_BY_STORE[storeId];
+}
 
 export interface NotionDailyRow {
   pageId: string;
@@ -180,7 +193,7 @@ export async function probeNotionConnection(
       '金鑰被 Notion 拒絕。請到 notion.so/my-integrations → 你的整合 → 重新複製 Internal Integration Secret，覆蓋 Vercel 的 NOTION_API_KEY，然後 Redeploy。若曾按「重新產生」，舊金鑰會立即失效。';
   } else if (res.status === 404) {
     hint =
-      '金鑰有效但找不到資料庫。請在 Notion「新版筋棧1店每日紀錄」→ ⋯ → Connect to → 選同一個 Integration。';
+      '金鑰有效但找不到資料庫。請在 Notion 每日紀錄資料庫 → ⋯ → Connect to → 選同一個 Integration（民有店、文一店都要連）。';
   }
 
   return {
@@ -201,7 +214,7 @@ function wrapNotionError(status: number, body: string): Error {
   }
   if (status === 404) {
     return new Error(
-      '找不到 Notion 資料庫 (404)。請在「新版筋棧1店每日紀錄」右上角 ⋯ → Connect to → 選你的 Integration。',
+      '找不到 Notion 資料庫 (404)。請在該店「每日紀錄」右上角 ⋯ → Connect to → 選你的 Integration。',
     );
   }
   return new Error(`Notion query 失敗 (${status}): ${body}`);
@@ -213,6 +226,14 @@ function textFromRich(prop: { title?: { plain_text: string }[] } | undefined): s
 
 function textFromRichText(prop: { rich_text?: { plain_text: string }[] } | undefined): string {
   return (prop?.rich_text ?? []).map((t) => t.plain_text).join('').trim();
+}
+
+function textFromNote(
+  prop: { rich_text?: { plain_text: string }[]; text?: string } | undefined,
+): string {
+  const rich = textFromRichText(prop);
+  if (rich) return rich;
+  return typeof prop?.text === 'string' ? prop.text.trim() : '';
 }
 
 function selectName(prop: { select?: { name: string } | null } | undefined): string | null {
@@ -228,12 +249,45 @@ function numberValue(prop: { number?: number | null } | undefined): number {
   return typeof n === 'number' && Number.isFinite(n) ? n : 0;
 }
 
+function numberValueOrNull(prop: { number?: number | null } | undefined): number | null {
+  if (!prop || prop.number == null) return null;
+  const n = prop.number;
+  return typeof n === 'number' && Number.isFinite(n) ? n : null;
+}
+
 function dateStart(prop: { date?: { start: string } | null } | undefined): string | null {
   return prop?.date?.start ?? null;
 }
 
 function checkboxValue(prop: { checkbox?: boolean } | undefined): boolean {
   return Boolean(prop?.checkbox);
+}
+
+/** 文一店「使用位置」→ 民有店「付款方式」語意 */
+function mapStore2PaymentLocation(location: string | null): string[] {
+  if (!location) return [];
+  switch (location) {
+    case '現金':
+      return ['現金'];
+    case '郵局':
+      return ['富邦'];
+    case 'VIP':
+      return ['會員使用'];
+    case 'Line':
+      return ['Line'];
+    default:
+      return [location];
+  }
+}
+
+function resolvePaymentMethods(props: Record<string, unknown>): string[] {
+  const multi = multiSelectNames(
+    props['付款方式'] as { multi_select?: { name: string }[] } | undefined,
+  );
+  if (multi.length) return multi;
+  return mapStore2PaymentLocation(
+    selectName(props['使用位置'] as { select?: { name: string } | null } | undefined),
+  );
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -244,16 +298,21 @@ function mapNotionPage(page: any): NotionDailyRow {
     textFromRich(props['Name']) ||
     page.id;
 
+  const amount =
+    numberValueOrNull(props['金額數字']) ??
+    numberValueOrNull(props['金額']) ??
+    0;
+
   return {
     pageId: page.id,
     title,
     dateStart: dateStart(props['Date']),
-    amount: numberValue(props['金額數字']),
-    serviceType: selectName(props['消費類型']),
-    paymentMethods: multiSelectNames(props['付款方式']),
+    amount,
+    serviceType: selectName(props['消費類型']) ?? selectName(props['類型']),
+    paymentMethods: resolvePaymentMethods(props),
     staffName: selectName(props['師傅']),
     isDesignated: checkboxValue(props['指定']),
-    memberNote: textFromRichText(props['會員備註']) || null,
+    memberNote: textFromNote(props['會員備註']) || textFromNote(props['備註']) || null,
     lastEdited: page.last_edited_time ?? null,
   };
 }

@@ -100,6 +100,7 @@ export function ReportsDashboard({
   const [loading, setLoading] = useState(true);
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [normalizing, setNormalizing] = useState(false);
+  const [notionSyncing, setNotionSyncing] = useState(false);
   const [calSyncing, setCalSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
@@ -308,6 +309,32 @@ export function ReportsDashboard({
     await load(0);
   }
 
+  async function handleNotionSync() {
+    setNotionSyncing(true);
+    setSyncMsg(null);
+    setError(null);
+    const res = await fetch('/api/portal/reports/sync-notion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ storeId: activeStore }),
+    });
+    const data = (await res.json()) as {
+      error?: string;
+      notionRows?: number;
+      upserted?: number;
+      latestRecordDate?: string | null;
+    };
+    setNotionSyncing(false);
+    if (!res.ok) {
+      setError(data.error ?? 'Notion 同步失敗');
+      return;
+    }
+    setSyncMsg(
+      `Notion 同步完成：${data.notionRows ?? 0} 筆、寫入 ${data.upserted ?? 0} 筆${data.latestRecordDate ? `（最新 ${data.latestRecordDate}）` : ''}`,
+    );
+    await load(0);
+  }
+
   async function handleCalendarSync() {
     setCalSyncing(true);
     setSyncMsg(null);
@@ -388,6 +415,15 @@ export function ReportsDashboard({
         <span className="self-center rounded border border-[#444] bg-[#252525] px-2 py-1 text-[11px] tabular-nums text-[#aaa]">
           報表 {REPORTS_UI_VERSION}
         </span>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={notionSyncing}
+          onClick={() => void handleNotionSync()}
+        >
+          {notionSyncing ? '同步中…' : '從 Notion 同步'}
+        </Button>
         <Button
           type="button"
           size="sm"

@@ -48,7 +48,9 @@ export const LEGACY_TRANSFER_CATEGORY = '轉移';
 const NOTION_TYPE_TO_CATEGORY: Record<string, TransactionCategory | typeof LEGACY_TRANSFER_CATEGORY> = {
   '30分': '一般消費',
   '60分': '一般消費',
+  '70分': '一般消費',
   '90分': '一般消費',
+  '100分': '一般消費',
   '120分': '一般消費',
   '150分': '一般消費',
   '180分': '一般消費',
@@ -61,12 +63,18 @@ const NOTION_TYPE_TO_CATEGORY: Record<string, TransactionCategory | typeof LEGAC
   'VIP 180分': '會員使用',
   'VIP 結清': '會員補差額',
   'VIP 活動': '會員補差額',
+  VIP活動: '會員補差額',
+  VIP銷帳: '會員補差額',
+  教練課10堂: '一般消費',
+  教練課5堂: '一般消費',
+  教練課單堂: '一般消費',
   轉移: LEGACY_TRANSFER_CATEGORY,
   支出: '支出',
   工資: '工資',
   收入: '收入',
   店租收入: '店租收入',
   分紅: '分紅',
+  攤提: '支出',
 };
 
 export function mapNotionServiceTypeToCategory(

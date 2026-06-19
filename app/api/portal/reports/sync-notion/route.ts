@@ -3,7 +3,7 @@ import { requireSuperAdmin } from '@/lib/portal-api';
 import {
   buildNotionStaffUpdate,
   buildNotionTitleUpdate,
-  NOTION_STORE1_DAILY_DB_ID,
+  getNotionDailyDbId,
   queryNotionDatabaseAll,
   updateNotionPageProperties,
 } from '@/lib/notion-api';
@@ -14,7 +14,7 @@ import {
 } from '@/lib/notion-daily-import';
 import { migrateLedgerData } from '@/lib/ledger-migrate-server';
 import { normalizeStaffName } from '@/lib/notion-title-normalize';
-import type { StoreSlug } from '@/lib/stores';
+import { isStoreSlug, type StoreSlug } from '@/lib/stores';
 
 export async function POST(request: Request) {
   const session = await requireSuperAdmin();
@@ -33,8 +33,9 @@ export async function POST(request: Request) {
     body = {};
   }
 
-  const storeId = body.storeId ?? 'store1';
-  const databaseId = body.databaseId ?? NOTION_STORE1_DAILY_DB_ID;
+  const storeId: StoreSlug =
+    body.storeId && isStoreSlug(body.storeId) ? body.storeId : 'store1';
+  const databaseId = body.databaseId ?? getNotionDailyDbId(storeId);
   const fixNotion = body.fixNotion === true;
   const dryRun = Boolean(body.dryRun);
   const wipeBeforeSync = body.wipeBeforeSync === true;
@@ -94,6 +95,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       ok: true,
+      storeId,
+      databaseId,
       dryRun,
       notionRows: notionRows.length,
       notionNormalizeCandidates: previews.length,

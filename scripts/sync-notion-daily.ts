@@ -1,8 +1,9 @@
 /**
- * 從 Notion「新版筋棧1店每日紀錄」同步到 Supabase daily_transactions
+ * 從 Notion 每日紀錄同步到 Supabase daily_transactions
  *
  * 用法：
  *   NOTION_API_KEY=secret_xxx npm run sync:notion
+ *   NOTION_API_KEY=secret_xxx npm run sync:notion -- --store store2
  *   NOTION_API_KEY=secret_xxx npm run sync:notion -- --dry-run
  *   NOTION_API_KEY=secret_xxx npm run sync:notion -- --no-fix-notion
  */
@@ -12,7 +13,7 @@ loadEnvLocal();
 import {
   buildNotionStaffUpdate,
   buildNotionTitleUpdate,
-  NOTION_STORE1_DAILY_DB_ID,
+  getNotionDailyDbId,
   queryNotionDatabaseAll,
   updateNotionPageProperties,
 } from '../lib/notion-api';
@@ -21,17 +22,32 @@ import {
   previewNotionNormalizations,
   upsertDailyTransactions,
 } from '../lib/notion-daily-import';
+import { migrateLedgerData } from '../lib/ledger-migrate-server';
 import {
   normalizeNotionTitle,
   normalizeStaffName,
 } from '../lib/notion-title-normalize';
+import { isStoreSlug, type StoreSlug } from '../lib/stores';
 
 const dryRun = process.argv.includes('--dry-run');
 const fixNotion = !process.argv.includes('--no-fix-notion');
 
+function parseStoreArg(): StoreSlug {
+  const idx = process.argv.indexOf('--store');
+  const value = idx >= 0 ? process.argv[idx + 1] : 'store1';
+  if (!value || !isStoreSlug(value)) {
+    console.error(`無效分店：${value ?? '(未指定)'}（請用 store1 或 store2）`);
+    process.exit(1);
+  }
+  return value;
+}
+
 async function main() {
-  console.log(`抓取 Notion 資料庫 ${NOTION_STORE1_DAILY_DB_ID}…`);
-  const rows = await queryNotionDatabaseAll(NOTION_STORE1_DAILY_DB_ID);
+  const storeId = parseStoreArg();
+  const databaseId = getNotionDailyDbId(storeId);
+
+  console.log(`抓取 Notion 資料庫 ${databaseId}（${storeId}）…`);
+  const rows = await queryNotionDatabaseAll(databaseId);
   console.log(`共 ${rows.length} 筆`);
 
   const previews = previewNotionNormalizations(rows);
@@ -62,7 +78,7 @@ async function main() {
         title: normalizeNotionTitle(row.title),
         staffName: normalizeStaffName(row.staffName),
       },
-      'store1',
+      storeId,
     ),
   );
 
@@ -79,7 +95,11 @@ async function main() {
   }
 
   const { upserted } = await upsertDailyTransactions(transactions);
-  console.log(`Supabase 已 upsert ${upserted} 筆；最新日期 ${latest}`);
+  console.log(`已 upsert ${upserted} 筆`);
+
+  const report = await migrateLedgerData(storeId);
+  console.log('migrate:', JSON.stringify(report));
+  console.log('最新日期', latest);
 }
 
 main().catch((e) => {
