@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ClientLedgerDrawer } from '@/components/portal/client-ledger-drawer';
 import { EditableLedgerTable, type LedgerRow } from '@/components/portal/editable-ledger-table';
 import { FinancialOverviewPanel } from '@/components/portal/financial-overview-panel';
+import { ReportsAiBox, type AiReportFilter } from '@/components/portal/reports-ai-box';
 import { StatusBanner } from '@/components/portal/status-banner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -369,6 +370,24 @@ export function ReportsDashboard({
     await load(0);
   }
 
+  function handleApplyAiFilter(filter: AiReportFilter) {
+    setFrom(filter.from);
+    setTo(filter.to);
+    if (showStorePicker && filter.store) {
+      setStore(filter.store);
+    }
+    if (filter.account) {
+      setLedgerPresetFilter(filter.account === '現金' ? 'cash' : 'fubon');
+      setCategory('');
+    } else if (filter.categories && filter.categories.length === 1) {
+      setCategory(filter.categories[0]!);
+      setLedgerPresetFilter(null);
+    } else {
+      setCategory('');
+      setLedgerPresetFilter(null);
+    }
+  }
+
   const totalPages = ledgerMeta
     ? Math.max(1, Math.ceil(ledgerMeta.totalCount / LEDGER_UI_PAGE_SIZE))
     : 1;
@@ -379,6 +398,8 @@ export function ReportsDashboard({
     <div className="flex flex-col gap-5">
       {error ? <StatusBanner variant="error">{error}</StatusBanner> : null}
       {syncMsg ? <StatusBanner variant="success">{syncMsg}</StatusBanner> : null}
+
+      <ReportsAiBox store={activeStore} onApplyFilter={handleApplyAiFilter} />
 
       <div className="flex flex-wrap items-end gap-3 rounded-md border border-[#333] bg-[#1c1c1c] p-3">
         <div className="space-y-1">
