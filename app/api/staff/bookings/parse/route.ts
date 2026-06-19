@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import {
   buildBookingPreview,
   finalizeStaffBooking,
-  parseBookingMessage,
 } from '@/lib/booking-message';
+import { BookingParseIncompleteError } from '@/lib/booking-message-ai';
+import { parseBookingForStaffPreview } from '@/lib/booking-message-parse-server';
 import { requireStaffSession } from '@/lib/portal-api';
 
 export async function POST(request: Request) {
@@ -22,14 +23,17 @@ export async function POST(request: Request) {
   }
 
   try {
-    const parsed = parseBookingMessage(body.text);
+    const { data: parsed, method } = await parseBookingForStaffPreview(body.text);
     const finalized = finalizeStaffBooking(parsed, {
-      staffName: body.staffName ?? '',
+      staffName: body.staffName,
       staffNote: body.staffNote,
     });
     const preview = buildBookingPreview(finalized);
-    return NextResponse.json({ preview });
+    return NextResponse.json({ preview, parsedBy: method });
   } catch (e) {
+    if (e instanceof BookingParseIncompleteError) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
     const message = e instanceof Error ? e.message : '無法解析訊息';
     return NextResponse.json({ error: message }, { status: 400 });
   }

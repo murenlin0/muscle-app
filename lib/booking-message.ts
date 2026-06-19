@@ -183,12 +183,16 @@ export function parseBookingMessage(text: string): BookingMessageData {
 
 export const UNASSIGNED_STAFF_LABEL = '未指定';
 
-/** 師傅 UI：補上負責師傅與師傅備註後再建日曆 */
+/** 師傅 UI：補上負責師傅與師傅備註後再建日曆（UI 未指定時沿用訊息／AI 解析的師傅） */
 export function finalizeStaffBooking(
   parsed: BookingMessageData,
-  input: { staffName: string; staffNote?: string | null },
+  input: { staffName?: string; staffNote?: string | null },
 ): BookingMessageData {
-  const staffName = input.staffName.trim();
+  const uiStaff = input.staffName?.trim() ?? '';
+  const parsedStaff = parsed.staffName?.trim() ?? '';
+  const staffName =
+    uiStaff && uiStaff !== UNASSIGNED_STAFF_LABEL ? uiStaff : parsedStaff;
+
   if (!staffName || staffName === UNASSIGNED_STAFF_LABEL) {
     throw new Error('沒有輸入師傅名稱');
   }

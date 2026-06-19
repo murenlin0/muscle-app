@@ -20,7 +20,6 @@ import { STORES } from '@/lib/stores';
 import type { Staff } from '@/lib/types/database';
 
 const STAFF_API = '/api/staff';
-const STAFF_NAME_REQUIRED = '沒有輸入師傅名稱';
 
 export default function StaffWorkspacePage() {
   const router = useRouter();
@@ -30,6 +29,7 @@ export default function StaffWorkspacePage() {
   const [staffNote, setStaffNote] = useState('');
   const [roster, setRoster] = useState<Staff[]>([]);
   const [preview, setPreview] = useState<BookingPreviewData | null>(null);
+  const [parsedBy, setParsedBy] = useState<'rules' | 'ai' | null>(null);
   const [loading, setLoading] = useState<'parse' | 'create' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -56,39 +56,36 @@ export default function StaffWorkspacePage() {
     staffNote: staffNote.trim() || undefined,
   });
 
-  function ensureAssignedStaffSelected(): boolean {
-    if (!assignedStaff.trim() || assignedStaff === UNASSIGNED_STAFF_LABEL) {
-      setError(STAFF_NAME_REQUIRED);
-      return false;
-    }
-    return true;
-  }
-
   async function handleParse() {
     setLoading('parse');
     setError(null);
     setSuccess(null);
     setCalendarLink(null);
     setPreview(null);
-
-    if (!ensureAssignedStaffSelected()) {
-      setLoading(null);
-      return;
-    }
+    setParsedBy(null);
 
     const res = await fetch(`${STAFF_API}/bookings/parse`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody()),
     });
-    const data = (await res.json()) as { preview?: BookingPreviewData; error?: string };
+    const data = (await res.json()) as {
+      preview?: BookingPreviewData;
+      parsedBy?: 'rules' | 'ai';
+      error?: string;
+    };
 
     setLoading(null);
     if (!res.ok) {
       setError(data.error ?? '解析失敗');
       return;
     }
-    setPreview(data.preview ?? null);
+    const nextPreview = data.preview ?? null;
+    setPreview(nextPreview);
+    setParsedBy(data.parsedBy ?? null);
+    if (nextPreview?.staffName) {
+      setAssignedStaff(nextPreview.staffName);
+    }
   }
 
   async function handleCreate() {
@@ -96,11 +93,6 @@ export default function StaffWorkspacePage() {
     setError(null);
     setSuccess(null);
     setCalendarLink(null);
-
-    if (!ensureAssignedStaffSelected()) {
-      setLoading(null);
-      return;
-    }
 
     const res = await fetch(`${STAFF_API}/bookings/create`, {
       method: 'POST',
@@ -177,6 +169,7 @@ export default function StaffWorkspacePage() {
               onChange={(e) => {
                 setText(e.target.value);
                 setPreview(null);
+                setParsedBy(null);
                 setSuccess(null);
                 setCalendarLink(null);
                 setError(null);
@@ -198,7 +191,11 @@ export default function StaffWorkspacePage() {
               <select
                 id="assigned-staff"
                 value={assignedStaff}
-                onChange={(e) => setAssignedStaff(e.target.value)}
+                onChange={(e) => {
+                  setAssignedStaff(e.target.value);
+                  setPreview(null);
+                  setParsedBy(null);
+                }}
                 className="input-neon h-11 w-full rounded-lg border border-input bg-input/80 px-3 text-sm"
               >
                 <option value={UNASSIGNED_STAFF_LABEL}>{UNASSIGNED_STAFF_LABEL}</option>
@@ -263,7 +260,7 @@ export default function StaffWorkspacePage() {
               開啟 Google 日曆
             </a>
           ) : null}
-          <BookingPreviewPanel preview={preview} />
+          <BookingPreviewPanel preview={preview} parsedBy={parsedBy} />
         </div>
       </div>
     </PortalShell>

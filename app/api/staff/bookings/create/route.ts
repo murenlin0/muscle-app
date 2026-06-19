@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import {
   buildBookingPreview,
   finalizeStaffBooking,
-  parseBookingMessage,
 } from '@/lib/booking-message';
+import { parseBookingMessageWithFallback } from '@/lib/booking-message-parse-server';
+import { BookingParseIncompleteError } from '@/lib/booking-message-ai';
 import {
   findStaffByName,
   upsertClientForBooking,
@@ -29,9 +30,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const parsed = parseBookingMessage(body.text);
+    const { data: parsed } = await parseBookingMessageWithFallback(body.text);
     const finalized = finalizeStaffBooking(parsed, {
-      staffName: body.staffName ?? '',
+      staffName: body.staffName,
       staffNote: body.staffNote,
     });
     const store = finalized.storeSlug;
@@ -109,6 +110,9 @@ export async function POST(request: Request) {
       preview,
     });
   } catch (e) {
+    if (e instanceof BookingParseIncompleteError) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
     const message = e instanceof Error ? e.message : '建立失敗';
     return NextResponse.json({ error: message }, { status: 400 });
   }

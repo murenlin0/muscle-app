@@ -50,9 +50,11 @@ function PreviewRow({
 export function BookingPreviewPanel({
   preview,
   emptyHint,
+  parsedBy,
 }: {
   preview: BookingPreviewData | null;
   emptyHint?: string;
+  parsedBy?: 'rules' | 'ai' | null;
 }) {
   if (!preview) {
     return (
@@ -76,6 +78,11 @@ export function BookingPreviewPanel({
             解析結果
           </p>
           <h2 className="mt-1 text-lg font-bold">{preview.clientName}</h2>
+          {parsedBy === 'ai' ? (
+            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+              由 AI 解析，請確認師傅與時間後再建立
+            </p>
+          ) : null}
         </div>
         <Badge className="shrink-0 bg-primary/15 text-primary hover:bg-primary/15">
           {preview.durationMinutes} 分
