@@ -3,7 +3,7 @@ import {
   buildBookingPreview,
   finalizeStaffBooking,
 } from '@/lib/booking-message';
-import { parseBookingMessageWithFallback } from '@/lib/booking-message-parse-server';
+import { parseBookingForStaffPreview } from '@/lib/booking-message-parse-server';
 import { BookingParseIncompleteError } from '@/lib/booking-message-ai';
 import {
   findStaffByName,
@@ -30,7 +30,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { data: parsed } = await parseBookingMessageWithFallback(body.text);
+    const { data: parsed } = await parseBookingForStaffPreview(body.text);
     const finalized = finalizeStaffBooking(parsed, {
       staffName: body.staffName,
       staffNote: body.staffNote,

@@ -3,7 +3,7 @@ import {
   buildBookingPreview,
   finalizeStaffBooking,
 } from '@/lib/booking-message';
-import { BookingParseIncompleteError } from '@/lib/booking-message-ai';
+import { BookingParseIncompleteError, isGroqConfigured } from '@/lib/booking-message-ai';
 import { parseBookingForStaffPreview } from '@/lib/booking-message-parse-server';
 import { requireStaffSession } from '@/lib/portal-api';
 
@@ -29,7 +29,7 @@ export async function POST(request: Request) {
       staffNote: body.staffNote,
     });
     const preview = buildBookingPreview(finalized);
-    return NextResponse.json({ preview, parsedBy: method });
+    return NextResponse.json({ preview, parsedBy: method, aiProvider: isGroqConfigured() ? 'groq' : 'gemini' });
   } catch (e) {
     if (e instanceof BookingParseIncompleteError) {
       return NextResponse.json({ error: e.message }, { status: 400 });
