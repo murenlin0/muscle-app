@@ -285,16 +285,13 @@ export function EditableLedgerTable({
   useEffect(() => {
     let cancelled = false;
     async function loadStaff() {
-      const res = await fetch('/api/staff/roster', { cache: 'no-store' });
-      const data = (await res.json()) as {
-        staff?: { display_name: string; store_id: string }[];
-      };
+      const res = await fetch(
+        `/api/portal/reports/staff-options?store=${encodeURIComponent(storeId)}`,
+        { cache: 'no-store' },
+      );
+      const data = (await res.json()) as { names?: string[] };
       if (cancelled || !res.ok) return;
-      const names = (data.staff ?? [])
-        .filter((s) => s.store_id === storeId)
-        .map((s) => s.display_name)
-        .sort((a, b) => a.localeCompare(b, 'zh-Hant'));
-      setStaffOptions(names);
+      setStaffOptions(data.names ?? []);
     }
     void loadStaff();
     return () => {

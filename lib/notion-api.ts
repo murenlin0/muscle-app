@@ -241,6 +241,38 @@ export async function probeNotionConnection(
   };
 }
 
+const NOTION_STAFF_PROPERTY = '師傅';
+
+/** 從 Notion 每日紀錄資料庫讀取「師傅」select 選項（與 Notion UI 下拉一致） */
+export async function fetchNotionStaffSelectOptions(
+  storeId: StoreSlug,
+): Promise<string[]> {
+  const token = readNotionTokenFromEnv();
+  if (!token) return [];
+
+  const databaseId = getNotionDailyDbId(storeId);
+  const res = await fetch(probeUrlForId(databaseId), {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Notion-Version': notionVersionForQueryId(databaseId),
+    },
+  });
+  if (!res.ok) return [];
+
+  const data = (await res.json()) as {
+    properties?: Record<
+      string,
+      { type?: string; select?: { options?: { name: string }[] } }
+    >;
+  };
+  const prop = data.properties?.[NOTION_STAFF_PROPERTY];
+  if (prop?.type !== 'select' || !prop.select?.options) return [];
+
+  return prop.select.options
+    .map((o) => o.name.trim())
+    .filter((name) => name.length > 0);
+}
+
 function wrapNotionError(status: number, body: string): Error {
   if (status === 401) {
     return new Error(

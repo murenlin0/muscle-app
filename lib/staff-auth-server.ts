@@ -1,3 +1,4 @@
+import { fetchNotionStaffSelectOptions } from '@/lib/notion-api';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { getStore, type StoreSlug } from '@/lib/stores';
 
@@ -36,6 +37,50 @@ export async function listActiveStaffForRoster(): Promise<StaffRosterEntry[]> {
     store_id: row.store_id as StoreSlug,
     store_name: getStore(row.store_id)?.name ?? row.store_id,
   }));
+}
+
+/** 流水帳「人員」下拉：合併 staff 表、已同步流水帳、Notion 師傅選項 */
+export async function listLedgerStaffNames(storeId: StoreSlug): Promise<string[]> {
+  const supabase = getSupabaseAdmin();
+
+  const [{ data: staffRows, error: staffErr }, { data: txRows, error: txErr }] =
+    await Promise.all([
+      supabase
+        .from('staff')
+        .select('display_name')
+        .eq('store_id', storeId)
+        .eq('is_active', true),
+      supabase
+        .from('daily_transactions')
+        .select('staff_name')
+        .eq('store_id', storeId)
+        .not('staff_name', 'is', null),
+    ]);
+
+  if (staffErr) throw new Error(staffErr.message);
+  if (txErr) throw new Error(txErr.message);
+
+  let notionNames: string[] = [];
+  try {
+    notionNames = await fetchNotionStaffSelectOptions(storeId);
+  } catch {
+    // Notion 未設定或連線失敗時略過，仍回傳 DB 內名單
+  }
+
+  const names = new Set<string>();
+  for (const row of staffRows ?? []) {
+    const n = row.display_name?.trim();
+    if (n) names.add(n);
+  }
+  for (const row of txRows ?? []) {
+    const n = (row.staff_name as string | null)?.trim();
+    if (n) names.add(n);
+  }
+  for (const n of notionNames) {
+    if (n.trim()) names.add(n.trim());
+  }
+
+  return [...names].sort((a, b) => a.localeCompare(b, 'zh-Hant'));
 }
 
 export async function findStaffByName(storeId: StoreSlug, displayName: string) {
