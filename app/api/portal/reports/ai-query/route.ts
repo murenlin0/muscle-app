@@ -9,7 +9,7 @@ import {
   type ReportQueryIntent,
 } from '@/lib/reports-ai';
 import type { StoreSlug } from '@/lib/stores';
-import { getStore } from '@/lib/stores';
+import { getStore, isStoreSlug } from '@/lib/stores';
 
 export const dynamic = 'force-dynamic';
 
@@ -61,7 +61,7 @@ export async function POST(request: Request) {
     const roster = await listActiveStaffForRoster();
     const intent = await extractReportQuery(question, roster);
 
-    // 權限：店家帳號只能查自己分店
+    // 權限：店家帳號只能查自己分店；管理員未指定分店時沿用畫面目前分店
     let store = intent.store;
     if (session.role === 'store') {
       const allowed = session.storeIds;
@@ -69,6 +69,8 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: '無權查看其他分店' }, { status: 403 });
       }
       store = store ?? session.storeId;
+    } else if (!store && body.store && isStoreSlug(body.store)) {
+      store = body.store;
     }
 
     const filter = {
