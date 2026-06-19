@@ -157,11 +157,11 @@ function parseStructuredBookingMessage(text: string): BookingMessageData {
     storeSlug,
     storeLabel: store?.messageStoreLabel ?? storeLine,
     staffName: data.staffName?.trim() || null,
-    clientName: data.clientName.trim(),
-    phone: data.phone,
+    clientName: data.clientName!.trim(),
+    phone: data.phone!,
     serviceLabel: data.serviceLabel,
-    durationMinutes: data.durationMinutes,
-    startsAt: data.startsAt,
+    durationMinutes: data.durationMinutes!,
+    startsAt: data.startsAt!,
     note: data.note ?? null,
   };
 }
