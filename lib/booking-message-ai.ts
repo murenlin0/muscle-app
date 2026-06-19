@@ -183,11 +183,14 @@ async function callGeminiParse(
     throw new Error('尚未設定 GEMINI_API_KEY，無法使用 AI 解析');
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey,
+    },
     body: JSON.stringify({
       contents: [{ parts: [{ text: buildPrompt(text, roster) }] }],
       generationConfig: {
@@ -218,7 +221,7 @@ async function callGeminiParse(
     if (response.status === 429) {
       if (detail.includes('limit: 0')) {
         throw new BookingParseIncompleteError(
-          'AI 金鑰無法使用（免費額度為 0），請至 Google AI Studio 重新建立金鑰（AIzaSy 開頭）',
+          'AI 免費額度尚未啟用（limit: 0）。請至 AI Studio 該專案點「Set up billing」綁定帳單（不會自動扣款，僅啟用免費額度）',
         );
       }
       throw new BookingParseIncompleteError('AI 額度已用完，請稍後再試');
@@ -278,20 +281,13 @@ export async function parseBookingMessageWithAi(
 }
 
 export function isGeminiConfigured(): boolean {
-  const key = process.env.GEMINI_API_KEY?.trim();
-  return Boolean(key?.startsWith('AIzaSy'));
+  return Boolean(process.env.GEMINI_API_KEY?.trim());
 }
 
 export function assertGeminiConfigured(): void {
-  const key = process.env.GEMINI_API_KEY?.trim();
-  if (!key) {
+  if (!process.env.GEMINI_API_KEY?.trim()) {
     throw new BookingParseIncompleteError(
       'AI 解析尚未啟用，請在 Vercel 或 .env.local 設定 GEMINI_API_KEY',
-    );
-  }
-  if (!key.startsWith('AIzaSy')) {
-    throw new BookingParseIncompleteError(
-      'GEMINI_API_KEY 格式不正確，請至 Google AI Studio 建立金鑰（以 AIzaSy 開頭）',
     );
   }
 }
