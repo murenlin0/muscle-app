@@ -80,12 +80,8 @@ export default function StaffWorkspacePage() {
       setError(data.error ?? '解析失敗');
       return;
     }
-    const nextPreview = data.preview ?? null;
-    setPreview(nextPreview);
+    setPreview(data.preview ?? null);
     setParsedBy(data.parsedBy ?? null);
-    if (nextPreview?.staffName) {
-      setAssignedStaff(nextPreview.staffName);
-    }
   }
 
   async function handleCreate() {

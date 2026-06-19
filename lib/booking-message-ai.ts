@@ -17,6 +17,12 @@ import type { StaffRosterEntry } from '@/lib/staff-auth-server';
 const GROQ_MODEL = process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile';
 const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-2.0-flash';
 
+function readEnvKey(name: 'GROQ_API_KEY' | 'GEMINI_API_KEY'): string {
+  const raw = process.env[name];
+  if (!raw) return '';
+  return raw.trim().replace(/^["']|["']$/g, '');
+}
+
 interface AiBookingResponse {
   status: 'complete' | 'incomplete';
   message?: string | null;
@@ -188,7 +194,7 @@ async function callGroqParse(
   text: string,
   roster: StaffRosterEntry[],
 ): Promise<AiBookingResponse> {
-  const apiKey = process.env.GROQ_API_KEY?.trim();
+  const apiKey = readEnvKey('GROQ_API_KEY');
   if (!apiKey) {
     throw new Error('尚未設定 GROQ_API_KEY');
   }
@@ -219,7 +225,9 @@ async function callGroqParse(
       throw new BookingParseIncompleteError('AI 請求過於頻繁，請稍後再試');
     }
     if (response.status === 401 || response.status === 403) {
-      throw new BookingParseIncompleteError('GROQ_API_KEY 無效，請檢查金鑰');
+      throw new BookingParseIncompleteError(
+        'GROQ_API_KEY 無效，請到 Vercel muscle-app-mivu 重新貼上 gsk_ 開頭的金鑰',
+      );
     }
     throw new Error(`Groq 解析失敗（${response.status}）${detail ? `：${detail.slice(0, 200)}` : ''}`);
   }
@@ -236,7 +244,7 @@ async function callGeminiParse(
   text: string,
   roster: StaffRosterEntry[],
 ): Promise<AiBookingResponse> {
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  const apiKey = readEnvKey('GEMINI_API_KEY');
   if (!apiKey) {
     throw new Error('尚未設定 GEMINI_API_KEY');
   }
@@ -347,11 +355,33 @@ export async function parseBookingMessageWithAi(
 }
 
 export function isGroqConfigured(): boolean {
-  return Boolean(process.env.GROQ_API_KEY?.trim());
+  return Boolean(readEnvKey('GROQ_API_KEY'));
 }
 
 export function isGeminiConfigured(): boolean {
-  return Boolean(process.env.GEMINI_API_KEY?.trim());
+  return Boolean(readEnvKey('GEMINI_API_KEY'));
+}
+
+export async function probeGroqKey(): Promise<boolean> {
+  const apiKey = readEnvKey('GROQ_API_KEY');
+  if (!apiKey) return false;
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: GROQ_MODEL,
+        messages: [{ role: 'user', content: 'OK' }],
+        max_tokens: 1,
+      }),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
 export function isBookingAiConfigured(): boolean {
