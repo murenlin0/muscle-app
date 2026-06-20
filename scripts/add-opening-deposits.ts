@@ -22,7 +22,7 @@ const OPENING_DATE = '2024-03-01';
 // 5 位可自動處理（單一電話、非合寫）
 const DEPOSITS: { name: string; phone: string; amount: number }[] = [
   { name: '曾憲鈺', phone: '0938340304', amount: 1000 },
-  { name: '陳宥唯', phone: '0910678327', amount: 3000 },
+  // { name: '陳宥唯', phone: '0910678327', amount: 3000 }, // 已併入陳宥奇 0928294900
   { name: '葉恩銓', phone: '0920234127', amount: 1400 },
   { name: '陳信瑋', phone: '0933377145', amount: 3000 },
   { name: '林昆慶', phone: '0921138140', amount: 2500 },
