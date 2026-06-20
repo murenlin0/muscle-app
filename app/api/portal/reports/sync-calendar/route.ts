@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { syncCalendarBackfill } from '@/lib/calendar-backfill-sync';
 import { runCalendarSync } from '@/lib/calendar-sync-runner';
 import { repairCalendarCheckout } from '@/lib/calendar-checkout-sync';
 import { requireSuperAdmin } from '@/lib/portal-api';
@@ -10,6 +11,10 @@ export async function POST(request: Request) {
 
   let body: {
     lookbackHours?: number;
+    fromDate?: string;
+    toDate?: string;
+    storeId?: StoreSlug;
+    dryRun?: boolean;
     repair?: { storeId?: StoreSlug; occurredOn?: string; phone?: string };
   } = {};
   try {
@@ -35,6 +40,16 @@ export async function POST(request: Request) {
         occurredOn: body.repair.occurredOn,
         phone: body.repair.phone,
       });
+    }
+
+    if (body.fromDate) {
+      const backfill = await syncCalendarBackfill({
+        fromDate: body.fromDate,
+        toDate: body.toDate,
+        storeId: body.storeId ?? 'store1',
+        dryRun: body.dryRun ?? false,
+      });
+      return NextResponse.json({ ok: true, repair: repairResult, backfill });
     }
 
     const sync = await runCalendarSync(lookbackHours);
