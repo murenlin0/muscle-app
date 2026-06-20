@@ -22,7 +22,7 @@ export async function parseBookingMessageWithFallback(
     return { data: parseBookingMessage(text), method: 'rules' };
   } catch {
     if (!isBookingAiConfigured()) {
-      throw new BookingParseIncompleteError('無法解析此訊息，請補齊店名、姓名、電話、師傅、時長、時間');
+      throw new BookingParseIncompleteError('無法解析此訊息，請補齊店名、姓名、電話、時長、時間');
     }
     const roster = options?.roster ?? (await listActiveStaffForRoster());
     const result = await parseBookingMessageWithAiEx(text, roster);

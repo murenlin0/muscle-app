@@ -183,17 +183,45 @@ export function parseBookingMessage(text: string): BookingMessageData {
 
 export const UNASSIGNED_STAFF_LABEL = '未指定';
 
-/** 師傅 UI：補上負責師傅與師傅備註後再建日曆（UI 未指定時沿用訊息／AI 解析的師傅） */
+/** 師傅 UI：合併下拉選單的負責師傅與備註（不沿用 AI 解析的師傅） */
+export function applyStaffUiToBooking(
+  parsed: BookingMessageData,
+  input: { staffName?: string; staffNote?: string | null },
+): BookingMessageData {
+  const uiStaff = input.staffName?.trim() ?? '';
+  const staffName =
+    uiStaff && uiStaff !== UNASSIGNED_STAFF_LABEL ? uiStaff : null;
+  const noteParts = [parsed.note?.trim(), input.staffNote?.trim()].filter(Boolean);
+  return {
+    ...parsed,
+    staffName,
+    note: noteParts.length ? noteParts.join('；') : null,
+  };
+}
+
+/** 師傅 UI 預覽：未選師傅時仍可顯示其餘欄位 */
+export function buildBookingPreviewForStaffUi(data: BookingMessageData): BookingMessagePreview {
+  if (!data.staffName?.trim()) {
+    const endsAt = new Date(data.startsAt.getTime() + data.durationMinutes * 60_000);
+    return {
+      ...data,
+      staffName: UNASSIGNED_STAFF_LABEL,
+      endsAt,
+      calendarTitle: '（請選擇負責師傅）',
+    };
+  }
+  return buildBookingPreview(data);
+}
+
+/** @deprecated 建立預約用；預覽請用 applyStaffUiToBooking + buildBookingPreviewForStaffUi */
 export function finalizeStaffBooking(
   parsed: BookingMessageData,
   input: { staffName?: string; staffNote?: string | null },
 ): BookingMessageData {
   const uiStaff = input.staffName?.trim() ?? '';
-  const parsedStaff = parsed.staffName?.trim() ?? '';
-  const staffName =
-    uiStaff && uiStaff !== UNASSIGNED_STAFF_LABEL ? uiStaff : parsedStaff;
+  const staffName = uiStaff && uiStaff !== UNASSIGNED_STAFF_LABEL ? uiStaff : '';
 
-  if (!staffName || staffName === UNASSIGNED_STAFF_LABEL) {
+  if (!staffName) {
     throw new Error('沒有輸入師傅名稱');
   }
 

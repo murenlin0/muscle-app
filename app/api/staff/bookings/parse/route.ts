@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import {
-  buildBookingPreview,
-  finalizeStaffBooking,
+  applyStaffUiToBooking,
+  buildBookingPreviewForStaffUi,
 } from '@/lib/booking-message';
 import { BookingParseIncompleteError, isGroqConfigured } from '@/lib/booking-message-ai';
 import { parseBookingForStaffPreview } from '@/lib/booking-message-parse-server';
@@ -24,11 +24,11 @@ export async function POST(request: Request) {
 
   try {
     const { data: parsed, method } = await parseBookingForStaffPreview(body.text);
-    const finalized = finalizeStaffBooking(parsed, {
+    const withStaff = applyStaffUiToBooking(parsed, {
       staffName: body.staffName,
       staffNote: body.staffNote,
     });
-    const preview = buildBookingPreview(finalized);
+    const preview = buildBookingPreviewForStaffUi(withStaff);
     return NextResponse.json({ preview, parsedBy: method, aiProvider: isGroqConfigured() ? 'groq' : 'gemini' });
   } catch (e) {
     if (e instanceof BookingParseIncompleteError) {

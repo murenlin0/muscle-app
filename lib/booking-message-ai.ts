@@ -65,33 +65,28 @@ function taipeiNowParts(ref = new Date()): { date: string; time: string } {
   };
 }
 
-function buildPrompt(text: string, roster: StaffRosterEntry[]): string {
+function buildPrompt(text: string): string {
   const { date, time } = taipeiNowParts();
   const storeLines = STORE_LIST.map(
     (s) => `- ${s.messageStoreLabel}（${s.name}）`,
   ).join('\n');
-  const staffLines = roster.length
-    ? roster.map((s) => `- ${s.display_name}（${s.store_name}）`).join('\n')
-    : '（無在職師傅清單）';
 
   return `你是筋棧按摩店的預約訊息解析助手。師傅會貼上從 LINE 複製的訊息，格式不拘（可無標題、口語、欄位順序任意、錯字可容忍）。
 
-必要欄位（六項皆須能從訊息確定才可 complete）：
+必要欄位（五項皆須能從訊息確定才可 complete；負責師傅由畫面下拉選單指定，勿解析）：
 1. 店名（對應以下其一）
 ${storeLines}
-2. 師傅（對應在職師傅 display_name；可從「師傅：」、日曆標題前綴、或口語判斷）
-${staffLines}
-3. 客人姓名
-4. 電話（台灣手機 09 開頭 10 碼）
-5. 時長（僅 30、60、90、120 分鐘；項目可寫「運動按摩 {N}min」）
-6. 預約時間（startsAtLocal 格式 YYYY-MM-DD HH:mm，Asia/Taipei；若只有月日或口語，以今天 ${date} ${time} 推斷）
+2. 客人姓名
+3. 電話（台灣手機 09 開頭 10 碼）
+4. 時長（僅 30、60、90、120 分鐘；項目可寫「運動按摩 {N}min」）
+5. 預約時間（startsAtLocal 格式 YYYY-MM-DD HH:mm，Asia/Taipei；若只有月日或口語，以今天 ${date} ${time} 推斷）
 
 只回傳 JSON 物件，欄位：
 status, message, storeLabel, staffName, clientName, phone, serviceLabel, durationMinutes, startsAtLocal, note
 
 規則：
-- 六項齊全且可確定 → status="complete"，填齊各欄位，message=null
-- 任一無法確定 → status="incomplete"，message 用一句繁體中文簡短說明缺少什麼（例如「缺少電話與預約時間」），不超過 40 字
+- 五項齊全且可確定 → status="complete"，填齊各欄位（staffName 一律 null），message=null
+- 任一無法確定 → status="incomplete"，message 用一句繁體中文簡短說明缺少什麼（例如「缺少電話與預約時間」），不超過 40 字；勿提及師傅
 - 勿猜測電話或姓名；不確定就 incomplete
 
 訊息：
@@ -109,30 +104,8 @@ function parseStartsAtLocal(raw: string | null | undefined): Date | null {
   return parseStoreDateTime(Number(y), Number(mo), Number(d), Number(h), Number(mi));
 }
 
-function resolveStaffName(
-  raw: string | null | undefined,
-  storeSlug: StoreSlug | null,
-  roster: StaffRosterEntry[],
-): string | null {
-  if (!raw?.trim()) return null;
-  const trimmed = raw.trim();
-  const pool = storeSlug ? roster.filter((s) => s.store_id === storeSlug) : roster;
-  const names = pool.map((s) => s.display_name);
-
-  if (names.includes(trimmed)) return trimmed;
-
-  const byPrefix = names.find((n) => n.startsWith(trimmed) || trimmed.startsWith(n));
-  if (byPrefix) return byPrefix;
-
-  const byContains = names.find((n) => n.includes(trimmed) || trimmed.includes(n));
-  if (byContains) return byContains;
-
-  return trimmed;
-}
-
 function aiResponseToFields(
   extract: AiBookingResponse,
-  roster: StaffRosterEntry[],
 ): FlexibleBookingFields {
   const storeLabel = extract.storeLabel?.trim() || null;
   const storeSlug = storeLabel ? resolveStoreSlugFromMessageLabel(storeLabel) : null;
@@ -152,7 +125,7 @@ function aiResponseToFields(
       extract.serviceLabel?.trim() ||
       (durationMinutes ? `運動按摩 ${durationMinutes}min` : null),
     startsAt: parseStartsAtLocal(extract.startsAtLocal),
-    staffName: resolveStaffName(extract.staffName, storeSlug, roster),
+    staffName: null,
     note: extract.note?.trim() || null,
   };
 }
@@ -160,7 +133,6 @@ function aiResponseToFields(
 function missingFieldsMessage(fields: FlexibleBookingFields): string {
   const missing: string[] = [];
   if (!fields.storeSlug) missing.push('店名');
-  if (!fields.staffName?.trim()) missing.push('師傅');
   if (!fields.clientName?.trim()) missing.push('姓名');
   if (!fields.phone) missing.push('電話');
   if (!fields.durationMinutes) missing.push('時長');
@@ -170,14 +142,11 @@ function missingFieldsMessage(fields: FlexibleBookingFields): string {
 
 function fieldsToBookingData(fields: FlexibleBookingFields): BookingMessageData {
   validateRequiredBookingFields(fields);
-  if (!fields.staffName?.trim()) {
-    throw new BookingParseIncompleteError('缺少師傅');
-  }
   const built = buildFromFlexibleFields(fields);
   const store = getStore(built.storeSlug);
   return {
     ...built,
-    staffName: fields.staffName.trim(),
+    staffName: null,
     storeLabel: store?.messageStoreLabel ?? built.storeLabel,
   };
 }
@@ -190,10 +159,7 @@ function parseAiJson(raw: string): AiBookingResponse {
   }
 }
 
-async function callGroqParse(
-  text: string,
-  roster: StaffRosterEntry[],
-): Promise<AiBookingResponse> {
+async function callGroqParse(text: string): Promise<AiBookingResponse> {
   const apiKey = readEnvKey('GROQ_API_KEY');
   if (!apiKey) {
     throw new Error('尚未設定 GROQ_API_KEY');
@@ -212,7 +178,7 @@ async function callGroqParse(
           role: 'system',
           content: '你是筋棧預約訊息解析助手。只回傳 JSON 物件，不要 markdown 或其他文字。',
         },
-        { role: 'user', content: buildPrompt(text, roster) },
+        { role: 'user', content: buildPrompt(text) },
       ],
       response_format: { type: 'json_object' },
       temperature: 0.1,
@@ -240,10 +206,7 @@ async function callGroqParse(
   return parseAiJson(rawJson);
 }
 
-async function callGeminiParse(
-  text: string,
-  roster: StaffRosterEntry[],
-): Promise<AiBookingResponse> {
+async function callGeminiParse(text: string): Promise<AiBookingResponse> {
   const apiKey = readEnvKey('GEMINI_API_KEY');
   if (!apiKey) {
     throw new Error('尚未設定 GEMINI_API_KEY');
@@ -258,7 +221,7 @@ async function callGeminiParse(
       'x-goog-api-key': apiKey,
     },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: buildPrompt(text, roster) }] }],
+      contents: [{ parts: [{ text: buildPrompt(text) }] }],
       generationConfig: {
         temperature: 0.1,
         responseMimeType: 'application/json',
@@ -306,15 +269,12 @@ async function callGeminiParse(
   return parseAiJson(rawJson);
 }
 
-async function callAiParse(
-  text: string,
-  roster: StaffRosterEntry[],
-): Promise<AiBookingResponse> {
+async function callAiParse(text: string): Promise<AiBookingResponse> {
   if (isGroqConfigured()) {
-    return callGroqParse(text, roster);
+    return callGroqParse(text);
   }
   if (isGeminiConfigured()) {
-    return callGeminiParse(text, roster);
+    return callGeminiParse(text);
   }
   throw new BookingParseIncompleteError(
     'AI 解析尚未啟用，請在 Vercel 或 .env.local 設定 GROQ_API_KEY',
@@ -323,16 +283,16 @@ async function callAiParse(
 
 export async function parseBookingMessageWithAiEx(
   text: string,
-  roster: StaffRosterEntry[],
+  _roster?: StaffRosterEntry[],
 ): Promise<AiBookingParseResult> {
-  const response = await callAiParse(text, roster);
+  const response = await callAiParse(text);
 
   if (response.status === 'incomplete') {
     const message = response.message?.trim() || '無法解析此訊息，請補齊必要資訊';
     return { status: 'incomplete', message };
   }
 
-  const fields = aiResponseToFields(response, roster);
+  const fields = aiResponseToFields(response);
   try {
     return { status: 'complete', data: fieldsToBookingData(fields) };
   } catch (e) {
