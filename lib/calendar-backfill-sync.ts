@@ -364,9 +364,10 @@ function buildRowsFromEvent(
 
     const afterTopup = prior + topup;
     const afterUsage = prior + topup - usage;
+    const parsedCompound = parseCompoundVipTitle(title);
     const finalFromTitle =
-      'finalBalance' in compound && compound.finalBalance > 0
-        ? compound.finalBalance
+      parsedCompound && parsedCompound.finalBalance > 0
+        ? parsedCompound.finalBalance
         : afterUsage;
 
     const { topupTitle, usageTitle } = buildCalendarSplitTitles(
