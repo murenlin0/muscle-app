@@ -8,6 +8,11 @@ import { getSupabaseAdmin } from '@/lib/supabase';
 import { getCalendarEventStatus, getCalendarEventSummary, patchCalendarEventSummary } from '@/lib/google-calendar';
 import { parseStaffPrefixFromCalendarTitle } from '@/lib/booking-message';
 import { parseCompoundVipTitle } from '@/lib/ledger-title-fix';
+import {
+  clientMemberBalance,
+  memberRowSignedAmount,
+  type MemberBalanceRow,
+} from '@/lib/ledger-title-balance';
 import { canonicalStaffName } from '@/lib/multi-staff-split';
 import { normalizeStaffName } from '@/lib/notion-title-normalize';
 import { findStaffByName } from '@/lib/staff-auth-server';
@@ -38,15 +43,41 @@ function buildCalendarSplitTitles(
   usage: number,
   clientName: string | null,
   clientPhone: string | null,
+  balanceAfterTopup: number,
+  balanceAfterUsage: number,
 ): { topupTitle: string; usageTitle: string } {
   const t = title.replace(/\s/g, '');
   const head = t.match(/^(.+?\d+分)/)?.[1] ?? '';
-  const staffPrefix = head.replace(/\d+分$/, '') || t.match(/^[^\d+]+/)?.[0] || '';
-  const suffix = `${clientName ?? ''}${clientPhone ?? ''}`;
+  const suffix =
+    clientName && clientPhone
+      ? `VIP${clientName}${clientPhone}`
+      : `${clientName ?? ''}${clientPhone ?? ''}`;
+  const vip = suffix.startsWith('VIP') ? suffix : `VIP${suffix}`;
   return {
-    topupTitle: `${staffPrefix}儲值+${topup}${suffix}`,
-    usageTitle: `${head}-${usage}${suffix}`,
+    topupTitle: `+${topup}、${balanceAfterTopup}${vip}`,
+    usageTitle: `${head}-${usage}、${balanceAfterUsage}${vip}`,
   };
+}
+
+async function loadMemberRowsForBalance(storeId: StoreSlug): Promise<MemberBalanceRow[]> {
+  const supabase = getSupabaseAdmin();
+  const all: MemberBalanceRow[] = [];
+  let offset = 0;
+  for (;;) {
+    const { data, error } = await supabase
+      .from('daily_transactions')
+      .select('id, occurred_on, title, amount, category, client_name, client_phone')
+      .eq('store_id', storeId)
+      .in('category', ['會員儲值', '會員使用', '會員補差額'])
+      .order('occurred_on', { ascending: true })
+      .order('id', { ascending: true })
+      .range(offset, offset + 999);
+    if (error) throw new Error(error.message);
+    all.push(...(data as MemberBalanceRow[]));
+    if (!data?.length || data.length < 1000) break;
+    offset += 1000;
+  }
+  return all;
 }
 
 /**
@@ -821,6 +852,23 @@ export async function syncCalendarCheckouts(
   }
 
   // 處理每筆結帳事件
+  type TxRow = {
+    store_id: string;
+    occurred_on: string;
+    title: string;
+    amount: number;
+    category: TransactionCategory;
+    payment_methods: string[];
+    staff_name: string | null;
+    client_name: string | null;
+    client_phone: string | null;
+    is_vip: boolean;
+    source: string;
+  };
+
+  const memberRowsByStore = new Map<StoreSlug, MemberBalanceRow[]>();
+  const pendingByStore = new Map<StoreSlug, TxRow[]>();
+
   for (const ev of checkoutEvents) {
     const appt = apptByEventId.get(ev.id);
     if (!appt) {
@@ -857,23 +905,32 @@ export async function syncCalendarCheckouts(
       const compound =
         parseCompoundVipTitle(title) ?? parseSimpleTopupUsage(title);
 
-      type TxRow = {
-        store_id: string;
-        occurred_on: string;
-        title: string;
-        amount: number;
-        category: TransactionCategory;
-        payment_methods: string[];
-        staff_name: string | null;
-        client_name: string | null;
-        client_phone: string | null;
-        is_vip: boolean;
-        source: string;
-      };
-
       const rowsToInsert: TxRow[] = [];
 
       if (compound) {
+        if (!memberRowsByStore.has(storeId)) {
+          memberRowsByStore.set(storeId, await loadMemberRowsForBalance(storeId));
+        }
+        const memberRows = memberRowsByStore.get(storeId)!;
+        const pending = pendingByStore.get(storeId) ?? [];
+        const phone = client?.phone ?? null;
+
+        let prior = 0;
+        if (phone) {
+          prior =
+            (clientMemberBalance(memberRows, phone) ?? 0) +
+            pending
+              .filter((p) => p.client_phone === phone)
+              .reduce((s, p) => s + memberRowSignedAmount(p.category, p.amount), 0);
+        }
+
+        const afterTopup = prior + compound.topup;
+        const parsedCompound = parseCompoundVipTitle(title);
+        const afterUsage =
+          parsedCompound && parsedCompound.finalBalance > 0
+            ? parsedCompound.finalBalance
+            : prior + compound.topup - compound.usage;
+
         const topupMethods =
           payment.methods.length ? payment.methods : ['現金'];
         const { topupTitle, usageTitle } = buildCalendarSplitTitles(
@@ -882,6 +939,8 @@ export async function syncCalendarCheckouts(
           compound.usage,
           client?.name ?? null,
           client?.phone ?? null,
+          afterTopup,
+          afterUsage,
         );
         rowsToInsert.push({
           store_id: storeId,
@@ -934,6 +993,24 @@ export async function syncCalendarCheckouts(
         result.errors.push(`[${title}] 寫入失敗：${insertErr.message}`);
         continue;
       }
+
+      if (!memberRowsByStore.has(storeId)) {
+        memberRowsByStore.set(storeId, await loadMemberRowsForBalance(storeId));
+      }
+      const memberRows = memberRowsByStore.get(storeId)!;
+      for (const row of rowsToInsert) {
+        memberRows.push({
+          occurred_on: row.occurred_on,
+          title: row.title,
+          amount: row.amount,
+          category: row.category,
+          client_name: row.client_name,
+          client_phone: row.client_phone,
+        });
+      }
+      const pending = pendingByStore.get(storeId) ?? [];
+      pending.push(...rowsToInsert);
+      pendingByStore.set(storeId, pending);
 
       // 有儲值 → 升級客人為 VIP（名字前加 VIP、設 is_vip=true）
       // 同時更新日曆事件標題與 appointments.calendar_title

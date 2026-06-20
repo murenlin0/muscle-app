@@ -117,18 +117,19 @@ function buildCalendarSplitTitles(
   usage: number,
   clientName: string | null,
   clientPhone: string | null,
-  balanceAfter: number,
+  balanceAfterTopup: number,
+  balanceAfterUsage: number,
 ): { topupTitle: string; usageTitle: string } {
   const t = title.replace(/\s/g, '');
   const head = t.match(/^(.+?\d+分)/)?.[1] ?? '';
-  const staffPrefix = head.replace(/\d+分$/, '') || t.match(/^[^\d+]+/)?.[0] || '';
   const suffix =
     clientName && clientPhone
       ? `VIP${clientName}${clientPhone}`
       : `${clientName ?? ''}${clientPhone ?? ''}`;
+  const vip = suffix.startsWith('VIP') ? suffix : `VIP${suffix}`;
   return {
-    topupTitle: `${staffPrefix}儲值+${topup}、${topup}${suffix.startsWith('VIP') ? suffix : `VIP${suffix}`}`,
-    usageTitle: `${head}-${usage}、${balanceAfter}${suffix.startsWith('VIP') ? suffix : `VIP${suffix}`}`,
+    topupTitle: `+${topup}、${balanceAfterTopup}${vip}`,
+    usageTitle: `${head}-${usage}、${balanceAfterUsage}${vip}`,
   };
 }
 
@@ -272,12 +273,48 @@ function applyTitleBalanceIfMissing(
     return `${head}-${amount}、${balanceAfter}${vipSuffix}`;
   }
   if (category === '會員儲值') {
-    if (/\+(\d+)-(\d+)/.test(t)) {
-      return t.replace(/、(\d+)VIP/i, `、${balanceAfter}VIP`);
-    }
-    return `${head}+${amount}、${balanceAfter}${vipSuffix}`;
+    return `+${amount}、${balanceAfter}${vipSuffix}`;
   }
   return title;
+}
+
+type MemberRowWithMeta = MemberBalanceRow & { id: string; source?: string };
+
+function phoneKey(row: {
+  client_phone?: string | null;
+  title: string;
+}): string | null {
+  if (row.client_phone) return row.client_phone;
+  return parseNotionNamePhone(row.title)?.phone ?? null;
+}
+
+/** 納入全部歷史 + 同批 pending，依序累計後該筆交易完成應有餘額 */
+function expectedBalanceAfterRow(
+  history: MemberBalanceRow[],
+  pendingBefore: TxInsert[],
+  row: TxInsert,
+): number | null {
+  const phone = phoneKey(row);
+  if (!phone) return null;
+
+  let running = 0;
+  let matched = false;
+
+  for (const r of history) {
+    if (phoneKey(r) !== phone) continue;
+    running += memberRowSignedAmount(r.category, r.amount);
+    matched = true;
+  }
+
+  for (const p of pendingBefore) {
+    if (phoneKey(p) !== phone) continue;
+    running += memberRowSignedAmount(p.category, p.amount);
+    matched = true;
+  }
+
+  running += memberRowSignedAmount(row.category, row.amount);
+
+  return matched || running !== 0 ? running : running;
 }
 
 function auditRowBalance(
@@ -285,37 +322,18 @@ function auditRowBalance(
   memberRows: MemberBalanceRow[],
   pendingRows: TxInsert[],
 ): BalanceMismatchRow | null {
-  if (!row.client_phone) return null;
   if (!['會員儲值', '會員使用', '會員補差額'].includes(row.category)) return null;
 
   const titleBalance = parseBalanceAfter顿号(stripAllSpaces(row.title));
   if (titleBalance === null) return null;
 
-  const combined: MemberBalanceRow[] = [
-    ...memberRows,
-    ...pendingRows
-      .filter((p) => p.client_phone === row.client_phone)
-      .map((p, i) => ({
-        id: `pending-${i}`,
-        occurred_on: p.occurred_on,
-        title: p.title,
-        amount: p.amount,
-        category: p.category,
-        client_name: p.client_name,
-        client_phone: p.client_phone,
-      })),
-    {
-      id: 'new',
-      occurred_on: row.occurred_on,
-      title: row.title,
-      amount: row.amount,
-      category: row.category,
-      client_name: row.client_name,
-      client_phone: row.client_phone,
-    },
-  ];
+  const pendingBefore = pendingRows.filter(
+    (p) =>
+      p.occurred_on < row.occurred_on ||
+      (p.occurred_on === row.occurred_on && pendingRows.indexOf(p) < pendingRows.indexOf(row)),
+  );
 
-  const computed = clientMemberBalance(combined, row.client_phone);
+  const computed = expectedBalanceAfterRow(memberRows, pendingBefore, row);
   if (computed === null || computed === titleBalance) return null;
 
   return {
@@ -326,8 +344,87 @@ function auditRowBalance(
     amount: row.amount,
     titleBalance,
     computedBalance: computed,
-    clientPhone: row.client_phone,
+    clientPhone: phoneKey(row),
   };
+}
+
+const CATEGORY_ORDER: Record<string, number> = {
+  會員儲值: 0,
+  會員補差額: 1,
+  會員使用: 2,
+};
+
+function memberRowSort(a: MemberRowWithMeta, b: MemberRowWithMeta): number {
+  if (a.occurred_on !== b.occurred_on) return a.occurred_on < b.occurred_on ? -1 : 1;
+  const ca = CATEGORY_ORDER[a.category] ?? 9;
+  const cb = CATEGORY_ORDER[b.category] ?? 9;
+  if (ca !== cb) return ca - cb;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+async function loadAllMemberRowsWithMeta(storeId: StoreSlug): Promise<MemberRowWithMeta[]> {
+  const supabase = getSupabaseAdmin();
+  const all: MemberRowWithMeta[] = [];
+  let offset = 0;
+  for (;;) {
+    const { data, error } = await supabase
+      .from('daily_transactions')
+      .select('id, occurred_on, title, amount, category, client_name, client_phone, source')
+      .eq('store_id', storeId)
+      .in('category', ['會員儲值', '會員使用', '會員補差額'])
+      .order('occurred_on', { ascending: true })
+      .order('id', { ascending: true })
+      .range(offset, offset + 999);
+    if (error) throw new Error(error.message);
+    all.push(...(data as MemberRowWithMeta[]));
+    if (!data?.length || data.length < 1000) break;
+    offset += 1000;
+  }
+  return all;
+}
+
+/**
+ * 對帳：納入 6/11 前全部會員流水，檢查 backfill 列的頓號餘額是否與累計一致。
+ */
+export async function auditCalendarBackfillBalances(
+  storeId: StoreSlug = 'store1',
+  fromDate = '2026-06-11',
+): Promise<BalanceMismatchRow[]> {
+  const all = await loadAllMemberRowsWithMeta(storeId);
+  all.sort(memberRowSort);
+  const mismatches: BalanceMismatchRow[] = [];
+  const runningByPhone = new Map<string, number>();
+
+  for (const row of all) {
+    const phone = phoneKey(row);
+    if (!phone) continue;
+
+    const prior = runningByPhone.get(phone) ?? 0;
+    const delta = memberRowSignedAmount(row.category, row.amount);
+    const after = prior + delta;
+    runningByPhone.set(phone, after);
+
+    const isBackfill =
+      row.source === 'calendar_backfill' && row.occurred_on >= fromDate;
+    if (!isBackfill) continue;
+
+    const titleBalance = parseBalanceAfter顿号(stripAllSpaces(row.title));
+    if (titleBalance === null) continue;
+    if (titleBalance === after) continue;
+
+    mismatches.push({
+      eventId: '',
+      occurredOn: row.occurred_on,
+      title: row.title,
+      category: row.category,
+      amount: row.amount,
+      titleBalance,
+      computedBalance: after,
+      clientPhone: phone,
+    });
+  }
+
+  return mismatches;
 }
 
 function buildRowsFromEvent(
@@ -376,6 +473,7 @@ function buildRowsFromEvent(
       usage,
       client.name,
       client.phone,
+      afterTopup,
       finalFromTitle,
     );
 
@@ -524,18 +622,19 @@ export async function syncCalendarBackfill(
       for (const row of rows) {
         const mismatch = auditRowBalance(row, memberRows, pendingInserts);
         if (mismatch) result.balanceMismatches.push(mismatch);
+        pendingInserts.push(row);
       }
 
       if (options.dryRun) {
         result.imported += rows.length;
         result.titles.push(ev.summary ?? ev.id);
-        pendingInserts.push(...rows);
         continue;
       }
 
       const { error } = await supabase.from('daily_transactions').insert(rows);
       if (error) {
         result.errors.push(`[${ev.summary}] 寫入失敗：${error.message}`);
+        for (let i = 0; i < rows.length; i++) pendingInserts.pop();
         continue;
       }
 
@@ -549,7 +648,6 @@ export async function syncCalendarBackfill(
           client_phone: row.client_phone,
         });
       }
-      pendingInserts.push(...rows);
       existingNotes.add(noteKey);
       result.imported += rows.length;
       result.titles.push(ev.summary ?? ev.id);
