@@ -31,23 +31,71 @@ export function asksAllStoresReport(question: string): boolean {
   return /全部分店|兩店合計|全部店|兩店總|所有分店|各店合計|兩店加總/.test(question);
 }
 
-/** AI 解析出的報表查詢意圖 */
+const REPORT_QUERY_INTENTS = [
+  'filter',
+  'sum',
+  'count',
+  'salary',
+  'staff_hours',
+  'overview',
+  'net_profit',
+  'expense_breakdown',
+  'compare',
+  'client_stats',
+  'multi_account',
+  'top_n',
+] as const;
+
+export type ReportQueryIntentType = (typeof REPORT_QUERY_INTENTS)[number];
+
+export type ClientStatsMode = 'no_phone' | 'vip_count' | 'balance_by_name';
+
+export type CompareMetric = 'revenue' | 'expense' | 'net_profit' | 'hours' | 'cash' | 'all';
+
+export type TopNType = 'staff_hours' | 'staff_revenue' | 'client_revenue' | 'client_visits';
+
+/** AI 解析出的報表查詢意圖（僅讀取，不修改資料） */
 export interface ReportQueryIntent {
-  /** filter＝只設篩選；sum＝加總金額；count＝筆數；salary＝估算師傅薪資；staff_hours＝各師傅服務時數 */
-  intent: 'filter' | 'sum' | 'count' | 'salary' | 'staff_hours';
+  intent: ReportQueryIntentType;
   from: string;
   to: string;
   store: StoreSlug | null;
   staffName: string | null;
   categories: TransactionCategory[] | null;
   account: LedgerAccountFilter | null;
-  /** 薪資估算：時薪（每小時金額） */
   hourlyRate: number | null;
-  /** 薪資估算：調薪生效日（含當日）之後使用 hourlyRate，之前使用 priorRate */
   rateEffectiveFrom: string | null;
   priorRate: number | null;
-  /** AI 對問題的繁體中文簡短重述 */
   explanation: string;
+  /** 使用者要求修改資料時設 true */
+  blocked: boolean;
+  blockedMessage: string | null;
+  clientStatsMode: ClientStatsMode | null;
+  clientNameQuery: string | null;
+  compareFrom: string | null;
+  compareTo: string | null;
+  compareMetric: CompareMetric | null;
+  topN: number | null;
+  topNType: TopNType | null;
+}
+
+/** 偵測修改/同步類請求（Groq 備援） */
+export function detectModifyRequest(question: string): string | null {
+  const q = question.trim();
+  if (!q) return null;
+  if (/同步|匯入|寫入|覆寫/.test(q)) {
+    return '僅支援查詢與統計，無法同步或寫入資料。';
+  }
+  if (/刪除|刪掉|移除紀錄/.test(q)) {
+    return '僅支援查詢與統計，無法刪除資料。';
+  }
+  if (/新增.*(?:紀錄|筆|資料|帳目)|建立.*(?:紀錄|帳目)/.test(q)) {
+    return '僅支援查詢與統計，無法新增資料。';
+  }
+  if (/改(?:標題|內容|金額|分類|師傅|日期|帳目|紀錄)|修改(?:資料|紀錄|帳目|金額)/.test(q)) {
+    return '僅支援查詢與統計，無法修改資料。';
+  }
+  return null;
 }
 
 function taipeiToday(): string {
@@ -69,8 +117,9 @@ function buildPrompt(question: string, roster: StaffRosterEntry[]): string {
     ? roster.map((s) => `- ${s.display_name}（${s.store_name} / ${s.store_id}）`).join('\n')
     : '（無在職師傅清單）';
   const categoryLine = TRANSACTION_CATEGORIES.join('、');
+  const intentLine = REPORT_QUERY_INTENTS.map((i) => `"${i}"`).join(' | ');
 
-  return `你是筋棧按摩店的報表查詢助手。使用者用口語提問，你要把問題轉成結構化查詢條件。今天是 ${today}（Asia/Taipei）。
+  return `你是筋棧按摩店的報表查詢助手。使用者用口語提問，你要把問題轉成結構化「唯讀查詢」條件。今天是 ${today}（Asia/Taipei）。
 
 可用分店（store）：
 ${storeLines}
@@ -87,7 +136,9 @@ ${staffLines}
 
 只回傳 JSON 物件，欄位：
 {
-  "intent": "filter" | "sum" | "count" | "salary" | "staff_hours",
+  "blocked": false,
+  "blockedMessage": null,
+  "intent": ${intentLine},
   "from": "YYYY-MM-DD",
   "to": "YYYY-MM-DD",
   "store": store 代碼或 null,
@@ -97,16 +148,56 @@ ${staffLines}
   "hourlyRate": 數字或 null,
   "rateEffectiveFrom": "YYYY-MM-DD" 或 null,
   "priorRate": 數字或 null,
+  "clientStatsMode": "no_phone" | "vip_count" | "balance_by_name" | null,
+  "clientNameQuery": 客人姓名或 null,
+  "compareFrom": "YYYY-MM-DD" 或 null,
+  "compareTo": "YYYY-MM-DD" 或 null,
+  "compareMetric": "revenue" | "expense" | "net_profit" | "hours" | "cash" | "all" | null,
+  "topN": 整數或 null,
+  "topNType": "staff_hours" | "staff_revenue" | "client_revenue" | "client_visits" | null,
   "explanation": "一句繁體中文重述查詢條件"
 }
 
-規則：
-- intent 判斷：問「多少錢/加總/總共（金額）」→ sum；問「幾筆/次數」→ count；問「薪水/薪資且有提到時薪」→ salary；問「每個/各/全部師傅的總時數/時數/工時/服務時數」→ staff_hours（不是 sum）；只是要看明細→ filter
-- 「6/1~6/15」「6月1日到15日」等未寫年份的日期 → ${year}-06-01 ~ ${year}-06-15（未指定年份則用 ${year}）
-- 「今年」= ${year}-01-01 ~ ${today}；「上個月/本月」依今天推算；沒講日期就用今年至今
-- staff_hours：categories 固定 null（後端會依服務時數規則篩選）；staffName 固定 null（要列出全部師傅）
-- salary：hourlyRate 為調整後時薪，rateEffectiveFrom 為調薪生效日，priorRate 為調整前時薪（沒提到就 null）
-- 只輸出 JSON，不要 markdown 或多餘文字
+【禁止修改資料】若使用者要求改/刪/新增/同步/寫入/匯入資料或帳目，設 blocked=true，blockedMessage="僅支援查詢與統計，無法修改、新增或刪除資料。"，其餘欄位可省略。
+
+【intent 判斷】
+- overview：財務總覽、整體狀況、營業額成本淨利資產一次看
+- net_profit：淨利、賺多少、獲利
+- expense_breakdown：成本明細、房租水電師傅薪水支出結構
+- compare：本月 vs 上個月、跟去年比、兩段期間比較
+- multi_account：現金加富邦、帳戶加總
+- client_stats + clientStatsMode：
+  - no_phone：沒電話的客人有幾個
+  - vip_count：VIP 會員人數
+  - balance_by_name：依姓名查會員餘額（clientNameQuery 填姓名）
+- top_n + topN + topNType：前 N 名師傅/客人（時數、營業額、來店次數）
+- sum：加總金額；count：筆數；salary：時薪估算；staff_hours：各師傅時數；filter：只看明細
+
+【日期解析】
+- 「6/1~6/15」「6月1日到15日」→ ${year}-06-01 ~ ${year}-06-15
+- 「去年5月」→ ${Number(year) - 1}-05-01 ~ ${Number(year) - 1}-05-31
+- 「這季/本季」→ 當季第一天 ~ ${today}
+- 「今年」→ ${year}-01-01 ~ ${today}；「上個月/本月」依今天推算
+- compare：from/to=本期；compareFrom/compareTo=對照期（例：本月 vs 上個月 → 本期=本月，對照=上個月）；沒指定對照期可留 null（後端自動推前一段）
+- 沒講日期：overview/multi_account 用今年至今；其餘依語意
+
+【其他規則】
+- store：使用者沒指定分店 → null（後端用畫面分店）；明確說某店才填 store
+- staff_hours：categories=null；staffName=null（列全部師傅）
+- salary：需 hourlyRate；調薪則填 rateEffectiveFrom、priorRate
+- topN 預設 5
+- 只輸出 JSON，不要 markdown
+
+範例：
+- 「今年淨利多少」→ intent=net_profit, from=${year}-01-01, to=${today}
+- 「上個月房租水電支出」→ intent=expense_breakdown, from/to=上個月
+- 「本月跟上個月營業額比較」→ intent=compare, compareMetric=revenue
+- 「現金加富邦多少」→ intent=multi_account
+- 「沒電話的客人幾個」→ intent=client_stats, clientStatsMode=no_phone
+- 「VIP 有幾個」→ intent=client_stats, clientStatsMode=vip_count
+- 「王小明餘額」→ intent=client_stats, clientStatsMode=balance_by_name, clientNameQuery=王小明
+- 「前3名師傅時數」→ intent=top_n, topN=3, topNType=staff_hours
+- 「幫我刪除這筆」→ blocked=true
 
 問題：
 """
@@ -124,15 +215,21 @@ function normalizeIntent(raw: Record<string, unknown>): ReportQueryIntent {
     const n = typeof v === 'number' ? v : Number(v);
     return Number.isFinite(n) && n > 0 ? n : null;
   };
+  const asInt = (v: unknown): number | null => {
+    const n = typeof v === 'number' ? v : Number(v);
+    if (!Number.isFinite(n) || n < 1) return null;
+    return Math.min(Math.round(n), 50);
+  };
+
+  const blocked = raw.blocked === true;
+  const blockedMessage = asString(raw.blockedMessage);
 
   const intentRaw = asString(raw.intent);
-  const intent: ReportQueryIntent['intent'] =
-    intentRaw === 'sum' ||
-    intentRaw === 'count' ||
-    intentRaw === 'salary' ||
-    intentRaw === 'staff_hours'
-      ? intentRaw
-      : 'filter';
+  const intent: ReportQueryIntentType = (REPORT_QUERY_INTENTS as readonly string[]).includes(
+    intentRaw ?? '',
+  )
+    ? (intentRaw as ReportQueryIntentType)
+    : 'filter';
 
   const storeRaw = asString(raw.store);
   const store = STORE_LIST.some((s) => s.slug === storeRaw)
@@ -156,6 +253,37 @@ function normalizeIntent(raw: Record<string, unknown>): ReportQueryIntent {
   const from = asString(raw.from);
   const to = asString(raw.to);
 
+  const clientStatsRaw = asString(raw.clientStatsMode);
+  const clientStatsMode: ClientStatsMode | null =
+    clientStatsRaw === 'no_phone' ||
+    clientStatsRaw === 'vip_count' ||
+    clientStatsRaw === 'balance_by_name'
+      ? clientStatsRaw
+      : null;
+
+  const compareMetricRaw = asString(raw.compareMetric);
+  const compareMetric: CompareMetric | null =
+    compareMetricRaw === 'revenue' ||
+    compareMetricRaw === 'expense' ||
+    compareMetricRaw === 'net_profit' ||
+    compareMetricRaw === 'hours' ||
+    compareMetricRaw === 'cash' ||
+    compareMetricRaw === 'all'
+      ? compareMetricRaw
+      : null;
+
+  const topNTypeRaw = asString(raw.topNType);
+  const topNType: TopNType | null =
+    topNTypeRaw === 'staff_hours' ||
+    topNTypeRaw === 'staff_revenue' ||
+    topNTypeRaw === 'client_revenue' ||
+    topNTypeRaw === 'client_visits'
+      ? topNTypeRaw
+      : null;
+
+  const compareFrom = asString(raw.compareFrom);
+  const compareTo = asString(raw.compareTo);
+
   return {
     intent,
     from: from && dateRe.test(from) ? from : `${year}-01-01`,
@@ -171,6 +299,15 @@ function normalizeIntent(raw: Record<string, unknown>): ReportQueryIntent {
         : null,
     priorRate: asNumber(raw.priorRate),
     explanation: asString(raw.explanation) ?? '已解析查詢條件',
+    blocked,
+    blockedMessage,
+    clientStatsMode,
+    clientNameQuery: asString(raw.clientNameQuery),
+    compareFrom: compareFrom && dateRe.test(compareFrom) ? compareFrom : null,
+    compareTo: compareTo && dateRe.test(compareTo) ? compareTo : null,
+    compareMetric,
+    topN: asInt(raw.topN),
+    topNType,
   };
 }
 
@@ -178,6 +315,32 @@ export async function extractReportQuery(
   question: string,
   roster: StaffRosterEntry[],
 ): Promise<ReportQueryIntent> {
+  const modifyBlock = detectModifyRequest(question);
+  if (modifyBlock) {
+    return {
+      intent: 'filter',
+      from: taipeiToday(),
+      to: taipeiToday(),
+      store: null,
+      staffName: null,
+      categories: null,
+      account: null,
+      hourlyRate: null,
+      rateEffectiveFrom: null,
+      priorRate: null,
+      explanation: '修改資料請求',
+      blocked: true,
+      blockedMessage: modifyBlock,
+      clientStatsMode: null,
+      clientNameQuery: null,
+      compareFrom: null,
+      compareTo: null,
+      compareMetric: null,
+      topN: null,
+      topNType: null,
+    };
+  }
+
   const apiKey = readGroqKey();
   if (!apiKey) {
     throw new ReportsAiError('AI 尚未啟用，請設定 GROQ_API_KEY');
@@ -194,7 +357,8 @@ export async function extractReportQuery(
       messages: [
         {
           role: 'system',
-          content: '你是報表查詢解析助手。只回傳 JSON 物件，不要 markdown 或其他文字。',
+          content:
+            '你是報表查詢解析助手。只回傳 JSON 物件，不要 markdown 或其他文字。絕不可將修改/刪除/新增/同步請求解析為查詢 intent，應設 blocked=true。',
         },
         { role: 'user', content: buildPrompt(question, roster) },
       ],
@@ -229,5 +393,25 @@ export async function extractReportQuery(
     throw new ReportsAiError('AI 回傳格式無法解析');
   }
 
-  return normalizeIntent(parsed);
+  const intent = normalizeIntent(parsed);
+  if (intent.blocked) {
+    intent.blockedMessage =
+      intent.blockedMessage ?? '僅支援查詢與統計，無法修改、新增或刪除資料。';
+  }
+  return intent;
+}
+
+/** 統計類 intent 不套用流水帳細部篩選 */
+export function intentSkipsLedgerFilter(intent: ReportQueryIntentType): boolean {
+  return [
+    'overview',
+    'net_profit',
+    'expense_breakdown',
+    'compare',
+    'client_stats',
+    'multi_account',
+    'top_n',
+    'staff_hours',
+    'salary',
+  ].includes(intent);
 }

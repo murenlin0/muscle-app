@@ -16,10 +16,11 @@ export interface AiReportFilter {
 }
 
 const SAMPLES = [
-  '今年到現在的總營業額',
-  '上個月工資支出多少',
-  '仁今年的服務有幾筆',
-  '只看這個月的會員儲值',
+  '今年淨利多少',
+  '本月跟上個月營業額比較',
+  '現金加富邦多少',
+  '沒電話的客人有幾個',
+  '前5名師傅服務時數',
 ];
 
 export function ReportsAiBox({
@@ -33,6 +34,7 @@ export function ReportsAiBox({
   const [loading, setLoading] = useState(false);
   const [answer, setAnswer] = useState<string | null>(null);
   const [explanation, setExplanation] = useState<string | null>(null);
+  const [filterApplied, setFilterApplied] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function ask(q: string) {
@@ -42,6 +44,7 @@ export function ReportsAiBox({
     setError(null);
     setAnswer(null);
     setExplanation(null);
+    setFilterApplied(false);
 
     try {
       const res = await fetch('/api/portal/reports/ai-query', {
@@ -50,9 +53,9 @@ export function ReportsAiBox({
         body: JSON.stringify({ question: text, store }),
       });
       const data = (await res.json()) as {
-        filter?: AiReportFilter;
+        filter?: AiReportFilter | null;
         answer?: string;
-        intent?: { explanation?: string };
+        intent?: { explanation?: string; blocked?: boolean };
         error?: string;
       };
       if (!res.ok) {
@@ -60,7 +63,8 @@ export function ReportsAiBox({
         return;
       }
       setAnswer(data.answer ?? null);
-      setExplanation(data.intent?.explanation ?? null);
+      setExplanation(data.intent?.blocked ? null : (data.intent?.explanation ?? null));
+      setFilterApplied(Boolean(data.filter));
       if (data.filter) onApplyFilter(data.filter);
     } catch {
       setError('連線失敗，請稍後再試');
@@ -75,7 +79,7 @@ export function ReportsAiBox({
         <Sparkles className="size-4" />
         AI 報表助手
         <span className="rounded-full border border-[#444] px-2 py-0.5 text-[10px] font-normal text-[#888]">
-          僅查詢與篩選，不會修改資料
+          查詢、統計、比較；不會修改資料
         </span>
       </div>
 
@@ -89,7 +93,7 @@ export function ReportsAiBox({
               void ask(question);
             }
           }}
-          placeholder="用說的查報表，例如：仁時薪5月調到650，算今年薪水"
+          placeholder="用說的查報表，例如：今年淨利、本月比上個月、王小明餘額"
           className="flex h-10 flex-1 rounded-md border border-[#444] bg-[#252525] px-3 text-sm text-foreground placeholder:text-[#666]"
         />
         <Button
@@ -132,7 +136,9 @@ export function ReportsAiBox({
             <p className="text-xs text-[#777]">解析：{explanation}</p>
           ) : null}
           <p className="whitespace-pre-wrap text-sm leading-relaxed text-[#e5e5e5]">{answer}</p>
-          <p className="pt-1 text-[11px] text-[#666]">已自動套用篩選，下方流水帳同步更新</p>
+          {filterApplied ? (
+            <p className="pt-1 text-[11px] text-[#666]">已自動套用篩選，下方流水帳同步更新</p>
+          ) : null}
         </div>
       ) : null}
     </div>
