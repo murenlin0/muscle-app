@@ -153,7 +153,7 @@ function resolveClientFromTitle(title: string): {
       isVip: /VIP/i.test(title),
     };
   }
-  return { name: parsed.name, phone: parsed.phone, isVip: parsed.isVip };
+  return { name: parsed.name, phone: parsed.phone, isVip: parsed.isVip ?? false };
 }
 
 function eventStartIso(ev: GoogleCalendarEvent): string {
