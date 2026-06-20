@@ -36,6 +36,7 @@ const REPORT_QUERY_INTENTS = [
   'sum',
   'count',
   'salary',
+  'multi_salary',
   'staff_hours',
   'overview',
   'net_profit',
@@ -54,6 +55,11 @@ export type CompareMetric = 'revenue' | 'expense' | 'net_profit' | 'hours' | 'ca
 
 export type TopNType = 'staff_hours' | 'staff_revenue' | 'client_revenue' | 'client_visits';
 
+export interface StaffRateEntry {
+  staffName: string;
+  hourlyRate: number;
+}
+
 /** AI 解析出的報表查詢意圖（僅讀取，不修改資料） */
 export interface ReportQueryIntent {
   intent: ReportQueryIntentType;
@@ -64,6 +70,8 @@ export interface ReportQueryIntent {
   categories: TransactionCategory[] | null;
   account: LedgerAccountFilter | null;
   hourlyRate: number | null;
+  /** 多人各別時薪（multi_salary） */
+  staffRates: StaffRateEntry[] | null;
   rateEffectiveFrom: string | null;
   priorRate: number | null;
   explanation: string;
@@ -96,6 +104,56 @@ export function detectModifyRequest(question: string): string | null {
     return '僅支援查詢與統計，無法修改資料。';
   }
   return null;
+}
+
+/** 將口語暱稱（弘師、杰恩、Jimmy）對應到 roster display_name */
+export function resolveStaffNameFromRoster(
+  query: string,
+  roster: StaffRosterEntry[],
+): string {
+  const b = query.trim();
+  if (!b || !roster.length) return query;
+
+  for (const s of roster) {
+    if (s.display_name.trim() === b) return s.display_name;
+  }
+
+  const bLower = b.toLowerCase();
+  for (const s of roster) {
+    if (s.display_name.trim().toLowerCase() === bLower) return s.display_name;
+  }
+
+  let best: StaffRosterEntry | null = null;
+  let bestScore = 0;
+  for (const s of roster) {
+    const a = s.display_name.trim();
+    if (a.includes(b) || b.includes(a)) {
+      const score = Math.min(a.length, b.length);
+      if (score > bestScore) {
+        bestScore = score;
+        best = s;
+      }
+    }
+  }
+
+  return best?.display_name ?? query;
+}
+
+function parseStaffRates(raw: unknown): StaffRateEntry[] | null {
+  if (!Array.isArray(raw) || !raw.length) return null;
+  const entries: StaffRateEntry[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const rec = item as Record<string, unknown>;
+    const staffName =
+      typeof rec.staffName === 'string' && rec.staffName.trim()
+        ? rec.staffName.trim()
+        : null;
+    const rateRaw = typeof rec.hourlyRate === 'number' ? rec.hourlyRate : Number(rec.hourlyRate);
+    if (!staffName || !Number.isFinite(rateRaw) || rateRaw <= 0) continue;
+    entries.push({ staffName, hourlyRate: rateRaw });
+  }
+  return entries.length ? entries : null;
 }
 
 function taipeiToday(): string {
@@ -146,6 +204,7 @@ ${staffLines}
   "categories": 分類字串陣列或 null,
   "account": "現金" | "富邦" | null,
   "hourlyRate": 數字或 null,
+  "staffRates": [{"staffName": "師傅 display_name", "hourlyRate": 700}, ...] 或 null,
   "rateEffectiveFrom": "YYYY-MM-DD" 或 null,
   "priorRate": 數字或 null,
   "clientStatsMode": "no_phone" | "vip_count" | "balance_by_name" | null,
@@ -171,7 +230,7 @@ ${staffLines}
   - vip_count：VIP 會員人數
   - balance_by_name：依姓名查會員餘額（clientNameQuery 填姓名）
 - top_n + topN + topNType：前 N 名師傅/客人（時數、營業額、來店次數）
-- sum：加總金額；count：筆數；salary：時薪估算；staff_hours：各師傅時數；filter：只看明細
+- sum：加總金額；count：筆數；salary：單一師傅時薪估算；multi_salary：多位師傅各別時薪估算；staff_hours：各師傅時數；filter：只看明細
 
 【日期解析】
 - 「6/1~6/15」「6月1日到15日」→ ${year}-06-01 ~ ${year}-06-15
@@ -184,7 +243,8 @@ ${staffLines}
 【其他規則】
 - store：使用者沒指定分店 → null（後端用畫面分店）；明確說某店才填 store
 - staff_hours：categories=null；staffName=null（列全部師傅）
-- salary：需 hourlyRate；調薪則填 rateEffectiveFrom、priorRate
+- salary：單一師傅；需 staffName + hourlyRate；調薪則填 rateEffectiveFrom、priorRate
+- multi_salary：多位師傅各別時薪；staffRates 填陣列（staffName 對應 display_name 或暱稱如弘師、杰恩、Jimmy）；staffName/hourlyRate 留 null
 - topN 預設 5
 - 只輸出 JSON，不要 markdown
 
@@ -197,6 +257,9 @@ ${staffLines}
 - 「VIP 有幾個」→ intent=client_stats, clientStatsMode=vip_count
 - 「王小明餘額」→ intent=client_stats, clientStatsMode=balance_by_name, clientNameQuery=王小明
 - 「前3名師傅時數」→ intent=top_n, topN=3, topNType=staff_hours
+- 「弘師700、杰恩650、Jimmy700，6/1~6/15 各算薪水」→ intent=multi_salary, staffRates=[{staffName:"強森弘師",hourlyRate:700},{staffName:"杰恩",hourlyRate:650},{staffName:"Jimmy",hourlyRate:700}], from=${year}-06-01, to=${year}-06-15
+- 「H 強森弘師700/小時 N 杰恩650/小時 j Jimmy700/小時 6/1~6/15 算薪水」→ intent=multi_salary（同上 staffRates）
+- 「弘師時薪650，本月算薪水」→ intent=salary, staffName=強森弘師, hourlyRate=650
 - 「幫我刪除這筆」→ blocked=true
 
 問題：
@@ -284,6 +347,8 @@ function normalizeIntent(raw: Record<string, unknown>): ReportQueryIntent {
   const compareFrom = asString(raw.compareFrom);
   const compareTo = asString(raw.compareTo);
 
+  const staffRates = parseStaffRates(raw.staffRates);
+
   return {
     intent,
     from: from && dateRe.test(from) ? from : `${year}-01-01`,
@@ -293,6 +358,7 @@ function normalizeIntent(raw: Record<string, unknown>): ReportQueryIntent {
     categories: categories && categories.length ? categories : null,
     account,
     hourlyRate: asNumber(raw.hourlyRate),
+    staffRates,
     rateEffectiveFrom:
       asString(raw.rateEffectiveFrom) && dateRe.test(String(raw.rateEffectiveFrom))
         ? String(raw.rateEffectiveFrom)
@@ -326,6 +392,7 @@ export async function extractReportQuery(
       categories: null,
       account: null,
       hourlyRate: null,
+      staffRates: null,
       rateEffectiveFrom: null,
       priorRate: null,
       explanation: '修改資料請求',
@@ -394,6 +461,14 @@ export async function extractReportQuery(
   }
 
   const intent = normalizeIntent(parsed);
+  if (intent.staffRates?.length) {
+    intent.staffRates = intent.staffRates.map(({ staffName, hourlyRate }) => ({
+      staffName: resolveStaffNameFromRoster(staffName, roster),
+      hourlyRate,
+    }));
+  } else if (intent.staffName) {
+    intent.staffName = resolveStaffNameFromRoster(intent.staffName, roster);
+  }
   if (intent.blocked) {
     intent.blockedMessage =
       intent.blockedMessage ?? '僅支援查詢與統計，無法修改、新增或刪除資料。';
@@ -413,5 +488,6 @@ export function intentSkipsLedgerFilter(intent: ReportQueryIntentType): boolean 
     'top_n',
     'staff_hours',
     'salary',
+    'multi_salary',
   ].includes(intent);
 }

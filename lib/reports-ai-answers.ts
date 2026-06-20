@@ -403,6 +403,62 @@ async function computeTopN(
   ].join('\n');
 }
 
+async function computeMultiSalaryAnswer(
+  intent: ReportQueryIntent,
+  store: StoreSlug | undefined,
+  allowAllStores: boolean,
+  storeLabel: string,
+  range: string,
+  listOptions: {
+    mode: 'all';
+    skipMeta: boolean;
+    includeVipPhones: boolean;
+    allowAllStores: boolean;
+  },
+): Promise<string> {
+  const staffRates = intent.staffRates;
+  if (!staffRates?.length) {
+    return '無法估算薪資：請提供各師傅的時薪，例如「弘師700、杰恩650、Jimmy700」。';
+  }
+
+  const report = await listDailyTransactions(
+    intent.from,
+    intent.to,
+    store,
+    [...SERVICE_HOURS_CATEGORIES],
+    { ...listOptions },
+  );
+
+  const lines: string[] = [`${storeLabel}，${range}，各師傅薪資估算：`];
+  let totalPay = 0;
+  let anyHours = false;
+
+  for (const { staffName, hourlyRate } of staffRates) {
+    const rows = report.rows.filter((r) => staffMatches(r.staffName, staffName));
+    let totalHours = 0;
+    for (const r of rows) {
+      const h = computeServiceHours(r.title, r.category);
+      if (h != null) totalHours += h;
+    }
+    if (totalHours > 0) anyHours = true;
+    const pay = totalHours * hourlyRate;
+    totalPay += pay;
+    lines.push(
+      `· ${staffName}：${totalHours.toFixed(1)} 小時 × ${fmtMoney(hourlyRate)} = ${fmtMoney(pay)}`,
+    );
+  }
+
+  if (!anyHours) {
+    return `在 ${range}（${storeLabel}）找不到指定師傅的服務紀錄，無法估算薪資。`;
+  }
+
+  if (staffRates.length > 1) {
+    lines.push(`合計約 ${fmtMoney(totalPay)}`);
+  }
+  lines.push(`※ 工時依帳目標題的「分鐘數」推算（一般消費、會員使用），僅供參考。`);
+  return lines.join('\n');
+}
+
 export async function computeReportAnswer(
   intent: ReportQueryIntent,
   store: StoreSlug | undefined,
@@ -576,6 +632,10 @@ export async function computeReportAnswer(
       `· 共 ${rows.length} 筆服務`,
       `※ 工時依帳目標題的「分鐘數」推算，僅供參考。`,
     ].join('\n');
+  }
+
+  if (intent.intent === 'multi_salary') {
+    return computeMultiSalaryAnswer(intent, store, allowAllStores, storeLabel, range, listOptions);
   }
 
   if (intent.intent === 'staff_hours') {
