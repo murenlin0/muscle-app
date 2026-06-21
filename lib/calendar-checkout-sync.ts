@@ -1104,3 +1104,70 @@ export async function syncCalendarCheckouts(
 
   return result;
 }
+
+export interface CalendarAmountRepairResult {
+  updated: number;
+  errors: string[];
+  titles: string[];
+}
+
+/** 結帳同步時標題尚未含金額、之後才補 key 的情況：重讀日曆標題並更新 $0 的流水帳 */
+export async function repairCalendarCheckoutAmounts(
+  lookbackHours = 72,
+): Promise<CalendarAmountRepairResult> {
+  const result: CalendarAmountRepairResult = { updated: 0, errors: [], titles: [] };
+  const supabase = getSupabaseAdmin();
+  const since = formatStoreDateIso(
+    new Date(Date.now() - lookbackHours * 3600 * 1000),
+  );
+
+  const { data: rows, error } = await supabase
+    .from('daily_transactions')
+    .select('id, title, amount, category, member_note')
+    .eq('source', 'calendar_sync')
+    .eq('amount', 0)
+    .gte('occurred_on', since)
+    .like('member_note', 'gcal:%:single');
+
+  if (error) throw new Error(error.message);
+  if (!rows?.length) return result;
+
+  for (const row of rows) {
+    const note = row.member_note as string | null;
+    const eventId = note?.match(/^gcal:([^:]+):single$/)?.[1];
+    if (!eventId) continue;
+
+    try {
+      const ev = await getCalendarEventSummary(eventId);
+      const title = ev.summary?.trim();
+      if (!title) continue;
+
+      const amount = parseSingleCheckoutAmount(
+        title,
+        row.category as TransactionCategory,
+      );
+      if (!amount) continue;
+
+      const { error: upErr } = await supabase
+        .from('daily_transactions')
+        .update({ title, amount })
+        .eq('id', row.id as string);
+      if (upErr) {
+        result.errors.push(`[${title}] ${upErr.message}`);
+        continue;
+      }
+
+      await supabase
+        .from('appointments')
+        .update({ calendar_title: title })
+        .eq('calendar_event_id', eventId);
+
+      result.updated++;
+      result.titles.push(title);
+    } catch (e) {
+      result.errors.push(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  return result;
+}
