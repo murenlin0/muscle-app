@@ -16,7 +16,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { UNASSIGNED_STAFF_LABEL } from '@/lib/booking-message';
-import { STORES } from '@/lib/stores';
 import type { Staff } from '@/lib/types/database';
 
 const STAFF_API = '/api/staff';
@@ -115,8 +114,6 @@ export default function StaffWorkspacePage() {
     setStaffNote('');
   }
 
-  const placeholderStore = STORES.store1.messageStoreLabel;
-
   if (bootstrapping) {
     return (
       <PortalShell title="建立預約" variant="staff" size="xl">
@@ -176,9 +173,8 @@ export default function StaffWorkspacePage() {
                   void handleParse();
                 }
               }}
-              rows={14}
-              placeholder={`【筋棧預約確認】\n${placeholderStore}\n姓名：王小明\n電話：0912345678\n項目：運動按摩 60min\n時間：2026-06-15 14:00`}
-              className="input-neon w-full resize-y rounded-lg border border-input bg-input/80 px-3 py-3 font-mono text-sm leading-relaxed text-foreground"
+              rows={3}
+              className="input-neon w-full min-h-[4.5rem] resize-y rounded-lg border border-input bg-input/80 px-3 py-2 font-mono text-sm leading-relaxed text-foreground"
             />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -211,7 +207,6 @@ export default function StaffWorkspacePage() {
                 id="staff-note"
                 value={staffNote}
                 onChange={(e) => setStaffNote(e.target.value)}
-                placeholder="例如：仁負責"
                 className="input-neon h-11 border-input bg-input/80"
               />
             </div>
