@@ -257,7 +257,7 @@ export default function StaffWorkspacePage() {
               {imageLabel ? (
                 <span className="truncate text-xs text-muted-foreground">{imageLabel}</span>
               ) : (
-                <span className="text-xs text-muted-foreground">JPG／PNG／WebP，上限 5MB</span>
+                <span className="text-xs text-muted-foreground">JPG／PNG／WebP，上限 4MB</span>
               )}
             </div>
           </div>

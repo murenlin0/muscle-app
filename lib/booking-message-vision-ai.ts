@@ -8,10 +8,11 @@ import {
 import { STORE_TIMEZONE } from '@/lib/store-timezone';
 
 const GROQ_VISION_MODEL =
-  process.env.GROQ_VISION_MODEL ?? 'llama-3.2-11b-vision-preview';
+  process.env.GROQ_VISION_MODEL ?? 'meta-llama/llama-4-scout-17b-16e-instruct';
 const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-2.0-flash';
 
-export const MAX_BOOKING_IMAGE_BYTES = 5 * 1024 * 1024;
+/** Groq base64 圖片上限 4MB（見 console.groq.com/docs/vision） */
+export const MAX_BOOKING_IMAGE_BYTES = 4 * 1024 * 1024;
 export const BOOKING_IMAGE_MIME_TYPES = [
   'image/jpeg',
   'image/png',

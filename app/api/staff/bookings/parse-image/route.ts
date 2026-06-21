@@ -41,7 +41,7 @@ export async function POST(request: Request) {
 
   const bytes = Buffer.from(await file.arrayBuffer());
   if (!validateBookingImage(bytes, mimeType)) {
-    return NextResponse.json({ error: '圖片過大或格式無效（上限 5MB）' }, { status: 400 });
+    return NextResponse.json({ error: '圖片過大或格式無效（上限 4MB）' }, { status: 400 });
   }
 
   const staffName = String(form.get('staffName') ?? '');
