@@ -54,7 +54,7 @@ export function BookingPreviewPanel({
 }: {
   preview: BookingPreviewData | null;
   emptyHint?: string;
-  parsedBy?: 'rules' | 'ai' | null;
+  parsedBy?: 'rules' | 'ai' | 'ai-image' | null;
 }) {
   if (!preview) {
     return (
@@ -81,6 +81,10 @@ export function BookingPreviewPanel({
           {parsedBy === 'ai' ? (
             <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
               由 AI 解析（Groq），請確認左側負責師傅（分店）與時間後再建立
+            </p>
+          ) : parsedBy === 'ai-image' ? (
+            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+              由 AI 讀圖解析，已取對話中最後確認的時間，請再核對後建立
             </p>
           ) : null}
         </div>

@@ -1,8 +1,8 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
-import { ClipboardPaste, Contact, ExternalLink, LogOut } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ClipboardPaste, Contact, ExternalLink, ImageUp, LogOut } from 'lucide-react';
 import Link from 'next/link';
 import { PortalShell } from '@/app/components/portal-shell';
 import {
@@ -28,8 +28,10 @@ export default function StaffWorkspacePage() {
   const [staffNote, setStaffNote] = useState('');
   const [roster, setRoster] = useState<Staff[]>([]);
   const [preview, setPreview] = useState<BookingPreviewData | null>(null);
-  const [parsedBy, setParsedBy] = useState<'rules' | 'ai' | null>(null);
-  const [loading, setLoading] = useState<'parse' | 'create' | null>(null);
+  const [parsedBy, setParsedBy] = useState<'rules' | 'ai' | 'ai-image' | null>(null);
+  const [loading, setLoading] = useState<'parse' | 'create' | 'image' | null>(null);
+  const [imageLabel, setImageLabel] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [calendarLink, setCalendarLink] = useState<string | null>(null);
@@ -62,6 +64,7 @@ export default function StaffWorkspacePage() {
     setCalendarLink(null);
     setPreview(null);
     setParsedBy(null);
+    setImageLabel(null);
 
     const res = await fetch(`${STAFF_API}/bookings/parse`, {
       method: 'POST',
@@ -81,6 +84,61 @@ export default function StaffWorkspacePage() {
     }
     setPreview(data.preview ?? null);
     setParsedBy(data.parsedBy ?? null);
+  }
+
+  async function handleImageUpload(file: File) {
+    setLoading('image');
+    setError(null);
+    setSuccess(null);
+    setCalendarLink(null);
+    setPreview(null);
+    setParsedBy(null);
+
+    const form = new FormData();
+    form.append('image', file);
+    form.append('staffName', assignedStaff);
+    if (staffNote.trim()) form.append('staffNote', staffNote.trim());
+
+    const res = await fetch(`${STAFF_API}/bookings/parse-image`, {
+      method: 'POST',
+      body: form,
+    });
+    const data = (await res.json()) as {
+      preview?: BookingPreviewData;
+      parsedBy?: 'ai-image';
+      normalizedText?: string | null;
+      error?: string;
+    };
+
+    setLoading(null);
+    if (!res.ok) {
+      setError(data.error ?? '截圖解析失敗');
+      return;
+    }
+
+    setPreview(data.preview ?? null);
+    setParsedBy(data.parsedBy ?? 'ai-image');
+    setImageLabel(file.name);
+    if (data.normalizedText?.trim()) {
+      setText(data.normalizedText.trim());
+    } else if (data.preview) {
+      const d = new Date(data.preview.startsAt);
+      const y = d.toLocaleString('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric' });
+      const mo = d.toLocaleString('en-CA', { timeZone: 'Asia/Taipei', month: '2-digit' });
+      const day = d.toLocaleString('en-CA', { timeZone: 'Asia/Taipei', day: '2-digit' });
+      const h = d.toLocaleString('en-CA', { timeZone: 'Asia/Taipei', hour: '2-digit', hour12: false });
+      const mi = d.toLocaleString('en-CA', { timeZone: 'Asia/Taipei', minute: '2-digit' });
+      setText(
+        `姓名：${data.preview.clientName}\n電話：${data.preview.phone}\n項目：${data.preview.serviceLabel}\n時間：${y}-${mo}-${day} ${h}:${mi}`,
+      );
+    }
+  }
+
+  function handleImageInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || loading !== null) return;
+    void handleImageUpload(file);
   }
 
   async function handleCreate() {
@@ -112,6 +170,7 @@ export default function StaffWorkspacePage() {
     setCalendarLink(data.calendarHtmlLink ?? null);
     setText('');
     setStaffNote('');
+    setImageLabel(null);
   }
 
   if (bootstrapping) {
@@ -125,7 +184,7 @@ export default function StaffWorkspacePage() {
   return (
     <PortalShell
       title="建立預約"
-      subtitle={`${staffName} · 貼上 LINE 訊息後建立 Google 日曆，結帳請至日曆操作`}
+      subtitle={`${staffName} · 貼上訊息或上傳 LINE 截圖，建立 Google 日曆`}
       variant="staff"
       size="xl"
       headerActions={
@@ -150,7 +209,7 @@ export default function StaffWorkspacePage() {
         <div className="glass-card space-y-4 p-5 sm:p-6">
           <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
             <ClipboardPaste className="size-4 text-primary" />
-            從 LINE 官方帳號複製完整訊息
+            貼上訊息或上傳 LINE 聊天截圖
           </div>
           <div className="space-y-2">
             <Label htmlFor="message" className="sr-only">
@@ -163,6 +222,7 @@ export default function StaffWorkspacePage() {
                 setText(e.target.value);
                 setPreview(null);
                 setParsedBy(null);
+                setImageLabel(null);
                 setSuccess(null);
                 setCalendarLink(null);
                 setError(null);
@@ -176,6 +236,30 @@ export default function StaffWorkspacePage() {
               rows={3}
               className="input-neon w-full min-h-[4.5rem] resize-y rounded-lg border border-input bg-input/80 px-3 py-2 font-mono text-sm leading-relaxed text-foreground"
             />
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                onChange={handleImageInputChange}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={loading !== null}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <ImageUp className="mr-1.5 size-4" />
+                {loading === 'image' ? '讀圖中…' : '上傳截圖'}
+              </Button>
+              {imageLabel ? (
+                <span className="truncate text-xs text-muted-foreground">{imageLabel}</span>
+              ) : (
+                <span className="text-xs text-muted-foreground">JPG／PNG／WebP，上限 5MB</span>
+              )}
+            </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-2">

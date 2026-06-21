@@ -27,6 +27,8 @@ interface AiBookingResponse {
   durationMinutes?: number | null;
   startsAtLocal?: string | null;
   note?: string | null;
+  /** 供建立預約時回填文字框、重新解析用 */
+  normalizedText?: string | null;
 }
 
 export type AiBookingParseResult =
@@ -68,6 +70,7 @@ function buildPrompt(text: string): string {
 2. 電話（台灣手機 09 開頭 10 碼）
 3. 時長（僅 30、60、90、120 分鐘；項目可寫「運動按摩 {N}min」）
 4. 預約時間（startsAtLocal 格式 YYYY-MM-DD HH:mm，Asia/Taipei；若只有月日或口語，以今天 ${date} ${time} 推斷）
+   - 若對話中多次改期或有多個時間，取雙方「最後確認、同意」的時間（例如客人回「好」「可以」「那就」之後的那個；勿用第一次提議或已取消的時間）
 
 只回傳 JSON 物件，欄位：
 status, message, storeLabel, staffName, clientName, phone, serviceLabel, durationMinutes, startsAtLocal, note
@@ -127,6 +130,23 @@ function missingFieldsMessage(fields: FlexibleBookingFields): string {
 
 function fieldsToBookingData(fields: FlexibleBookingFields): StaffUiParsedBooking {
   return buildStaffMessageCore(fields);
+}
+
+export function processAiBookingResponse(response: AiBookingResponse): AiBookingParseResult {
+  if (response.status === 'incomplete') {
+    const message = response.message?.trim() || '無法解析此訊息，請補齊必要資訊';
+    return { status: 'incomplete', message };
+  }
+
+  const fields = aiResponseToFields(response);
+  try {
+    return { status: 'complete', data: fieldsToBookingData(fields) };
+  } catch (e) {
+    if (e instanceof BookingParseIncompleteError) {
+      return { status: 'incomplete', message: e.message };
+    }
+    return { status: 'incomplete', message: missingFieldsMessage(fields) };
+  }
 }
 
 function parseAiJson(raw: string): AiBookingResponse {
@@ -264,21 +284,7 @@ export async function parseBookingMessageWithAiEx(
   _roster?: StaffRosterEntry[],
 ): Promise<AiBookingParseResult> {
   const response = await callAiParse(text);
-
-  if (response.status === 'incomplete') {
-    const message = response.message?.trim() || '無法解析此訊息，請補齊必要資訊';
-    return { status: 'incomplete', message };
-  }
-
-  const fields = aiResponseToFields(response);
-  try {
-    return { status: 'complete', data: fieldsToBookingData(fields) };
-  } catch (e) {
-    if (e instanceof BookingParseIncompleteError) {
-      return { status: 'incomplete', message: e.message };
-    }
-    return { status: 'incomplete', message: missingFieldsMessage(fields) };
-  }
+  return processAiBookingResponse(response);
 }
 
 export async function parseBookingMessageWithAi(
