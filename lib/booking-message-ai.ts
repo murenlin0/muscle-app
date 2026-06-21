@@ -1,17 +1,10 @@
 import { normalizePhone, stripAllSpaces } from '@/lib/phone';
 import {
-  buildFromFlexibleFields,
-  validateRequiredBookingFields,
+  buildStaffMessageCore,
   type FlexibleBookingFields,
 } from '@/lib/booking-message-flex';
-import type { BookingMessageData } from '@/lib/booking-message';
+import type { StaffUiParsedBooking } from '@/lib/booking-message';
 import { parseStoreDateTime, STORE_TIMEZONE } from '@/lib/store-timezone';
-import {
-  getStore,
-  resolveStoreSlugFromMessageLabel,
-  STORE_LIST,
-  type StoreSlug,
-} from '@/lib/stores';
 import type { StaffRosterEntry } from '@/lib/staff-auth-server';
 
 const GROQ_MODEL = process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile';
@@ -37,7 +30,7 @@ interface AiBookingResponse {
 }
 
 export type AiBookingParseResult =
-  | { status: 'complete'; data: BookingMessageData }
+  | { status: 'complete'; data: StaffUiParsedBooking }
   | { status: 'incomplete'; message: string };
 
 export class BookingParseIncompleteError extends Error {
@@ -67,26 +60,21 @@ function taipeiNowParts(ref = new Date()): { date: string; time: string } {
 
 function buildPrompt(text: string): string {
   const { date, time } = taipeiNowParts();
-  const storeLines = STORE_LIST.map(
-    (s) => `- ${s.messageStoreLabel}（${s.name}）`,
-  ).join('\n');
 
   return `你是筋棧按摩店的預約訊息解析助手。師傅會貼上從 LINE 複製的訊息，格式不拘（可無標題、口語、欄位順序任意、錯字可容忍）。
 
-必要欄位（五項皆須能從訊息確定才可 complete；負責師傅由畫面下拉選單指定，勿解析）：
-1. 店名（對應以下其一）
-${storeLines}
-2. 客人姓名
-3. 電話（台灣手機 09 開頭 10 碼）
-4. 時長（僅 30、60、90、120 分鐘；項目可寫「運動按摩 {N}min」）
-5. 預約時間（startsAtLocal 格式 YYYY-MM-DD HH:mm，Asia/Taipei；若只有月日或口語，以今天 ${date} ${time} 推斷）
+必要欄位（四項皆須能從訊息確定才可 complete；分店與負責師傅由畫面選單指定，勿解析）：
+1. 客人姓名
+2. 電話（台灣手機 09 開頭 10 碼）
+3. 時長（僅 30、60、90、120 分鐘；項目可寫「運動按摩 {N}min」）
+4. 預約時間（startsAtLocal 格式 YYYY-MM-DD HH:mm，Asia/Taipei；若只有月日或口語，以今天 ${date} ${time} 推斷）
 
 只回傳 JSON 物件，欄位：
 status, message, storeLabel, staffName, clientName, phone, serviceLabel, durationMinutes, startsAtLocal, note
 
 規則：
-- 五項齊全且可確定 → status="complete"，填齊各欄位（staffName 一律 null），message=null
-- 任一無法確定 → status="incomplete"，message 用一句繁體中文簡短說明缺少什麼（例如「缺少電話與預約時間」），不超過 40 字；勿提及師傅
+- 四項齊全且可確定 → status="complete"，填齊各欄位（storeLabel、staffName 一律 null），message=null
+- 任一無法確定 → status="incomplete"，message 用一句繁體中文簡短說明缺少什麼（例如「缺少電話與預約時間」），不超過 40 字；勿提及師傅或店名
 - 勿猜測電話或姓名；不確定就 incomplete
 
 訊息：
@@ -107,8 +95,6 @@ function parseStartsAtLocal(raw: string | null | undefined): Date | null {
 function aiResponseToFields(
   extract: AiBookingResponse,
 ): FlexibleBookingFields {
-  const storeLabel = extract.storeLabel?.trim() || null;
-  const storeSlug = storeLabel ? resolveStoreSlugFromMessageLabel(storeLabel) : null;
   const phone = extract.phone ? normalizePhone(extract.phone) : null;
   const durationMinutes =
     extract.durationMinutes && [30, 60, 90, 120].includes(extract.durationMinutes)
@@ -116,8 +102,8 @@ function aiResponseToFields(
       : null;
 
   return {
-    storeLabel: storeSlug ? getStore(storeSlug)?.messageStoreLabel ?? storeLabel : storeLabel,
-    storeSlug,
+    storeLabel: null,
+    storeSlug: null,
     clientName: extract.clientName ? stripAllSpaces(extract.clientName) : null,
     phone,
     durationMinutes,
@@ -132,7 +118,6 @@ function aiResponseToFields(
 
 function missingFieldsMessage(fields: FlexibleBookingFields): string {
   const missing: string[] = [];
-  if (!fields.storeSlug) missing.push('店名');
   if (!fields.clientName?.trim()) missing.push('姓名');
   if (!fields.phone) missing.push('電話');
   if (!fields.durationMinutes) missing.push('時長');
@@ -140,15 +125,8 @@ function missingFieldsMessage(fields: FlexibleBookingFields): string {
   return missing.length ? `缺少${missing.join('、')}` : '無法解析此訊息';
 }
 
-function fieldsToBookingData(fields: FlexibleBookingFields): BookingMessageData {
-  validateRequiredBookingFields(fields);
-  const built = buildFromFlexibleFields(fields);
-  const store = getStore(built.storeSlug);
-  return {
-    ...built,
-    staffName: null,
-    storeLabel: store?.messageStoreLabel ?? built.storeLabel,
-  };
+function fieldsToBookingData(fields: FlexibleBookingFields): StaffUiParsedBooking {
+  return buildStaffMessageCore(fields);
 }
 
 function parseAiJson(raw: string): AiBookingResponse {
@@ -306,7 +284,7 @@ export async function parseBookingMessageWithAiEx(
 export async function parseBookingMessageWithAi(
   text: string,
   roster: StaffRosterEntry[],
-): Promise<BookingMessageData> {
+): Promise<StaffUiParsedBooking> {
   const result = await parseBookingMessageWithAiEx(text, roster);
   if (result.status === 'incomplete') {
     throw new BookingParseIncompleteError(result.message);

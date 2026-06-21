@@ -2,11 +2,13 @@ import { NextResponse } from 'next/server';
 import {
   buildBookingPreview,
   finalizeStaffBooking,
+  resolveStoreSlugFromStaffName,
 } from '@/lib/booking-message';
 import { parseBookingForStaffPreview } from '@/lib/booking-message-parse-server';
 import { BookingParseIncompleteError } from '@/lib/booking-message-ai';
 import {
   findStaffByName,
+  listActiveStaffForRoster,
   upsertClientForBooking,
 } from '@/lib/staff-auth-server';
 import { createPendingCheckoutEvent } from '@/lib/google-calendar';
@@ -30,10 +32,17 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { data: parsed } = await parseBookingForStaffPreview(body.text);
+    const roster = await listActiveStaffForRoster();
+    const storeSlug = resolveStoreSlugFromStaffName(body.staffName, roster);
+    if (!storeSlug) {
+      return NextResponse.json({ error: '沒有輸入師傅名稱' }, { status: 400 });
+    }
+
+    const { data: parsed } = await parseBookingForStaffPreview(body.text, { roster });
     const finalized = finalizeStaffBooking(parsed, {
       staffName: body.staffName,
       staffNote: body.staffNote,
+      storeSlug,
     });
     const store = finalized.storeSlug;
     const preview = buildBookingPreview(finalized);

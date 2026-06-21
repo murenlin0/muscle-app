@@ -365,6 +365,40 @@ export function validateRequiredBookingFields(fields: FlexibleBookingFields): vo
   }
 }
 
+/** 師傅 UI：訊息不含店名，分店由負責師傅決定 */
+export function validateStaffMessageFields(fields: FlexibleBookingFields): void {
+  const missing: string[] = [];
+  if (!fields.clientName?.trim()) missing.push('姓名');
+  if (!fields.phone) missing.push('電話');
+  if (!fields.durationMinutes) missing.push('時長（30/60/90 分鐘或 min）');
+  if (!fields.startsAt) missing.push('預約時間');
+  if (missing.length) {
+    throw new Error(`缺少必要資訊：${missing.join('、')}`);
+  }
+}
+
+export function buildStaffMessageCore(fields: FlexibleBookingFields): {
+  clientName: string;
+  phone: string;
+  serviceLabel: string;
+  durationMinutes: number;
+  startsAt: Date;
+  note: string | null;
+} {
+  validateStaffMessageFields(fields);
+  if (!fields.serviceLabel) {
+    throw new Error('缺少項目');
+  }
+  return {
+    clientName: fields.clientName!.trim(),
+    phone: fields.phone!,
+    serviceLabel: fields.serviceLabel,
+    durationMinutes: fields.durationMinutes!,
+    startsAt: fields.startsAt!,
+    note: fields.note ?? null,
+  };
+}
+
 export function buildFromFlexibleFields(
   fields: FlexibleBookingFields,
 ): {

@@ -1,10 +1,12 @@
 import { NextResponse } from 'next/server';
 import {
-  applyStaffUiToBooking,
   buildBookingPreviewForStaffUi,
+  mergeStaffUiBooking,
+  resolveStoreSlugFromStaffName,
 } from '@/lib/booking-message';
 import { BookingParseIncompleteError, isGroqConfigured } from '@/lib/booking-message-ai';
 import { parseBookingForStaffPreview } from '@/lib/booking-message-parse-server';
+import { listActiveStaffForRoster } from '@/lib/staff-auth-server';
 import { requireStaffSession } from '@/lib/portal-api';
 
 export async function POST(request: Request) {
@@ -23,12 +25,15 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { data: parsed, method } = await parseBookingForStaffPreview(body.text);
-    const withStaff = applyStaffUiToBooking(parsed, {
+    const roster = await listActiveStaffForRoster();
+    const { data: parsed, method } = await parseBookingForStaffPreview(body.text, { roster });
+    const storeSlug = resolveStoreSlugFromStaffName(body.staffName, roster);
+    const draft = mergeStaffUiBooking(parsed, {
       staffName: body.staffName,
       staffNote: body.staffNote,
+      storeSlug,
     });
-    const preview = buildBookingPreviewForStaffUi(withStaff);
+    const preview = buildBookingPreviewForStaffUi(draft);
     return NextResponse.json({ preview, parsedBy: method, aiProvider: isGroqConfigured() ? 'groq' : 'gemini' });
   } catch (e) {
     if (e instanceof BookingParseIncompleteError) {

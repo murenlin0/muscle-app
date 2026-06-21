@@ -31,6 +31,22 @@ export interface BookingMessagePreview extends BookingMessageData {
   calendarTitle: string;
 }
 
+/** 師傅 UI：AI 只解析客人、電話、項目、時間（不含店名／師傅） */
+export interface StaffUiParsedBooking {
+  clientName: string;
+  phone: string;
+  serviceLabel: string;
+  durationMinutes: number;
+  startsAt: Date;
+  note: string | null;
+}
+
+export interface StaffUiBookingDraft extends StaffUiParsedBooking {
+  staffName: string | null;
+  storeSlug: StoreSlug | null;
+  storeLabel: string;
+}
+
 const FIELD_PATTERNS: Record<string, RegExp> = {
   store: /^筋棧.+店$/,
   staff: /^師傅[：:]/,
@@ -183,53 +199,94 @@ export function parseBookingMessage(text: string): BookingMessageData {
 
 export const UNASSIGNED_STAFF_LABEL = '未指定';
 
-/** 師傅 UI：合併下拉選單的負責師傅與備註（不沿用 AI 解析的師傅） */
-export function applyStaffUiToBooking(
-  parsed: BookingMessageData,
-  input: { staffName?: string; staffNote?: string | null },
-): BookingMessageData {
+export function resolveStoreSlugFromStaffName(
+  staffName: string | undefined | null,
+  roster: Array<{ display_name: string; store_id: StoreSlug }>,
+): StoreSlug | null {
+  const name = staffName?.trim();
+  if (!name || name === UNASSIGNED_STAFF_LABEL) return null;
+  return roster.find((member) => member.display_name === name)?.store_id ?? null;
+}
+
+/** 師傅 UI：合併下拉選單的負責師傅、分店與備註（不沿用 AI 解析） */
+export function mergeStaffUiBooking(
+  parsed: StaffUiParsedBooking,
+  input: {
+    staffName?: string;
+    staffNote?: string | null;
+    storeSlug?: StoreSlug | null;
+  },
+): StaffUiBookingDraft {
   const uiStaff = input.staffName?.trim() ?? '';
   const staffName =
     uiStaff && uiStaff !== UNASSIGNED_STAFF_LABEL ? uiStaff : null;
+  const storeSlug = input.storeSlug ?? null;
+  const store = storeSlug ? getStore(storeSlug) : null;
   const noteParts = [parsed.note?.trim(), input.staffNote?.trim()].filter(Boolean);
   return {
     ...parsed,
     staffName,
+    storeSlug,
+    storeLabel: store?.messageStoreLabel ?? '（請選擇負責師傅）',
     note: noteParts.length ? noteParts.join('；') : null,
   };
 }
 
 /** 師傅 UI 預覽：未選師傅時仍可顯示其餘欄位 */
-export function buildBookingPreviewForStaffUi(data: BookingMessageData): BookingMessagePreview {
+export function buildBookingPreviewForStaffUi(
+  data: StaffUiBookingDraft,
+): BookingMessagePreview & { startsAt: Date; endsAt: Date } {
+  const endsAt = new Date(data.startsAt.getTime() + data.durationMinutes * 60_000);
   if (!data.staffName?.trim()) {
-    const endsAt = new Date(data.startsAt.getTime() + data.durationMinutes * 60_000);
     return {
       ...data,
+      storeSlug: data.storeSlug ?? ('store1' as StoreSlug),
       staffName: UNASSIGNED_STAFF_LABEL,
       endsAt,
       calendarTitle: '（請選擇負責師傅）',
     };
   }
-  return buildBookingPreview(data);
+  if (!data.storeSlug) {
+    return {
+      ...data,
+      storeSlug: 'store1' as StoreSlug,
+      staffName: data.staffName,
+      endsAt,
+      calendarTitle: buildCalendarTitle({
+        staffName: data.staffName,
+        durationMinutes: data.durationMinutes,
+        clientName: data.clientName,
+        phone: data.phone,
+      }),
+    };
+  }
+  return buildBookingPreview({
+    ...data,
+    storeSlug: data.storeSlug,
+    staffName: data.staffName,
+  });
 }
 
-/** @deprecated 建立預約用；預覽請用 applyStaffUiToBooking + buildBookingPreviewForStaffUi */
+/** 建立預約：須已選負責師傅（分店由其 roster 決定） */
 export function finalizeStaffBooking(
-  parsed: BookingMessageData,
-  input: { staffName?: string; staffNote?: string | null },
+  parsed: StaffUiParsedBooking,
+  input: {
+    staffName?: string;
+    staffNote?: string | null;
+    storeSlug: StoreSlug;
+  },
 ): BookingMessageData {
-  const uiStaff = input.staffName?.trim() ?? '';
-  const staffName = uiStaff && uiStaff !== UNASSIGNED_STAFF_LABEL ? uiStaff : '';
-
-  if (!staffName) {
+  const draft = mergeStaffUiBooking(parsed, input);
+  if (!draft.staffName?.trim()) {
     throw new Error('沒有輸入師傅名稱');
   }
-
-  const noteParts = [parsed.note?.trim(), input.staffNote?.trim()].filter(Boolean);
+  if (!draft.storeSlug) {
+    throw new Error('無法判定分店，請確認負責師傅');
+  }
   return {
-    ...parsed,
-    staffName,
-    note: noteParts.length ? noteParts.join('；') : null,
+    ...draft,
+    storeSlug: draft.storeSlug,
+    staffName: draft.staffName,
   };
 }
 
