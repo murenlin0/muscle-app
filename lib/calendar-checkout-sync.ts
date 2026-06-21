@@ -59,6 +59,26 @@ function buildCalendarSplitTitles(
   };
 }
 
+function calendarCheckoutNote(
+  eventId: string,
+  part: 'topup' | 'usage' | 'single',
+): string {
+  return `gcal:${eventId}:${part}`;
+}
+
+async function hasCalendarCheckoutRows(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  eventId: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('daily_transactions')
+    .select('id')
+    .like('member_note', `gcal:${eventId}:%`)
+    .limit(1);
+  if (error) throw new Error(error.message);
+  return Boolean(data?.length);
+}
+
 async function loadMemberRowsForBalance(storeId: StoreSlug): Promise<MemberBalanceRow[]> {
   const supabase = getSupabaseAdmin();
   const all: MemberBalanceRow[] = [];
@@ -864,6 +884,7 @@ export async function syncCalendarCheckouts(
     client_phone: string | null;
     is_vip: boolean;
     source: string;
+    member_note: string;
   };
 
   const memberRowsByStore = new Map<StoreSlug, MemberBalanceRow[]>();
@@ -877,6 +898,11 @@ export async function syncCalendarCheckouts(
     }
 
     try {
+      if (await hasCalendarCheckoutRows(supabase, ev.id)) {
+        result.skipped++;
+        continue;
+      }
+
       const payment = COLOR_TO_PAYMENT[ev.colorId ?? ''];
       if (!payment) {
         result.skipped++;
@@ -954,6 +980,7 @@ export async function syncCalendarCheckouts(
           client_phone: client?.phone ?? null,
           is_vip: client?.is_vip ?? true,
           source: 'calendar_sync',
+          member_note: calendarCheckoutNote(ev.id, 'topup'),
         });
         rowsToInsert.push({
           store_id: storeId,
@@ -967,6 +994,7 @@ export async function syncCalendarCheckouts(
           client_phone: client?.phone ?? null,
           is_vip: client?.is_vip ?? true,
           source: 'calendar_sync',
+          member_note: calendarCheckoutNote(ev.id, 'usage'),
         });
       } else {
         const amount = parseSingleCheckoutAmount(title, payment.defaultCategory);
@@ -982,7 +1010,25 @@ export async function syncCalendarCheckouts(
           client_phone: client?.phone ?? null,
           is_vip: client?.is_vip ?? false,
           source: 'calendar_sync',
+          member_note: calendarCheckoutNote(ev.id, 'single'),
         });
+      }
+
+      // 先鎖定 appointment，避免 webhook 與手動同步同時寫入兩筆
+      const { data: claimed, error: claimErr } = await supabase
+        .from('appointments')
+        .update({ status: 'completed' })
+        .eq('id', appt.id)
+        .eq('status', 'pending_checkout')
+        .select('id')
+        .maybeSingle();
+      if (claimErr) {
+        result.errors.push(`[${title}] 鎖定預約失敗：${claimErr.message}`);
+        continue;
+      }
+      if (!claimed) {
+        result.skipped++;
+        continue;
       }
 
       // 寫入 daily_transactions
@@ -990,6 +1036,10 @@ export async function syncCalendarCheckouts(
         .from('daily_transactions')
         .insert(rowsToInsert);
       if (insertErr) {
+        await supabase
+          .from('appointments')
+          .update({ status: 'pending_checkout' })
+          .eq('id', appt.id);
         result.errors.push(`[${title}] 寫入失敗：${insertErr.message}`);
         continue;
       }
@@ -1043,18 +1093,6 @@ export async function syncCalendarCheckouts(
             .update({ is_vip: true })
             .eq('id', appt.client_id);
         }
-      }
-
-      // 更新 appointment 狀態
-      const { error: updateErr } = await supabase
-        .from('appointments')
-        .update({ status: 'completed' })
-        .eq('id', appt.id);
-      if (updateErr) {
-        result.errors.push(
-          `[${title}] appointment 狀態更新失敗：${updateErr.message}`,
-        );
-        continue;
       }
 
       result.processed++;
