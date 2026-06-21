@@ -31,6 +31,7 @@ export default function StaffWorkspacePage() {
   const [parsedBy, setParsedBy] = useState<'rules' | 'ai' | 'ai-image' | null>(null);
   const [loading, setLoading] = useState<'parse' | 'create' | 'image' | null>(null);
   const [imageLabel, setImageLabel] = useState<string | null>(null);
+  const [ocrHint, setOcrHint] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -65,6 +66,7 @@ export default function StaffWorkspacePage() {
     setPreview(null);
     setParsedBy(null);
     setImageLabel(null);
+    setOcrHint(null);
 
     const res = await fetch(`${STAFF_API}/bookings/parse`, {
       method: 'POST',
@@ -93,6 +95,7 @@ export default function StaffWorkspacePage() {
     setCalendarLink(null);
     setPreview(null);
     setParsedBy(null);
+    setOcrHint(null);
 
     const form = new FormData();
     form.append('image', file);
@@ -107,18 +110,25 @@ export default function StaffWorkspacePage() {
       preview?: BookingPreviewData;
       parsedBy?: 'ai-image';
       normalizedText?: string | null;
+      extractedText?: string | null;
+      parseMethod?: 'ocr-text' | 'vision-json' | null;
       error?: string;
     };
 
     setLoading(null);
     if (!res.ok) {
       setError(data.error ?? '截圖解析失敗');
+      if (data.extractedText?.trim()) {
+        setOcrHint(data.extractedText.trim());
+        setText(data.extractedText.trim());
+      }
       return;
     }
 
     setPreview(data.preview ?? null);
     setParsedBy(data.parsedBy ?? 'ai-image');
     setImageLabel(file.name);
+    setOcrHint(data.extractedText?.trim() ?? null);
     if (data.normalizedText?.trim()) {
       setText(data.normalizedText.trim());
     } else if (data.preview) {
@@ -223,6 +233,7 @@ export default function StaffWorkspacePage() {
                 setPreview(null);
                 setParsedBy(null);
                 setImageLabel(null);
+                setOcrHint(null);
                 setSuccess(null);
                 setCalendarLink(null);
                 setError(null);
@@ -318,6 +329,16 @@ export default function StaffWorkspacePage() {
 
         <div className="space-y-4">
           {error ? <StatusBanner variant="error">{error}</StatusBanner> : null}
+          {ocrHint ? (
+            <details className="rounded-lg border border-border/80 bg-muted/30 px-3 py-2 text-sm">
+              <summary className="cursor-pointer text-muted-foreground">
+                AI 讀到的對話文字（可核對或手動修正後再解析）
+              </summary>
+              <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap font-mono text-xs leading-relaxed text-foreground">
+                {ocrHint}
+              </pre>
+            </details>
+          ) : null}
           {success ? (
             <StatusBanner variant="success">
               {success}

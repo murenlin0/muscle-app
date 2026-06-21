@@ -56,7 +56,10 @@ export async function POST(request: Request) {
       mimeType as BookingImageMimeType,
     );
     if (result.status === 'incomplete') {
-      return NextResponse.json({ error: result.message }, { status: 400 });
+      return NextResponse.json(
+        { error: result.message, extractedText: result.extractedText ?? null },
+        { status: 400 },
+      );
     }
 
     const roster = await listActiveStaffForRoster();
@@ -72,11 +75,18 @@ export async function POST(request: Request) {
       preview,
       parsedBy: 'ai-image',
       normalizedText: result.normalizedText,
+      extractedText: result.extractedText ?? null,
+      parseMethod: result.parseMethod ?? null,
       aiProvider: isGroqConfigured() ? 'groq-vision' : 'gemini-vision',
     });
   } catch (e) {
     if (e instanceof BookingParseIncompleteError) {
-      return NextResponse.json({ error: e.message }, { status: 400 });
+      const extractedText =
+        (e as BookingParseIncompleteError & { extractedText?: string }).extractedText ?? null;
+      return NextResponse.json(
+        { error: e.message, extractedText },
+        { status: 400 },
+      );
     }
     const message = e instanceof Error ? e.message : '無法解析截圖';
     return NextResponse.json({ error: message }, { status: 400 });

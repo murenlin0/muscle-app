@@ -1,15 +1,12 @@
-import type { StaffUiParsedBooking } from '@/lib/booking-message';
 import {
   BookingParseIncompleteError,
   isGeminiConfigured,
   isGroqConfigured,
+  parseBookingChatTextWithAiEx,
   processAiBookingResponse,
+  type AiBookingParseResult,
 } from '@/lib/booking-message-ai';
-import { STORE_TIMEZONE } from '@/lib/store-timezone';
-
-const GROQ_VISION_MODEL =
-  process.env.GROQ_VISION_MODEL ?? 'meta-llama/llama-4-scout-17b-16e-instruct';
-const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-2.0-flash';
+import type { StaffUiParsedBooking } from '@/lib/booking-message';
 
 /** Groq base64 圖片上限 4MB（見 console.groq.com/docs/vision） */
 export const MAX_BOOKING_IMAGE_BYTES = 4 * 1024 * 1024;
@@ -21,221 +18,62 @@ export const BOOKING_IMAGE_MIME_TYPES = [
 
 export type BookingImageMimeType = (typeof BOOKING_IMAGE_MIME_TYPES)[number];
 
-function readEnvKey(name: 'GROQ_API_KEY' | 'GEMINI_API_KEY'): string {
-  const raw = process.env[name];
-  if (!raw) return '';
-  return raw.trim().replace(/^["']|["']$/g, '');
-}
+export type AiScreenshotParseResult =
+  | {
+      status: 'complete';
+      data: StaffUiParsedBooking;
+      normalizedText: string | null;
+      extractedText?: string;
+      parseMethod?: 'ocr-text' | 'vision-json';
+    }
+  | { status: 'incomplete'; message: string; extractedText?: string };
 
-function taipeiNowParts(ref = new Date()): { date: string; time: string } {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: STORE_TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(ref);
-  const get = (type: Intl.DateTimeFormatPartTypes) =>
-    parts.find((p) => p.type === type)?.value ?? '00';
-  return {
-    date: `${get('year')}-${get('month')}-${get('day')}`,
-    time: `${get('hour')}:${get('minute')}`,
-  };
-}
+const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const GROQ_VISION_MODEL =
+  process.env.GROQ_VISION_MODEL ?? 'meta-llama/llama-4-scout-17b-16e-instruct';
+const GEMINI_VISION_MODEL =
+  process.env.GEMINI_VISION_MODEL ?? 'gemini-2.0-flash';
 
-function buildScreenshotPrompt(): string {
-  const { date, time } = taipeiNowParts();
-
-  return `你是筋棧按摩店的預約助手。師傅上傳 LINE／聊天截圖，請讀圖並解析預約資訊。
-
-必要欄位（四項皆須能確定才可 complete；分店與負責師傅由畫面選單指定，勿解析）：
-1. 客人姓名
-2. 電話（台灣手機 09 開頭 10 碼）
-3. 時長（僅 30、60、90、120 分鐘）
-4. 預約時間（startsAtLocal 格式 YYYY-MM-DD HH:mm，Asia/Taipei）
-
-【時間判斷 — 非常重要】
-師傅可能與客人在對話中協調、改期。請依聊天順序（上→下或左→右）找出「雙方最後確認」的時間：
-- 優先：客人明確同意（好、可以、OK、沒問題、那就…）之後提到的時間
-- 若有「改到」「換成」「改成」→ 用改後且被確認的時間
-- 勿用第一次提議、已被否定、或僅師傅單方面提議尚未被客人確認的時間
-- 若只有月日或口語時間，以今天 ${date} ${time} 為基準推斷
-
-只回傳 JSON 物件，欄位：
-status, message, storeLabel, staffName, clientName, phone, serviceLabel, durationMinutes, startsAtLocal, note, normalizedText
+const OCR_SYSTEM = `你是 LINE 聊天截圖的文字轉寫助手。只輸出對話文字，不要 JSON、不要解釋。
 
 規則：
-- 四項齊全且可確定 → status="complete"，填齊各欄位（storeLabel、staffName 一律 null），message=null
-- normalizedText：用繁體中文整理成可讀文字（含姓名、電話、項目時長、最終確認時間），供後續建立預約
-- 任一無法確定 → status="incomplete"，message 一句繁體中文說明缺少什麼（不超過 40 字）；勿提及師傅或店名
-- 勿猜測電話或姓名；不確定就 incomplete`;
-}
+1. 依畫面由上到下、左到右逐行轉寫
+2. 每則訊息一行，格式：[發話者] 內容（發話者從氣泡位置判斷：右側通常是官方/店家，左側通常是客人；名稱看不清寫「客人」或「官方」）
+3. 保留電話、時間、時長、姓名等數字與文字，勿改寫語意
+4. 略過純 UI（輸入框、底部選單、狀態列時間），但保留對話內的時間
+5. 看不清的字用 ? 代替，勿憑空捏造`;
 
-interface VisionAiResponse {
-  status: 'complete' | 'incomplete';
-  message?: string | null;
-  storeLabel?: string | null;
-  staffName?: string | null;
-  clientName?: string | null;
-  phone?: string | null;
-  serviceLabel?: string | null;
-  durationMinutes?: number | null;
-  startsAtLocal?: string | null;
-  note?: string | null;
-  normalizedText?: string | null;
-}
+const VISION_JSON_FALLBACK_PROMPT = `你是筋棧按摩店預約助手。從 LINE 聊天截圖直接判斷預約資訊。
 
-export type AiScreenshotParseResult =
-  | { status: 'complete'; data: StaffUiParsedBooking; normalizedText: string | null }
-  | { status: 'incomplete'; message: string };
+必要：客人姓名、電話(09開頭10碼)、時長(30/60/90/120)、預約時間(YYYY-MM-DD HH:mm Asia/Taipei)。
+改期時取雙方最後確認的時間。分店與師傅勿解析。
 
-function parseVisionJson(raw: string): VisionAiResponse {
-  try {
-    return JSON.parse(raw) as VisionAiResponse;
-  } catch {
-    throw new Error('AI 回傳格式無法解析');
-  }
-}
+只回 JSON：status, message, storeLabel, staffName, clientName, phone, serviceLabel, durationMinutes, startsAtLocal, note
+complete 時 storeLabel/staffName=null；incomplete 時 message 一句繁體中文。`;
 
-async function callGroqVisionParse(
-  imageBase64: string,
-  mimeType: BookingImageMimeType,
-): Promise<VisionAiResponse> {
-  const apiKey = readEnvKey('GROQ_API_KEY');
-  if (!apiKey) throw new Error('尚未設定 GROQ_API_KEY');
+export type VisionParseResult = AiBookingParseResult & {
+  /** OCR 轉出的對話文字，供師傅核對 */
+  extractedText?: string;
+  /** 解析路徑：ocr+text 較準；vision-json 為備援 */
+  parseMethod?: 'ocr-text' | 'vision-json';
+};
 
-  const dataUrl = `data:${mimeType};base64,${imageBase64}`;
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: GROQ_VISION_MODEL,
-      messages: [
-        {
-          role: 'system',
-          content: '你是筋棧預約截圖解析助手。只回傳 JSON 物件，不要 markdown 或其他文字。',
-        },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: buildScreenshotPrompt() },
-            { type: 'image_url', image_url: { url: dataUrl } },
-          ],
-        },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.1,
-    }),
-  });
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '');
-    if (response.status === 429) {
-      throw new BookingParseIncompleteError('AI 請求過於頻繁，請稍後再試');
-    }
-    if (response.status === 401 || response.status === 403) {
-      throw new BookingParseIncompleteError('GROQ_API_KEY 無效');
-    }
-    throw new Error(
-      `Groq 視覺解析失敗（${response.status}）${detail ? `：${detail.slice(0, 200)}` : ''}`,
-    );
-  }
-
-  const payload = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const rawJson = payload.choices?.[0]?.message?.content;
-  if (!rawJson) throw new Error('AI 未回傳解析結果');
-  return parseVisionJson(rawJson);
-}
-
-async function callGeminiVisionParse(
-  imageBase64: string,
-  mimeType: BookingImageMimeType,
-): Promise<VisionAiResponse> {
-  const apiKey = readEnvKey('GEMINI_API_KEY');
-  if (!apiKey) throw new Error('尚未設定 GEMINI_API_KEY');
-
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-goog-api-key': apiKey,
-    },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [
-            { text: buildScreenshotPrompt() },
-            { inline_data: { mime_type: mimeType, data: imageBase64 } },
-          ],
-        },
-      ],
-      generationConfig: {
-        temperature: 0.1,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: 'object',
-          properties: {
-            status: { type: 'string', enum: ['complete', 'incomplete'] },
-            message: { type: 'string', nullable: true },
-            storeLabel: { type: 'string', nullable: true },
-            staffName: { type: 'string', nullable: true },
-            clientName: { type: 'string', nullable: true },
-            phone: { type: 'string', nullable: true },
-            serviceLabel: { type: 'string', nullable: true },
-            durationMinutes: { type: 'integer', nullable: true },
-            startsAtLocal: { type: 'string', nullable: true },
-            note: { type: 'string', nullable: true },
-            normalizedText: { type: 'string', nullable: true },
-          },
-          required: ['status'],
-        },
-      },
-    }),
-  });
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '');
-    if (response.status === 429) {
-      throw new BookingParseIncompleteError('AI 額度已用完，請稍後再試');
-    }
-    if (response.status === 401 || response.status === 403) {
-      throw new BookingParseIncompleteError('GEMINI_API_KEY 無效');
-    }
-    throw new Error(
-      `Gemini 視覺解析失敗（${response.status}）${detail ? `：${detail.slice(0, 200)}` : ''}`,
-    );
-  }
-
-  const payload = (await response.json()) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-  };
-  const rawJson = payload.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!rawJson) throw new Error('AI 未回傳解析結果');
-  return parseVisionJson(rawJson);
-}
-
-async function callVisionParse(
-  imageBase64: string,
-  mimeType: BookingImageMimeType,
-): Promise<VisionAiResponse> {
-  if (isGroqConfigured()) {
-    return callGroqVisionParse(imageBase64, mimeType);
-  }
-  if (isGeminiConfigured()) {
-    return callGeminiVisionParse(imageBase64, mimeType);
-  }
-  throw new BookingParseIncompleteError(
-    '截圖解析尚未啟用，請設定 GROQ_API_KEY 或 GEMINI_API_KEY',
-  );
+function buildNormalizedTextFromOcr(ocrText: string, data: StaffUiParsedBooking): string {
+  const d = data.startsAt;
+  const y = d.toLocaleString('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric' });
+  const mo = d.toLocaleString('en-CA', { timeZone: 'Asia/Taipei', month: '2-digit' });
+  const day = d.toLocaleString('en-CA', { timeZone: 'Asia/Taipei', day: '2-digit' });
+  const h = d.toLocaleString('en-CA', { timeZone: 'Asia/Taipei', hour: '2-digit', hour12: false });
+  const mi = d.toLocaleString('en-CA', { timeZone: 'Asia/Taipei', minute: '2-digit' });
+  return [
+    `姓名：${data.clientName}`,
+    `電話：${data.phone}`,
+    `項目：${data.serviceLabel}`,
+    `時間：${y}-${mo}-${day} ${h}:${mi}`,
+    '',
+    '--- AI 讀到的對話 ---',
+    ocrText,
+  ].join('\n');
 }
 
 export function isBookingVisionConfigured(): boolean {
@@ -259,21 +97,253 @@ export function validateBookingImage(
   return (BOOKING_IMAGE_MIME_TYPES as readonly string[]).includes(mimeType);
 }
 
+function stripCodeFence(raw: string): string {
+  const trimmed = raw.trim();
+  const fence = trimmed.match(/^```(?:json)?\s*([\s\S]*?)```$/i);
+  return (fence ? fence[1] : trimmed).trim();
+}
+
+function normalizeOcrText(raw: string): string {
+  return raw
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join('\n')
+    .trim();
+}
+
+async function callGroqOcr(
+  imageBase64: string,
+  mimeType: string,
+): Promise<string> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) throw new Error('GROQ_API_KEY 未設定');
+
+  const res = await fetch(GROQ_CHAT_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: GROQ_VISION_MODEL,
+      temperature: 0.1,
+      max_tokens: 2048,
+      messages: [
+        { role: 'system', content: OCR_SYSTEM },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: '請轉寫此 LINE 聊天截圖中的對話，每則一行 [發話者] 內容：',
+            },
+            {
+              type: 'image_url',
+              image_url: { url: `data:${mimeType};base64,${imageBase64}` },
+            },
+          ],
+        },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Groq OCR 失敗 (${res.status}): ${errBody.slice(0, 300)}`);
+  }
+
+  const data = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const content = data.choices?.[0]?.message?.content?.trim();
+  if (!content) throw new Error('Groq OCR 回傳空白');
+  return normalizeOcrText(content);
+}
+
+async function callGeminiOcr(
+  imageBase64: string,
+  mimeType: string,
+): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY?.trim().replace(/^["']|["']$/g, '');
+  if (!apiKey) throw new Error('GEMINI_API_KEY 未設定');
+
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_VISION_MODEL}:generateContent`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey,
+    },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [
+            { text: `${OCR_SYSTEM}\n\n請轉寫此 LINE 聊天截圖中的對話：` },
+            { inline_data: { mime_type: mimeType, data: imageBase64 } },
+          ],
+        },
+      ],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 2048 },
+    }),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Gemini OCR 失敗 (${res.status}): ${errBody.slice(0, 300)}`);
+  }
+
+  const data = (await res.json()) as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  };
+  const content = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+  if (!content) throw new Error('Gemini OCR 回傳空白');
+  return normalizeOcrText(content);
+}
+
+async function extractChatTextFromImage(
+  imageBase64: string,
+  mimeType: string,
+): Promise<string> {
+  if (isGeminiConfigured()) {
+    try {
+      return await callGeminiOcr(imageBase64, mimeType);
+    } catch (geminiErr) {
+      if (!isGroqConfigured()) throw geminiErr;
+      console.warn('[vision-ai] Gemini OCR 失敗，改用 Groq:', geminiErr);
+    }
+  }
+  if (isGroqConfigured()) {
+    return callGroqOcr(imageBase64, mimeType);
+  }
+  throw new BookingParseIncompleteError(
+    '截圖 OCR 尚未啟用，請設定 GROQ_API_KEY 或 GEMINI_API_KEY',
+  );
+}
+
+/** 備援：vision 直接輸出 JSON（OCR+文字解析失敗時） */
+async function callVisionJsonFallback(
+  imageBase64: string,
+  mimeType: string,
+): Promise<AiBookingParseResult> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    throw new BookingParseIncompleteError('無法解析截圖，請改貼文字或重試');
+  }
+
+  const res = await fetch(GROQ_CHAT_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: GROQ_VISION_MODEL,
+      temperature: 0.1,
+      max_tokens: 1024,
+      response_format: { type: 'json_object' },
+      messages: [
+        { role: 'system', content: VISION_JSON_FALLBACK_PROMPT },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: '解析此 LINE 預約對話截圖：' },
+            {
+              type: 'image_url',
+              image_url: { url: `data:${mimeType};base64,${imageBase64}` },
+            },
+          ],
+        },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    throw new Error(`Groq vision JSON 失敗 (${res.status}): ${errBody.slice(0, 300)}`);
+  }
+
+  const data = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const raw = data.choices?.[0]?.message?.content;
+  if (!raw) throw new Error('vision JSON 回傳空白');
+
+  const parsed = JSON.parse(stripCodeFence(raw)) as Parameters<
+    typeof processAiBookingResponse
+  >[0];
+  return processAiBookingResponse(parsed);
+}
+
+/**
+ * 兩段式：Vision OCR → 文字模型結構化（較準）；失敗時 vision JSON 備援
+ */
+export async function parseBookingImageWithAiEx(
+  imageBase64: string,
+  mimeType: string,
+): Promise<VisionParseResult> {
+  let extractedText: string | undefined;
+
+  try {
+    extractedText = await extractChatTextFromImage(imageBase64, mimeType);
+
+    if (extractedText.length < 8) {
+      throw new BookingParseIncompleteError('截圖文字過少，請確認是否為 LINE 對話截圖');
+    }
+
+    const parsed = await parseBookingChatTextWithAiEx(extractedText);
+    return { ...parsed, extractedText, parseMethod: 'ocr-text' };
+  } catch (primaryErr) {
+    console.warn('[vision-ai] OCR+文字解析失敗，嘗試 vision JSON 備援:', primaryErr);
+
+    try {
+      const fallback = await callVisionJsonFallback(imageBase64, mimeType);
+      return {
+        ...fallback,
+        extractedText,
+        parseMethod: 'vision-json',
+      };
+    } catch (fallbackErr) {
+      if (primaryErr instanceof BookingParseIncompleteError) {
+        const err = new BookingParseIncompleteError(primaryErr.message);
+        if (extractedText) {
+          (err as BookingParseIncompleteError & { extractedText?: string }).extractedText =
+            extractedText;
+        }
+        throw err;
+      }
+      console.error('[vision-ai] 備援也失敗:', fallbackErr);
+      throw primaryErr;
+    }
+  }
+}
+
 export async function parseBookingScreenshotWithAiEx(
   imageBytes: Buffer,
   mimeType: BookingImageMimeType,
 ): Promise<AiScreenshotParseResult> {
   const imageBase64 = imageBytes.toString('base64');
-  const visionResponse = await callVisionParse(imageBase64, mimeType);
-  const parsed = processAiBookingResponse(visionResponse);
+  const result = await parseBookingImageWithAiEx(imageBase64, mimeType);
 
-  if (parsed.status === 'incomplete') {
-    return parsed;
+  if (result.status === 'incomplete') {
+    return {
+      status: 'incomplete',
+      message: result.message,
+      extractedText: result.extractedText,
+    };
   }
+
+  const normalizedText =
+    result.extractedText && result.extractedText.length > 0
+      ? buildNormalizedTextFromOcr(result.extractedText, result.data)
+      : null;
 
   return {
     status: 'complete',
-    data: parsed.data,
-    normalizedText: visionResponse.normalizedText?.trim() || null,
+    data: result.data,
+    normalizedText,
+    extractedText: result.extractedText,
+    parseMethod: result.parseMethod,
   };
 }

@@ -67,8 +67,8 @@ function buildPrompt(text: string): string {
 
 必要欄位（四項皆須能從訊息確定才可 complete；分店與負責師傅由畫面選單指定，勿解析）：
 1. 客人姓名
-2. 電話（台灣手機 09 開頭 10 碼）
-3. 時長（僅 30、60、90、120 分鐘；項目可寫「運動按摩 {N}min」）
+2. 電話（台灣手機 09 開頭 10 碼；OCR 常把 0 誤為 O，請修正）
+3. 時長（僅 30、60、90、120 分鐘；項目可寫「運動按摩 {N}min」；「60分」「60min」皆視為 60）
 4. 預約時間（startsAtLocal 格式 YYYY-MM-DD HH:mm，Asia/Taipei；若只有月日或口語，以今天 ${date} ${time} 推斷）
    - 若對話中多次改期或有多個時間，取雙方「最後確認、同意」的時間（例如客人回「好」「可以」「那就」之後的那個；勿用第一次提議或已取消的時間）
 
@@ -81,6 +81,36 @@ status, message, storeLabel, staffName, clientName, phone, serviceLabel, duratio
 - 勿猜測電話或姓名；不確定就 incomplete
 
 訊息：
+"""
+${text.trim()}
+"""`;
+}
+
+/** LINE 聊天截圖 OCR 後的文字解析（含改期對話） */
+export function buildStaffChatOcrParsePrompt(text: string): string {
+  const { date, time } = taipeiNowParts();
+
+  return `你是筋棧按摩店的預約助手。以下是從 LINE 聊天「截圖 OCR」轉出的對話文字，每行可能含 [發話者] 前綴，請從整段對話判斷最終預約。
+
+必要欄位（四項皆須能確定才可 complete；分店與師傅由 UI 選單指定，勿解析）：
+1. 客人姓名（通常在官方確認訊息或客人自我介紹）
+2. 電話（09 開頭 10 碼；OCR 可能缺數字或 O/0 混淆，合理修正）
+3. 時長（30/60/90/120 分鐘）
+4. 預約時間（startsAtLocal：YYYY-MM-DD HH:mm，Asia/Taipei）
+
+【改期 — 最重要】
+師傅可能與客人協調多個時段。請依對話順序（上→下）找「雙方最後確認」的時間：
+- 客人回「好、可以、OK、沒問題、那就、行」等之後的時間為準
+- 「改到」「換成」「改成」且後續被確認 → 用改後時間
+- 勿用已被否定、僅詢問中、或第一次未確認的提議
+- 若官方「預約確認」訊息與對話一致，可優先採用該則的時間
+- 口語或只有月日，以今天 ${date} ${time} 推斷年份
+
+只回傳 JSON：status, message, storeLabel, staffName, clientName, phone, serviceLabel, durationMinutes, startsAtLocal, note
+- complete：四項齊全，storeLabel/staffName=null，message=null
+- incomplete：message 一句繁體中文說缺什麼（≤40字）
+
+對話 OCR 文字：
 """
 ${text.trim()}
 """`;
@@ -157,7 +187,7 @@ function parseAiJson(raw: string): AiBookingResponse {
   }
 }
 
-async function callGroqParse(text: string): Promise<AiBookingResponse> {
+async function callGroqParse(text: string, prompt = buildPrompt(text)): Promise<AiBookingResponse> {
   const apiKey = readEnvKey('GROQ_API_KEY');
   if (!apiKey) {
     throw new Error('尚未設定 GROQ_API_KEY');
@@ -176,7 +206,7 @@ async function callGroqParse(text: string): Promise<AiBookingResponse> {
           role: 'system',
           content: '你是筋棧預約訊息解析助手。只回傳 JSON 物件，不要 markdown 或其他文字。',
         },
-        { role: 'user', content: buildPrompt(text) },
+        { role: 'user', content: prompt },
       ],
       response_format: { type: 'json_object' },
       temperature: 0.1,
@@ -204,7 +234,7 @@ async function callGroqParse(text: string): Promise<AiBookingResponse> {
   return parseAiJson(rawJson);
 }
 
-async function callGeminiParse(text: string): Promise<AiBookingResponse> {
+async function callGeminiParse(text: string, prompt = buildPrompt(text)): Promise<AiBookingResponse> {
   const apiKey = readEnvKey('GEMINI_API_KEY');
   if (!apiKey) {
     throw new Error('尚未設定 GEMINI_API_KEY');
@@ -219,7 +249,7 @@ async function callGeminiParse(text: string): Promise<AiBookingResponse> {
       'x-goog-api-key': apiKey,
     },
     body: JSON.stringify({
-      contents: [{ parts: [{ text: buildPrompt(text) }] }],
+      contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.1,
         responseMimeType: 'application/json',
@@ -267,16 +297,25 @@ async function callGeminiParse(text: string): Promise<AiBookingResponse> {
   return parseAiJson(rawJson);
 }
 
-async function callAiParse(text: string): Promise<AiBookingResponse> {
+async function callAiParse(text: string, prompt?: string): Promise<AiBookingResponse> {
+  const userPrompt = prompt ?? buildPrompt(text);
   if (isGroqConfigured()) {
-    return callGroqParse(text);
+    return callGroqParse(text, userPrompt);
   }
   if (isGeminiConfigured()) {
-    return callGeminiParse(text);
+    return callGeminiParse(text, userPrompt);
   }
   throw new BookingParseIncompleteError(
     'AI 解析尚未啟用，請在 Vercel 或 .env.local 設定 GROQ_API_KEY',
   );
+}
+
+/** 解析 LINE 聊天 OCR 文字（截圖第二步） */
+export async function parseBookingChatTextWithAiEx(
+  ocrText: string,
+): Promise<AiBookingParseResult> {
+  const response = await callAiParse(ocrText, buildStaffChatOcrParsePrompt(ocrText));
+  return processAiBookingResponse(response);
 }
 
 export async function parseBookingMessageWithAiEx(
