@@ -1,6 +1,7 @@
 import { normalizePhone, stripAllSpaces, stripVipPrefix } from '@/lib/phone';
 import {
   buildStaffMessageCore,
+  parseRelativeDayDateTime,
   type FlexibleBookingFields,
 } from '@/lib/booking-message-flex';
 import type { AiBookingParseResult } from '@/lib/booking-message-ai';
@@ -49,7 +50,8 @@ function extractNameFromOcr(text: string): string | null {
 
 function extractDurationFromOcr(text: string): number | null {
   const labeled = text.match(/(?:項目|時長|服務)[：:][^\n]*?(\d{2,3})\s*(?:分|min|分鐘)/i);
-  const m = labeled ?? text.match(/(?:運動按摩\s*)?(\d{2,3})\s*(?:分|min|分鐘)/i);
+  const compact = text.match(/(\d{2,3})分鐘/);
+  const m = labeled ?? compact ?? text.match(/(?:運動按摩\s*)?(\d{2,3})\s*(?:分|min|分鐘)/i);
   if (!m) return null;
   const n = Number(m[1]);
   return [30, 60, 90, 120].includes(n) ? n : null;
@@ -95,6 +97,8 @@ function extractTimeFromOcr(text: string): Date | null {
     const { year } = taipeiNowParts();
     return parseStoreDateTime(year, Number(md[1]), Number(md[2]), Number(md[3]), Number(md[4]));
   }
+  const relative = parseRelativeDayDateTime(text);
+  if (relative) return relative;
   return null;
 }
 

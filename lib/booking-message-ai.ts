@@ -102,9 +102,11 @@ export function buildStaffChatOcrParsePrompt(text: string): string {
 - 官方「預約確認」訊息中的姓名電話優先於口語對話
 - 電話可能在確認卡、客人自介、或訊息任意位置
 
-【改期】
+【改期 / 口語時間】
 師傅與客人協調多個時段時，取雙方最後確認的時間（客人回好/可以/OK 之後）。
-口語或只有月日，以今天 ${date} ${time} 推斷年份。
+- 「今天有17:00的預約可以改90分鐘」→ 日期=今天、時間=17:00、時長=90（時間不變，只改時長）
+- 「今天」「明天」「後天」+ HH:mm 或「X點」→ 以今天 ${date} 為基準推算 startsAtLocal
+- 只有月日或口語，以今天 ${date} ${time} 推斷年份
 
 只回傳 JSON：status, message, storeLabel, staffName, clientName, phone, serviceLabel, durationMinutes, startsAtLocal, note
 - complete：四項齊全，storeLabel/staffName=null，message=null

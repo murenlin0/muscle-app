@@ -164,6 +164,50 @@ function extractClockFromSegment(segment: string): { hour: number; minute: numbe
   return null;
 }
 
+function addTaipeiDays(ref: Date, days: number): { year: number; month: number; day: number } {
+  return taipeiDateParts(new Date(ref.getTime() + days * 86_400_000));
+}
+
+const RELATIVE_DAY_OFFSET: Record<string, number> = {
+  今天: 0,
+  明日: 1,
+  明天: 1,
+  後天: 2,
+  后天: 2,
+};
+
+/** 「今天有17:00的預約」「明天下午三點」等口語日期＋時間 */
+export function parseRelativeDayDateTime(text: string, ref = new Date()): Date | null {
+  const normalized = normalizeBookingText(text);
+
+  for (const [keyword, dayOffset] of Object.entries(RELATIVE_DAY_OFFSET)) {
+    const rel = normalized.match(
+      new RegExp(`${keyword}[^\\n。]{0,80}?(\\d{1,2}:\\d{2}|(?:凌晨|早上|上午|中午|下午|晚上|傍晚|午後)?\\d{1,2}(?:點|时|時)(?:半|\\d{1,2}分?)?)`),
+    );
+    if (rel) {
+      const clock = extractClockFromSegment(rel[1]!);
+      if (clock) {
+        const { year, month, day } = addTaipeiDays(ref, dayOffset);
+        return parseStoreDateTime(year, month, day, clock.hour, clock.minute);
+      }
+    }
+  }
+
+  const apptTime = normalized.match(/(?:有|是|約)?(\d{1,2}):(\d{2})的預約/);
+  if (apptTime && /今天|今日/.test(normalized)) {
+    const { year, month, day } = taipeiDateParts(ref);
+    return parseStoreDateTime(
+      year,
+      month,
+      day,
+      Number(apptTime[1]),
+      Number(apptTime[2]),
+    );
+  }
+
+  return null;
+}
+
 export function parseFlexibleDateTime(text: string, ref = new Date()): Date | null {
   const normalized = normalizeBookingText(text);
 
@@ -233,6 +277,9 @@ export function parseFlexibleDateTime(text: string, ref = new Date()): Date | nu
       return parseStoreDateTime(year, month, day, clockOnly.hour, clockOnly.minute);
     }
   }
+
+  const relative = parseRelativeDayDateTime(normalized, ref);
+  if (relative) return relative;
 
   return null;
 }

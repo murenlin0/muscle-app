@@ -48,6 +48,7 @@ const OCR_SYSTEM = `你是 LINE 聊天截圖的文字轉寫助手。只輸出對
 const VISION_JSON_FALLBACK_PROMPT = `你是筋棧按摩店預約助手。從 LINE 聊天截圖直接判斷預約資訊。
 
 必要：客人姓名、電話(09開頭10碼)、時長(30/60/90/120)、預約時間(YYYY-MM-DD HH:mm Asia/Taipei)。
+「今天有17:00的預約」→ 日期用今天、時間17:00；改時長但時間不變時仍取原時間。
 改期時取雙方最後確認的時間。分店與師傅勿解析。
 
 只回 JSON：status, message, storeLabel, staffName, clientName, phone, serviceLabel, durationMinutes, startsAtLocal, note
