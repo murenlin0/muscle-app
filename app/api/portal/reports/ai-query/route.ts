@@ -58,17 +58,11 @@ export async function POST(request: Request) {
     const wantsAllStores = asksAllStoresReport(question);
 
     let store: StoreSlug | undefined;
-    if (session.role === 'store') {
-      const allowed = session.storeIds;
-      if (intent.store && !allowed.includes(intent.store)) {
-        return NextResponse.json({ error: '無權查看其他分店' }, { status: 403 });
-      }
-      store = intent.store ?? session.storeId;
-    } else if (wantsAllStores) {
+    if (wantsAllStores) {
       store = intent.store ?? undefined;
     } else {
       store = intent.store ?? parseReportStoreParam(body.store) ?? undefined;
-      if (!store && !wantsAllStores) {
+      if (!store) {
         return NextResponse.json({ error: '請指定分店' }, { status: 400 });
       }
     }

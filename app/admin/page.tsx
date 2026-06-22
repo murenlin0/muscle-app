@@ -14,6 +14,7 @@ import {
 import { PortalShell } from '@/app/components/portal-shell';
 import { AdminHubLink, AdminHubSection } from '@/components/portal/admin-hub-section';
 import { Button } from '@/components/ui/button';
+import { ADMIN_HUB_UI_VERSION } from '@/lib/admin-ui-version';
 import { STORE_LIST, type StoreConfig } from '@/lib/stores';
 
 const PORTAL_API = '/api/portal';
@@ -136,6 +137,7 @@ export default function SuperAdminPage() {
             </Link>
           </span>
         ))}
+        <span className="mt-2 block tabular-nums text-[10px] text-[#555]">UI {ADMIN_HUB_UI_VERSION}</span>
       </p>
     </PortalShell>
   );
