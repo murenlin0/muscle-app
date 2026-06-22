@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getPortalSession, canViewReports } from '@/lib/portal-session';
 import { isGoogleCalendarReady } from '@/lib/integration-settings';
-import { isValidGoogleSetupKey } from '@/lib/google-oauth';
+import { isValidGoogleSetupKey, refreshGoogleAccessToken } from '@/lib/google-oauth';
 
 export default async function GoogleSetupAdminPage({
   searchParams,
@@ -18,6 +18,14 @@ export default async function GoogleSetupAdminPage({
   }
 
   const configured = await isGoogleCalendarReady();
+  let tokenError: string | null = null;
+  if (configured) {
+    try {
+      await refreshGoogleAccessToken();
+    } catch (e) {
+      tokenError = e instanceof Error ? e.message : '連線測試失敗';
+    }
+  }
   const setupKey = process.env.GOOGLE_OAUTH_SETUP_KEY?.trim();
   const authHref = keyAuthorized
     ? '/api/google/setup'
@@ -51,10 +59,25 @@ export default async function GoogleSetupAdminPage({
       <div className="mb-6 rounded-lg border border-[#333] bg-[#1a1a1a] p-4">
         <p className="text-sm">
           狀態：
-          <span className={configured ? 'text-emerald-400' : 'text-amber-400'}>
-            {configured ? '已設定 refresh token' : '尚未完成 OAuth 授權'}
+          <span
+            className={
+              configured && !tokenError ? 'text-emerald-400' : 'text-amber-400'
+            }
+          >
+            {!configured
+              ? '尚未完成 OAuth 授權'
+              : tokenError
+                ? '授權已失效，需重新授權'
+                : '已連線，token 有效'}
           </span>
         </p>
+        {tokenError ? (
+          <p className="mt-2 text-sm text-rose-300/90">
+            {tokenError.includes('expired') || tokenError.includes('revoked')
+              ? 'Google refresh token 已過期或被撤銷，請用 muscle.com.tw@gmail.com 按下方「重新授權」。'
+              : tokenError}
+          </p>
+        ) : null}
         {!configured ? (
           <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-[#aaa]">
             <li>確認 dev 有在跑（dev.bat 或 npm run dev）</li>
@@ -64,7 +87,9 @@ export default async function GoogleSetupAdminPage({
           </ol>
         ) : (
           <p className="mt-2 text-sm text-[#888]">
-            已可呼叫 Calendar API。Staff 自動建事件與 Sync 仍待下一階段開發。
+            {tokenError
+              ? '重新授權後無需改 Vercel 環境變數（token 存於資料庫）。'
+              : 'Staff 建立預約會自動寫入 Google 日曆灰色待結帳事件。'}
           </p>
         )}
       </div>

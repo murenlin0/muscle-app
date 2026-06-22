@@ -12,6 +12,7 @@ import {
   upsertClientForBooking,
 } from '@/lib/staff-auth-server';
 import { createPendingCheckoutEvent } from '@/lib/google-calendar';
+import { formatGoogleCalendarErrorMessage } from '@/lib/google-oauth';
 import { isGoogleCalendarReady } from '@/lib/integration-settings';
 import { requireStaffSession } from '@/lib/portal-api';
 import { getSupabaseAdmin } from '@/lib/supabase';
@@ -106,7 +107,8 @@ export async function POST(request: Request) {
           .eq('id', appointment.id);
         calendarNote = '已建立灰色待結帳事件，請至 Google 日曆結帳。';
       } catch (calErr) {
-        calendarNote = `資料庫已建立；日曆失敗：${calErr instanceof Error ? calErr.message : '未知錯誤'}`;
+        const raw = calErr instanceof Error ? calErr.message : '未知錯誤';
+        calendarNote = `資料庫已建立；日曆失敗：${formatGoogleCalendarErrorMessage(raw)}`;
       }
     } else {
       calendarNote += ' Google 日曆尚未授權，請開 /admin/google 完成串接。';

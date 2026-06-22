@@ -143,6 +143,17 @@ export async function listGoogleCalendars(
   return data.items ?? [];
 }
 
+export function formatGoogleCalendarErrorMessage(raw: string): string {
+  const lower = raw.toLowerCase();
+  if (
+    lower.includes('token has been expired or revoked') ||
+    lower.includes('invalid_grant')
+  ) {
+    return 'Google 日曆授權已過期，請用 muscle.com.tw@gmail.com 至 /admin/google 重新授權';
+  }
+  return raw;
+}
+
 export function escapeHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')

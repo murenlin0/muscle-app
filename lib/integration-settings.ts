@@ -31,8 +31,11 @@ export async function setIntegrationSetting(key: string, value: string): Promise
 
 export async function getGoogleRefreshToken(): Promise<string | null> {
   const fromEnv = process.env.GOOGLE_REFRESH_TOKEN?.trim();
+  const fromDb = await getIntegrationSetting(GOOGLE_REFRESH_KEY);
+  // 正式環境 OAuth callback 寫入 DB；若 Vercel env 仍是舊 token 會導致「已重新授權仍失敗」
+  if (process.env.NODE_ENV === 'production' && fromDb) return fromDb;
   if (fromEnv) return fromEnv;
-  return getIntegrationSetting(GOOGLE_REFRESH_KEY);
+  return fromDb;
 }
 
 export async function getGoogleCalendarId(): Promise<string | null> {
