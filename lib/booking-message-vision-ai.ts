@@ -5,6 +5,7 @@ import {
   processAiBookingResponse,
   type AiBookingParseResult,
 } from '@/lib/booking-message-ai';
+import { tryCompleteBookingFromOcrText } from '@/lib/booking-ocr-hints';
 import type { StaffUiParsedBooking } from '@/lib/booking-message';
 
 /** 圖片 base64 上限 4MB */
@@ -34,10 +35,15 @@ const OCR_SYSTEM = `你是 LINE 聊天截圖的文字轉寫助手。只輸出對
 
 規則：
 1. 依畫面由上到下、左到右逐行轉寫
-2. 每則訊息一行，格式：[發話者] 內容（發話者從氣泡位置判斷：右側通常是官方/店家，左側通常是客人；名稱看不清寫「客人」或「官方」）
-3. 保留電話、時間、時長、姓名等數字與文字，勿改寫語意
-4. 略過純 UI（輸入框、底部選單、狀態列時間），但保留對話內的時間
-5. 看不清的字用 ? 代替，勿憑空捏造`;
+2. 每則訊息一行，格式：[發話者] 內容（右側氣泡=官方/店家，左側=客人；看不清寫「官方」或「客人」）
+3. 【重要】LINE「預約確認」卡片、圖文訊息、灰色資訊列中的姓名、電話、項目、時間必須完整轉寫，格式如：
+   姓名：王小明
+   電話：0912345678
+   項目：運動按摩 60min
+   時間：2026-06-25 14:00
+4. 保留所有 09 開頭電話、中文姓名、時長數字，勿改寫
+5. 略過輸入框、底部選單、狀態列，但保留對話與確認卡內的時間
+6. 看不清用 ? 代替，勿憑空捏造`;
 
 const VISION_JSON_FALLBACK_PROMPT = `你是筋棧按摩店預約助手。從 LINE 聊天截圖直接判斷預約資訊。
 
@@ -207,15 +213,30 @@ export async function parseBookingImageWithAiEx(
       throw new BookingParseIncompleteError('截圖文字過少，請確認是否為 LINE 對話截圖');
     }
 
-    const parsed = await parseBookingChatTextWithAiEx(extractedText);
-    return { ...parsed, extractedText, parseMethod: 'ocr-text' };
+    let parsed = await parseBookingChatTextWithAiEx(extractedText);
+    parsed = tryCompleteBookingFromOcrText(parsed, extractedText);
+    if (parsed.status === 'complete') {
+      return { ...parsed, extractedText, parseMethod: 'ocr-text' };
+    }
+
+    console.warn('[vision-ai] OCR 文字解析 incomplete，嘗試 vision JSON 備援:', parsed.message);
+    const fallback = await callVisionJsonFallback(imageBase64, mimeType);
+    const enriched = tryCompleteBookingFromOcrText(fallback, extractedText);
+    return {
+      ...enriched,
+      extractedText,
+      parseMethod: 'vision-json',
+    };
   } catch (primaryErr) {
-    console.warn('[vision-ai] OCR+文字解析失敗，嘗試 Gemini vision JSON 備援:', primaryErr);
+    console.warn('[vision-ai] OCR+解析失敗，嘗試 vision JSON 備援:', primaryErr);
 
     try {
       const fallback = await callVisionJsonFallback(imageBase64, mimeType);
+      const enriched = extractedText
+        ? tryCompleteBookingFromOcrText(fallback, extractedText)
+        : fallback;
       return {
-        ...fallback,
+        ...enriched,
         extractedText,
         parseMethod: 'vision-json',
       };

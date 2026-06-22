@@ -124,7 +124,6 @@ export default function StaffWorkspacePage() {
       }
       return;
     }
-
     setPreview(data.preview ?? null);
     setParsedBy(data.parsedBy ?? 'ai-image');
     setImageLabel(file.name);
@@ -328,7 +327,12 @@ export default function StaffWorkspacePage() {
         </div>
 
         <div className="space-y-4">
-          {error ? <StatusBanner variant="error">{error}</StatusBanner> : null}
+          {error ? (
+            <StatusBanner variant="error">
+              {error}
+              {ocrHint ? '（可展開下方「AI 讀到的對話文字」核對）' : null}
+            </StatusBanner>
+          ) : null}
           {ocrHint ? (
             <details className="rounded-lg border border-border/80 bg-muted/30 px-3 py-2 text-sm">
               <summary className="cursor-pointer text-muted-foreground">

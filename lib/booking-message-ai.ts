@@ -92,18 +92,19 @@ export function buildStaffChatOcrParsePrompt(text: string): string {
   return `你是筋棧按摩店的預約助手。以下是從 LINE 聊天「截圖 OCR」轉出的對話文字，每行可能含 [發話者] 前綴，請從整段對話判斷最終預約。
 
 必要欄位（四項皆須能確定才可 complete；分店與師傅由 UI 選單指定，勿解析）：
-1. 客人姓名（通常在官方確認訊息或客人自我介紹）
-2. 電話（09 開頭 10 碼；OCR 可能缺數字或 O/0 混淆，合理修正）
-3. 時長（30/60/90/120 分鐘）
+1. 客人姓名（常見於「姓名：」、預約確認卡、或電話前的中文名；含 VIP 前綴可去掉）
+2. 電話（09 開頭 10 碼；OCR 可能 O/0 混淆、有空格，請修正合併）
+3. 時長（30/60/90/120 分鐘；「60分」「60min」「運動按摩 60min」皆算）
 4. 預約時間（startsAtLocal：YYYY-MM-DD HH:mm，Asia/Taipei）
 
-【改期 — 最重要】
-師傅可能與客人協調多個時段。請依對話順序（上→下）找「雙方最後確認」的時間：
-- 客人回「好、可以、OK、沒問題、那就、行」等之後的時間為準
-- 「改到」「換成」「改成」且後續被確認 → 用改後時間
-- 勿用已被否定、僅詢問中、或第一次未確認的提議
-- 若官方「預約確認」訊息與對話一致，可優先採用該則的時間
-- 口語或只有月日，以今天 ${date} ${time} 推斷年份
+【重要 — 勿漏讀】
+- 若 OCR 已有「姓名：」「電話：」「時間：」等明確欄位，務必採用，不可回 incomplete
+- 官方「預約確認」訊息中的姓名電話優先於口語對話
+- 電話可能在確認卡、客人自介、或訊息任意位置
+
+【改期】
+師傅與客人協調多個時段時，取雙方最後確認的時間（客人回好/可以/OK 之後）。
+口語或只有月日，以今天 ${date} ${time} 推斷年份。
 
 只回傳 JSON：status, message, storeLabel, staffName, clientName, phone, serviceLabel, durationMinutes, startsAtLocal, note
 - complete：四項齊全，storeLabel/staffName=null，message=null
