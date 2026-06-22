@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { hashPortalPassword } from '@/lib/portal-password';
 import { requirePortalAccountManagement } from '@/lib/portal-api';
 import { getSupabaseAdmin } from '@/lib/supabase';
-import { getStore, isStoreSlug } from '@/lib/stores';
+import { getStore, isStoreSlug, type StoreSlug } from '@/lib/stores';
+import { linkPortalAccountToStaff } from '@/lib/team-server';
 
 export async function GET() {
   const session = await requirePortalAccountManagement();
@@ -63,6 +64,11 @@ export async function POST(request: Request) {
     await supabase.from('portal_account_stores').upsert(
       { account_id: data.id, store_id: body.storeId },
       { onConflict: 'account_id,store_id' },
+    );
+    await linkPortalAccountToStaff(
+      data.id,
+      body.displayName.trim(),
+      body.storeId as StoreSlug,
     );
   }
 

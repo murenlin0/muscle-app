@@ -6,7 +6,8 @@
 import { readFileSync } from 'fs';
 import { createClient } from '@supabase/supabase-js';
 import { hashPortalPassword } from '../lib/portal-password';
-import { getStore, isStoreSlug } from '../lib/stores';
+import { getStore, isStoreSlug, type StoreSlug } from '../lib/stores';
+import { linkPortalAccountToStaff } from '../lib/team-server';
 
 function loadEnv() {
   for (const line of readFileSync('.env.local', 'utf8').split('\n')) {
@@ -83,6 +84,9 @@ async function main() {
   if (linkErr) {
     console.warn(`portal_account_stores 寫入略過：${linkErr.message}`);
   }
+
+  await linkPortalAccountToStaff(accountId, displayName, storeId as StoreSlug);
+  console.log('已連結師傅紀錄（人員與權限頁可見）');
 
   console.log(`分店：${getStore(storeId)?.name} (${storeId})`);
   console.log('密碼已設定（請妥善保管）');

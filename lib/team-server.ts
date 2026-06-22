@@ -24,6 +24,61 @@ export function accessLevelLabel(level: AccessLevel): string {
   return '店長';
 }
 
+/** 店長 portal 帳號需對應 staff 列，人員與權限頁才能顯示 */
+export async function linkPortalAccountToStaff(
+  accountId: string,
+  displayName: string,
+  storeId: StoreSlug,
+  options?: { staffPin?: string },
+): Promise<string> {
+  const supabase = getSupabaseAdmin();
+
+  const { data: account, error: accountError } = await supabase
+    .from('portal_accounts')
+    .select('staff_id')
+    .eq('id', accountId)
+    .maybeSingle();
+  if (accountError) throw new Error(accountError.message);
+  if (account?.staff_id) return account.staff_id as string;
+
+  const pin = options?.staffPin?.trim() || String(Math.floor(100000 + Math.random() * 900000));
+
+  const { data: existingStaff } = await supabase
+    .from('staff')
+    .select('id')
+    .eq('display_name', displayName.trim())
+    .eq('store_id', storeId)
+    .maybeSingle();
+
+  let staffId: string;
+  if (existingStaff) {
+    staffId = existingStaff.id as string;
+    await supabase.from('staff').update({ is_active: true }).eq('id', staffId);
+  } else {
+    const { data: created, error: staffError } = await supabase
+      .from('staff')
+      .insert({
+        store_id: storeId,
+        display_name: displayName.trim(),
+        login_pin: pin,
+        pin_hash: hashStaffPin(pin),
+        is_active: true,
+      })
+      .select('id')
+      .single();
+    if (staffError) throw new Error(staffError.message);
+    staffId = created.id as string;
+  }
+
+  const { error: linkError } = await supabase
+    .from('portal_accounts')
+    .update({ staff_id: staffId })
+    .eq('id', accountId);
+  if (linkError) throw new Error(linkError.message);
+
+  return staffId;
+}
+
 function deriveAccessLevel(isActive: boolean, hasStoreAdmin: boolean): AccessLevel {
   if (!isActive) return 'none';
   if (hasStoreAdmin) return 'store_admin';
