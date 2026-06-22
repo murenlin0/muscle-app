@@ -1,6 +1,7 @@
 import { normalizePhone, stripAllSpaces, stripVipPrefix } from '@/lib/phone';
 import {
   extractAppointmentTimeFromOcr,
+  hasMultipleConfirmationTimes,
   hasStrongAppointmentTimeSignal,
   isLikelyMessageSendTimestamp,
 } from '@/lib/booking-ocr-sanitize';
@@ -112,7 +113,7 @@ function pickStartsAt(ocrText: string, aiTime: Date | null, hintTime: Date | nul
   if (resolved && isLikelyMessageSendTimestamp(ocrText, resolved)) {
     resolved = null;
   }
-  if (hintTime && hasStrongAppointmentTimeSignal(ocrText)) {
+  if (hintTime && (hasMultipleConfirmationTimes(ocrText) || hasStrongAppointmentTimeSignal(ocrText))) {
     return hintTime;
   }
   return resolved ?? hintTime;

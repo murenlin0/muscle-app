@@ -67,23 +67,67 @@ export function hasStrongAppointmentTimeSignal(text: string): boolean {
   );
 }
 
-/** 從 OCR 擷取預約時間（忽略訊息傳送時間） */
+function parseLabeledDateTime(
+  y: string,
+  mo: string,
+  d: string,
+  h: string,
+  mi: string,
+): Date {
+  return parseStoreDateTime(Number(y), Number(mo), Number(d), Number(h), Number(mi));
+}
+
+const LABELED_TIME_RE =
+  /時間[：:]\s*(\d{4})[-/](\d{1,2})[-/](\d{1,2})\s+(\d{1,2}):(\d{2})/g;
+
+function extractAllLabeledTimes(sanitized: string): Date[] {
+  const times: Date[] = [];
+  for (const m of sanitized.matchAll(LABELED_TIME_RE)) {
+    times.push(
+      parseLabeledDateTime(m[1]!, m[2]!, m[3]!, m[4]!, m[5]!),
+    );
+  }
+  return times;
+}
+
+/** 「預約成功」前最後一張確認卡的時間 */
+function extractTimeBeforeBookingSuccess(sanitized: string): Date | null {
+  const idx = sanitized.lastIndexOf('預約成功');
+  if (idx < 0) return null;
+  const times = extractAllLabeledTimes(sanitized.slice(0, idx));
+  return times.length ? times[times.length - 1]! : null;
+}
+
+/** 最後一張【筋棧預約確認】卡片的時間 */
+function extractTimeFromLastConfirmationCard(sanitized: string): Date | null {
+  const parts = sanitized.split(/【筋棧預約確認】/);
+  if (parts.length < 2) return null;
+  const lastBlock = parts[parts.length - 1]!;
+  const m = lastBlock.match(
+    /時間[：:]\s*(\d{4})[-/](\d{1,2})[-/](\d{1,2})\s+(\d{1,2}):(\d{2})/,
+  );
+  if (!m) return null;
+  return parseLabeledDateTime(m[1]!, m[2]!, m[3]!, m[4]!, m[5]!);
+}
+
+export function hasMultipleConfirmationTimes(text: string): boolean {
+  const sanitized = sanitizeOcrChatForBookingParse(text);
+  return extractAllLabeledTimes(sanitized).length > 1;
+}
+
+/** 從 OCR 擷取預約時間（忽略訊息傳送時間；多張確認卡取最後成功那張） */
 export function extractAppointmentTimeFromOcr(text: string, ref = new Date()): Date | null {
   const sanitized = sanitizeOcrChatForBookingParse(text);
   if (!sanitized) return null;
 
-  const labeled = sanitized.match(
-    /時間[：:]\s*(\d{4})[-/](\d{1,2})[-/](\d{1,2})\s+(\d{1,2}):(\d{2})/,
-  );
-  if (labeled) {
-    return parseStoreDateTime(
-      Number(labeled[1]),
-      Number(labeled[2]),
-      Number(labeled[3]),
-      Number(labeled[4]),
-      Number(labeled[5]),
-    );
-  }
+  const fromSuccess = extractTimeBeforeBookingSuccess(sanitized);
+  if (fromSuccess) return fromSuccess;
+
+  const fromLastCard = extractTimeFromLastConfirmationCard(sanitized);
+  if (fromLastCard) return fromLastCard;
+
+  const allLabeled = extractAllLabeledTimes(sanitized);
+  if (allLabeled.length) return allLabeled[allLabeled.length - 1]!;
 
   const apptClock = sanitized.match(/(\d{1,2}):(\d{2})的預約/);
   if (apptClock) {
