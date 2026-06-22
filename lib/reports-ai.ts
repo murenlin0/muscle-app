@@ -7,7 +7,7 @@ import {
 } from '@/lib/transaction-category';
 import type { StaffRosterEntry } from '@/lib/staff-auth-server';
 
-const GEMINI_MODEL = process.env.GEMINI_REPORTS_MODEL ?? process.env.GEMINI_MODEL ?? 'gemini-2.0-flash';
+const GEMINI_MODEL = process.env.GEMINI_REPORTS_MODEL ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
 
 function readGeminiKey(): string {
   const raw = process.env.GEMINI_API_KEY;

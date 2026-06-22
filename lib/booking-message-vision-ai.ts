@@ -28,7 +28,7 @@ export type AiScreenshotParseResult =
   | { status: 'incomplete'; message: string; extractedText?: string };
 
 const GEMINI_VISION_MODEL =
-  process.env.GEMINI_VISION_MODEL ?? process.env.GEMINI_MODEL ?? 'gemini-2.0-flash';
+  process.env.GEMINI_VISION_MODEL ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
 
 const OCR_SYSTEM = `你是 LINE 聊天截圖的文字轉寫助手。只輸出對話文字，不要 JSON、不要解釋。
 

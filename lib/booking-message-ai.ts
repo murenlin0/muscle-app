@@ -7,7 +7,7 @@ import type { StaffUiParsedBooking } from '@/lib/booking-message';
 import { parseStoreDateTime, STORE_TIMEZONE } from '@/lib/store-timezone';
 import type { StaffRosterEntry } from '@/lib/staff-auth-server';
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-2.0-flash';
+const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
 
 function readEnvKey(name: 'GEMINI_API_KEY'): string {
   const raw = process.env[name];
