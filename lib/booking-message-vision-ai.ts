@@ -83,7 +83,7 @@ export function isBookingVisionConfigured(): boolean {
 export function assertBookingVisionConfigured(): void {
   if (!isBookingVisionConfigured()) {
     throw new BookingParseIncompleteError(
-      '截圖解析尚未啟用，請設定 GROQ_API_KEY 或 GEMINI_API_KEY',
+      '截圖解析尚未啟用，請在 Vercel 設定 GROQ_API_KEY',
     );
   }
 }
@@ -206,19 +206,20 @@ async function extractChatTextFromImage(
   imageBase64: string,
   mimeType: string,
 ): Promise<string> {
-  if (isGeminiConfigured()) {
+  // 正式環境以 Groq 為主（Llama 4 Scout vision + llama-3.3 文字解析）
+  if (isGroqConfigured()) {
     try {
-      return await callGeminiOcr(imageBase64, mimeType);
-    } catch (geminiErr) {
-      if (!isGroqConfigured()) throw geminiErr;
-      console.warn('[vision-ai] Gemini OCR 失敗，改用 Groq:', geminiErr);
+      return await callGroqOcr(imageBase64, mimeType);
+    } catch (groqErr) {
+      if (!isGeminiConfigured()) throw groqErr;
+      console.warn('[vision-ai] Groq OCR 失敗，改用 Gemini:', groqErr);
     }
   }
-  if (isGroqConfigured()) {
-    return callGroqOcr(imageBase64, mimeType);
+  if (isGeminiConfigured()) {
+    return callGeminiOcr(imageBase64, mimeType);
   }
   throw new BookingParseIncompleteError(
-    '截圖 OCR 尚未啟用，請設定 GROQ_API_KEY 或 GEMINI_API_KEY',
+    '截圖 OCR 尚未啟用，請在 Vercel 設定 GROQ_API_KEY',
   );
 }
 

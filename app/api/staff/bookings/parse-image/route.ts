@@ -4,7 +4,7 @@ import {
   mergeStaffUiBooking,
   resolveStoreSlugFromStaffName,
 } from '@/lib/booking-message';
-import { BookingParseIncompleteError, isGroqConfigured } from '@/lib/booking-message-ai';
+import { BookingParseIncompleteError } from '@/lib/booking-message-ai';
 import {
   assertBookingVisionConfigured,
   BOOKING_IMAGE_MIME_TYPES,
@@ -77,7 +77,7 @@ export async function POST(request: Request) {
       normalizedText: result.normalizedText,
       extractedText: result.extractedText ?? null,
       parseMethod: result.parseMethod ?? null,
-      aiProvider: isGroqConfigured() ? 'groq-vision' : 'gemini-vision',
+      aiProvider: 'groq',
     });
   } catch (e) {
     if (e instanceof BookingParseIncompleteError) {
