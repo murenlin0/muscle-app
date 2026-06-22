@@ -12,51 +12,34 @@ import {
   Users,
 } from 'lucide-react';
 import { PortalShell } from '@/app/components/portal-shell';
-import { AdminHubCard } from '@/components/portal/admin-hub-card';
+import { AdminHubLink, AdminHubSection } from '@/components/portal/admin-hub-section';
 import { Button } from '@/components/ui/button';
 import { STORE_LIST, type StoreConfig } from '@/lib/stores';
 
 const PORTAL_API = '/api/portal';
 
-function AdminSection({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function StoreHubPanel({ store }: { store: StoreConfig }) {
   return (
-    <section className="space-y-3">
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        {title}
-      </h2>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{children}</div>
-    </section>
-  );
-}
-
-function StoreSection({ store }: { store: StoreConfig }) {
-  return (
-    <AdminSection title={store.name}>
-      <AdminHubCard
+    <AdminHubSection title={store.name} description={store.area}>
+      <AdminHubLink
         href={`/admin/${store.slug}/reports`}
         icon={BarChart3}
         title="報表"
         description="日營收、師傅業績與流水帳"
       />
-      <AdminHubCard
+      <AdminHubLink
         href={`/admin/${store.slug}/clients`}
         icon={Contact}
         title="客人資料庫"
         description="本店會員餘額與消費紀錄"
       />
-      <AdminHubCard
+      <AdminHubLink
         href={`/manager/${store.slug}/import`}
         icon={FileSpreadsheet}
         title="會員匯入"
         description="Notion CSV 匯入本店會員"
       />
-    </AdminSection>
+    </AdminHubSection>
   );
 }
 
@@ -96,7 +79,7 @@ export default function SuperAdminPage() {
 
   if (bootstrapping) {
     return (
-      <PortalShell title="總管理後台" variant="admin" size="lg">
+      <PortalShell title="總管理後台" variant="admin" size="xl">
         <p className="text-center text-sm text-muted-foreground">載入中…</p>
       </PortalShell>
     );
@@ -107,7 +90,7 @@ export default function SuperAdminPage() {
       title="總管理後台"
       subtitle={displayName}
       variant="admin"
-      size="lg"
+      size="xl"
       headerActions={
         <Button type="button" variant="ghost" size="sm" onClick={() => void handleLogout()}>
           <LogOut className="mr-1.5 size-4" />
@@ -115,25 +98,32 @@ export default function SuperAdminPage() {
         </Button>
       }
     >
-      <div className="space-y-10">
-        <AdminSection title="全店設定">
-          <AdminHubCard
+      <div className="space-y-8">
+        <AdminHubSection title="全店設定" description="跨分店共用功能">
+          <AdminHubLink
             href="/admin/team"
             icon={Users}
             title="人員與權限"
             description="指派店長帳號、管理各店師傅"
           />
-          <AdminHubCard
+          <AdminHubLink
             href="/admin/google"
             icon={CalendarDays}
             title="Google 日曆"
             description="OAuth 授權與 refresh token 設定"
           />
-        </AdminSection>
+        </AdminHubSection>
 
-        {STORE_LIST.map((store) => (
-          <StoreSection key={store.slug} store={store} />
-        ))}
+        <div className="space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            分店資料
+          </p>
+          <div className="grid gap-6 lg:grid-cols-2">
+            {STORE_LIST.map((store) => (
+              <StoreHubPanel key={store.slug} store={store} />
+            ))}
+          </div>
+        </div>
       </div>
 
       <p className="mt-10 text-center text-xs text-muted-foreground">
