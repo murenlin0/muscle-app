@@ -1,12 +1,15 @@
 import { normalizePhone, stripAllSpaces, stripVipPrefix } from '@/lib/phone';
 import {
+  extractAppointmentTimeFromOcr,
+  hasStrongAppointmentTimeSignal,
+  isLikelyMessageSendTimestamp,
+} from '@/lib/booking-ocr-sanitize';
+import {
   buildStaffMessageCore,
-  parseRelativeDayDateTime,
   type FlexibleBookingFields,
 } from '@/lib/booking-message-flex';
 import type { AiBookingParseResult } from '@/lib/booking-message-ai';
 import type { StaffUiParsedBooking } from '@/lib/booking-message';
-import { parseStoreDateTime, STORE_TIMEZONE } from '@/lib/store-timezone';
 
 /** OCR 常見混淆字元 → 數字 */
 function ocrDigitFix(raw: string): string {
@@ -57,49 +60,8 @@ function extractDurationFromOcr(text: string): number | null {
   return [30, 60, 90, 120].includes(n) ? n : null;
 }
 
-function taipeiNowParts(ref = new Date()): { year: number; month: number; day: number } {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: STORE_TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(ref);
-  const get = (type: Intl.DateTimeFormatPartTypes) =>
-    Number(parts.find((p) => p.type === type)?.value ?? '0');
-  return { year: get('year'), month: get('month'), day: get('day') };
-}
-
 function extractTimeFromOcr(text: string): Date | null {
-  const labeled = text.match(
-    /時間[：:]\s*(\d{4})[-/](\d{1,2})[-/](\d{1,2})\s+(\d{1,2}):(\d{2})/,
-  );
-  if (labeled) {
-    return parseStoreDateTime(
-      Number(labeled[1]),
-      Number(labeled[2]),
-      Number(labeled[3]),
-      Number(labeled[4]),
-      Number(labeled[5]),
-    );
-  }
-  const iso = text.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})\s+(\d{1,2}):(\d{2})/);
-  if (iso) {
-    return parseStoreDateTime(
-      Number(iso[1]),
-      Number(iso[2]),
-      Number(iso[3]),
-      Number(iso[4]),
-      Number(iso[5]),
-    );
-  }
-  const md = text.match(/(?:^|[^\d])(\d{1,2})[\/\-月](\d{1,2})[日]?\s+(\d{1,2}):(\d{2})/m);
-  if (md) {
-    const { year } = taipeiNowParts();
-    return parseStoreDateTime(year, Number(md[1]), Number(md[2]), Number(md[3]), Number(md[4]));
-  }
-  const relative = parseRelativeDayDateTime(text);
-  if (relative) return relative;
-  return null;
+  return extractAppointmentTimeFromOcr(text);
 }
 
 export function extractBookingHintsFromOcrText(text: string): FlexibleBookingFields {
@@ -145,6 +107,17 @@ export function tryParseBookingFromOcrTextOnly(ocrText: string): AiBookingParseR
   return tryCompleteBookingFromOcrText({ status: 'incomplete', message: '' }, ocrText);
 }
 
+function pickStartsAt(ocrText: string, aiTime: Date | null, hintTime: Date | null): Date | null {
+  let resolved = aiTime;
+  if (resolved && isLikelyMessageSendTimestamp(ocrText, resolved)) {
+    resolved = null;
+  }
+  if (hintTime && hasStrongAppointmentTimeSignal(ocrText)) {
+    return hintTime;
+  }
+  return resolved ?? hintTime;
+}
+
 /** OCR 文字 regex 補齊 AI 未抓到的欄位 */
 export function tryCompleteBookingFromOcrText(
   parsed: AiBookingParseResult,
@@ -175,13 +148,12 @@ export function tryCompleteBookingFromOcrText(
       base.serviceLabel ??
       hints.serviceLabel ??
       (hints.durationMinutes ? `運動按摩 ${hints.durationMinutes}min` : null),
-    startsAt: base.startsAt ?? hints.startsAt,
+    startsAt: pickStartsAt(ocrText, base.startsAt, hints.startsAt),
   };
 
   try {
     return { status: 'complete', data: buildStaffMessageCore(merged) };
   } catch {
-    if (parsed.status === 'incomplete') return parsed;
     return { status: 'incomplete', message: missingFieldsMessage(merged) };
   }
 }

@@ -6,6 +6,7 @@ import {
 import type { StaffUiParsedBooking } from '@/lib/booking-message';
 import { parseStoreDateTime, STORE_TIMEZONE } from '@/lib/store-timezone';
 import type { StaffRosterEntry } from '@/lib/staff-auth-server';
+import { sanitizeOcrChatForBookingParse } from '@/lib/booking-ocr-sanitize';
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-2.5-flash';
 
@@ -124,6 +125,10 @@ export function buildStaffChatOcrParsePrompt(text: string): string {
 - 若 OCR 已有「姓名：」「電話：」「時間：」等明確欄位，務必採用，不可回 incomplete
 - 官方「預約確認」訊息中的姓名電話優先於口語對話
 - 電話可能在確認卡、客人自介、或訊息任意位置
+
+【勿用訊息傳送時間】
+- LINE 氣泡旁的 14:54、已讀 18:12 等是「傳送時間」，不是預約時間，startsAtLocal 不可採用
+- 預約時間只取自：時間：欄位、確認卡、或對話中的預約語意（如「今天有17:00的預約」「改到明天15:00」）
 
 【改期 / 口語時間】
 師傅與客人協調多個時段時，取雙方最後確認的時間（客人回好/可以/OK 之後）。
@@ -293,7 +298,8 @@ async function callAiParse(text: string, prompt?: string): Promise<AiBookingResp
 export async function parseBookingChatTextWithAiEx(
   ocrText: string,
 ): Promise<AiBookingParseResult> {
-  const response = await callAiParse(ocrText, buildStaffChatOcrParsePrompt(ocrText));
+  const sanitized = sanitizeOcrChatForBookingParse(ocrText);
+  const response = await callAiParse(sanitized, buildStaffChatOcrParsePrompt(sanitized));
   return processAiBookingResponse(response);
 }
 

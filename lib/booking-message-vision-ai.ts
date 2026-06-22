@@ -8,6 +8,7 @@ import {
   type AiBookingParseResult,
 } from '@/lib/booking-message-ai';
 import { tryCompleteBookingFromOcrText, tryParseBookingFromOcrTextOnly } from '@/lib/booking-ocr-hints';
+import { sanitizeOcrChatForBookingParse } from '@/lib/booking-ocr-sanitize';
 import type { StaffUiParsedBooking } from '@/lib/booking-message';
 
 /** 圖片 base64 上限 4MB */
@@ -44,13 +45,14 @@ const OCR_SYSTEM = `你是 LINE 聊天截圖的文字轉寫助手。只輸出對
    項目：運動按摩 60min
    時間：2026-06-25 14:00
 4. 保留所有 09 開頭電話、中文姓名、時長數字，勿改寫
-5. 略過輸入框、底部選單、狀態列，但保留對話與確認卡內的時間
-6. 看不清用 ? 代替，勿憑空捏造`;
+5. 【勿轉寫】訊息氣泡旁的傳送時間（如 14:54、已讀 18:12）；只保留預約語意中的時間（如 17:00的預約、時間：2026-06-25 14:00）
+6. 略過輸入框、底部選單、狀態列，但保留對話與確認卡內的時間
+7. 看不清用 ? 代替，勿憑空捏造`;
 
 const VISION_JSON_FALLBACK_PROMPT = `你是筋棧按摩店預約助手。從 LINE 聊天截圖直接判斷預約資訊。
 
 必要：客人姓名、電話(09開頭10碼)、時長(30/60/90/120)、預約時間(YYYY-MM-DD HH:mm Asia/Taipei)。
-「今天有17:00的預約」→ 日期用今天、時間17:00；改時長但時間不變時仍取原時間。
+勿用 LINE 訊息傳送時間（14:54、已讀等）；「今天有17:00的預約」→ 日期用今天、時間17:00。
 改期時取雙方最後確認的時間。分店與師傅勿解析。
 
 只回 JSON：status, message, storeLabel, staffName, clientName, phone, serviceLabel, durationMinutes, startsAtLocal, note
@@ -113,13 +115,15 @@ function stripCodeFence(raw: string): string {
 }
 
 function normalizeOcrText(raw: string): string {
-  return raw
-    .replace(/\r\n/g, '\n')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0)
-    .join('\n')
-    .trim();
+  return sanitizeOcrChatForBookingParse(
+    raw
+      .replace(/\r\n/g, '\n')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .join('\n')
+      .trim(),
+  );
 }
 
 async function callGeminiGenerate(parts: Array<{ text?: string; inline_data?: { mime_type: string; data: string } }>, options?: {
