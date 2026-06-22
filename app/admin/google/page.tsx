@@ -28,7 +28,7 @@ export default async function GoogleSetupAdminPage({
   }
   const setupKey = process.env.GOOGLE_OAUTH_SETUP_KEY?.trim();
   const authHref = keyAuthorized
-    ? '/api/google/setup'
+    ? `/api/google/setup?key=${encodeURIComponent(params.key!)}`
     : configured
       ? '/api/google/connect'
       : '/api/google/setup';

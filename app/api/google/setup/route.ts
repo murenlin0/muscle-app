@@ -1,14 +1,17 @@
 import { NextResponse } from 'next/server';
 import { canViewReports, getPortalSession } from '@/lib/portal-session';
 
-/** 一鍵開始 OAuth（本機免 key；正式站需登入後台） */
+/** 一鍵開始 OAuth（本機免 key；正式站需登入後台，或網址帶正確 setup key） */
 export async function GET(request: Request) {
   const key = process.env.GOOGLE_OAUTH_SETUP_KEY?.trim();
   if (!key) {
     return NextResponse.json({ error: '缺少 GOOGLE_OAUTH_SETUP_KEY' }, { status: 500 });
   }
 
-  if (process.env.NODE_ENV === 'production') {
+  const url = new URL(request.url);
+  const keyAuthorized = url.searchParams.get('key') === key;
+
+  if (process.env.NODE_ENV === 'production' && !keyAuthorized) {
     const session = await getPortalSession();
     if (!session || !canViewReports(session)) {
       return NextResponse.redirect(new URL('/login?next=/admin/google', request.url));
