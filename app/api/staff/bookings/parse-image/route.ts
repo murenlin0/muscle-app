@@ -89,6 +89,10 @@ export async function POST(request: Request) {
       );
     }
     const message = e instanceof Error ? e.message : '無法解析截圖';
-    return NextResponse.json({ error: message }, { status: 400 });
+    const friendly =
+      /unexpected end of json|JSON\.parse|json input/i.test(message)
+        ? 'AI 回傳異常，請稍後再試或改貼文字'
+        : message;
+    return NextResponse.json({ error: friendly }, { status: 400 });
   }
 }

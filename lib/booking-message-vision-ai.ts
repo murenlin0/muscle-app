@@ -148,11 +148,26 @@ async function callGeminiGenerate(parts: Array<{ text?: string; inline_data?: { 
     throw new Error(`Gemini 失敗 (${res.status}): ${errBody.slice(0, 300)}`);
   }
 
-  const data = (await res.json()) as {
+  const bodyText = await res.text();
+  if (!bodyText.trim()) {
+    throw new BookingParseIncompleteError('AI 回傳空白，請稍後再試');
+  }
+  let data: {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    promptFeedback?: { blockReason?: string };
   };
+  try {
+    data = JSON.parse(bodyText) as typeof data;
+  } catch {
+    throw new BookingParseIncompleteError('AI 回傳格式異常，請稍後再試');
+  }
   const content = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-  if (!content) throw new Error('Gemini 回傳空白');
+  if (!content) {
+    const blocked = data.promptFeedback?.blockReason;
+    throw new BookingParseIncompleteError(
+      blocked ? 'AI 無法處理此截圖，請改貼文字' : 'AI 回傳空白，請稍後再試',
+    );
+  }
   return content;
 }
 
@@ -185,18 +200,32 @@ async function callVisionJsonFallback(
     throw new BookingParseIncompleteError('無法解析截圖，請改貼文字或重試');
   }
 
-  const raw = await callGeminiGenerate(
-    [
-      { text: VISION_JSON_FALLBACK_PROMPT },
-      { text: '解析此 LINE 預約對話截圖：' },
-      { inline_data: { mime_type: mimeType, data: imageBase64 } },
-    ],
-    { json: true, maxOutputTokens: 1024 },
-  );
+  let raw: string;
+  try {
+    raw = await callGeminiGenerate(
+      [
+        { text: VISION_JSON_FALLBACK_PROMPT },
+        { text: '解析此 LINE 預約對話截圖：' },
+        { inline_data: { mime_type: mimeType, data: imageBase64 } },
+      ],
+      { json: true, maxOutputTokens: 2048 },
+    );
+  } catch (e) {
+    if (e instanceof BookingParseIncompleteError) throw e;
+    throw new BookingParseIncompleteError('無法解析截圖，請改貼文字或重試');
+  }
 
-  const parsed = JSON.parse(stripCodeFence(raw)) as Parameters<
-    typeof processAiBookingResponse
-  >[0];
+  const jsonText = stripCodeFence(raw);
+  if (!jsonText) {
+    throw new BookingParseIncompleteError('AI 回傳空白，請稍後再試');
+  }
+
+  let parsed: Parameters<typeof processAiBookingResponse>[0];
+  try {
+    parsed = JSON.parse(jsonText) as Parameters<typeof processAiBookingResponse>[0];
+  } catch {
+    throw new BookingParseIncompleteError('AI 回傳格式異常，請重試或改貼文字');
+  }
   return processAiBookingResponse(parsed);
 }
 

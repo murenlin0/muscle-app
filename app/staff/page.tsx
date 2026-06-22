@@ -58,6 +58,16 @@ export default function StaffWorkspacePage() {
     staffNote: staffNote.trim() || undefined,
   });
 
+  async function readApiJson<T>(res: Response): Promise<T> {
+    const text = await res.text();
+    if (!text.trim()) return {} as T;
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      throw new Error('伺服器回應異常，請稍後再試');
+    }
+  }
+
   async function handleParse() {
     setLoading('parse');
     setError(null);
@@ -68,24 +78,29 @@ export default function StaffWorkspacePage() {
     setImageLabel(null);
     setOcrHint(null);
 
-    const res = await fetch(`${STAFF_API}/bookings/parse`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(requestBody()),
-    });
-    const data = (await res.json()) as {
-      preview?: BookingPreviewData;
-      parsedBy?: 'rules' | 'ai';
-      error?: string;
-    };
+    try {
+      const res = await fetch(`${STAFF_API}/bookings/parse`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody()),
+      });
+      const data = await readApiJson<{
+        preview?: BookingPreviewData;
+        parsedBy?: 'rules' | 'ai';
+        error?: string;
+      }>(res);
 
-    setLoading(null);
-    if (!res.ok) {
-      setError(data.error ?? '解析失敗');
-      return;
+      setLoading(null);
+      if (!res.ok) {
+        setError(data.error ?? '解析失敗');
+        return;
+      }
+      setPreview(data.preview ?? null);
+      setParsedBy(data.parsedBy ?? null);
+    } catch (e) {
+      setLoading(null);
+      setError(e instanceof Error ? e.message : '解析失敗');
     }
-    setPreview(data.preview ?? null);
-    setParsedBy(data.parsedBy ?? null);
   }
 
   async function handleImageUpload(file: File) {
@@ -97,49 +112,54 @@ export default function StaffWorkspacePage() {
     setParsedBy(null);
     setOcrHint(null);
 
-    const form = new FormData();
-    form.append('image', file);
-    form.append('staffName', assignedStaff);
-    if (staffNote.trim()) form.append('staffNote', staffNote.trim());
+    try {
+      const form = new FormData();
+      form.append('image', file);
+      form.append('staffName', assignedStaff);
+      if (staffNote.trim()) form.append('staffNote', staffNote.trim());
 
-    const res = await fetch(`${STAFF_API}/bookings/parse-image`, {
-      method: 'POST',
-      body: form,
-    });
-    const data = (await res.json()) as {
-      preview?: BookingPreviewData;
-      parsedBy?: 'ai-image';
-      normalizedText?: string | null;
-      extractedText?: string | null;
-      parseMethod?: 'ocr-text' | 'vision-json' | null;
-      error?: string;
-    };
+      const res = await fetch(`${STAFF_API}/bookings/parse-image`, {
+        method: 'POST',
+        body: form,
+      });
+      const data = await readApiJson<{
+        preview?: BookingPreviewData;
+        parsedBy?: 'ai-image';
+        normalizedText?: string | null;
+        extractedText?: string | null;
+        parseMethod?: 'ocr-text' | 'vision-json' | null;
+        error?: string;
+      }>(res);
 
-    setLoading(null);
-    if (!res.ok) {
-      setError(data.error ?? '截圖解析失敗');
-      if (data.extractedText?.trim()) {
-        setOcrHint(data.extractedText.trim());
-        setText(data.extractedText.trim());
+      setLoading(null);
+      if (!res.ok) {
+        setError(data.error ?? '截圖解析失敗');
+        if (data.extractedText?.trim()) {
+          setOcrHint(data.extractedText.trim());
+          setText(data.extractedText.trim());
+        }
+        return;
       }
-      return;
-    }
-    setPreview(data.preview ?? null);
-    setParsedBy(data.parsedBy ?? 'ai-image');
-    setImageLabel(file.name);
-    setOcrHint(data.extractedText?.trim() ?? null);
-    if (data.normalizedText?.trim()) {
-      setText(data.normalizedText.trim());
-    } else if (data.preview) {
-      const d = new Date(data.preview.startsAt);
-      const y = d.toLocaleString('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric' });
-      const mo = d.toLocaleString('en-CA', { timeZone: 'Asia/Taipei', month: '2-digit' });
-      const day = d.toLocaleString('en-CA', { timeZone: 'Asia/Taipei', day: '2-digit' });
-      const h = d.toLocaleString('en-CA', { timeZone: 'Asia/Taipei', hour: '2-digit', hour12: false });
-      const mi = d.toLocaleString('en-CA', { timeZone: 'Asia/Taipei', minute: '2-digit' });
-      setText(
-        `姓名：${data.preview.clientName}\n電話：${data.preview.phone}\n項目：${data.preview.serviceLabel}\n時間：${y}-${mo}-${day} ${h}:${mi}`,
-      );
+      setPreview(data.preview ?? null);
+      setParsedBy(data.parsedBy ?? 'ai-image');
+      setImageLabel(file.name);
+      setOcrHint(data.extractedText?.trim() ?? null);
+      if (data.normalizedText?.trim()) {
+        setText(data.normalizedText.trim());
+      } else if (data.preview) {
+        const d = new Date(data.preview.startsAt);
+        const y = d.toLocaleString('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric' });
+        const mo = d.toLocaleString('en-CA', { timeZone: 'Asia/Taipei', month: '2-digit' });
+        const day = d.toLocaleString('en-CA', { timeZone: 'Asia/Taipei', day: '2-digit' });
+        const h = d.toLocaleString('en-CA', { timeZone: 'Asia/Taipei', hour: '2-digit', hour12: false });
+        const mi = d.toLocaleString('en-CA', { timeZone: 'Asia/Taipei', minute: '2-digit' });
+        setText(
+          `姓名：${data.preview.clientName}\n電話：${data.preview.phone}\n項目：${data.preview.serviceLabel}\n時間：${y}-${mo}-${day} ${h}:${mi}`,
+        );
+      }
+    } catch (e) {
+      setLoading(null);
+      setError(e instanceof Error ? e.message : '截圖解析失敗');
     }
   }
 

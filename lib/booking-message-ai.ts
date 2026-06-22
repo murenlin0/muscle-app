@@ -179,11 +179,15 @@ export function processAiBookingResponse(response: AiBookingResponse): AiBooking
   }
 }
 
-function parseAiJson(raw: string): AiBookingResponse {
+function parseAiJson(raw: string | undefined | null): AiBookingResponse {
+  const text = raw?.trim() ?? '';
+  if (!text) {
+    throw new BookingParseIncompleteError('AI 回傳空白，請稍後再試');
+  }
   try {
-    return JSON.parse(raw) as AiBookingResponse;
+    return JSON.parse(text) as AiBookingResponse;
   } catch {
-    throw new Error('AI 回傳格式無法解析');
+    throw new BookingParseIncompleteError('AI 回傳格式異常，請重試或改貼文字');
   }
 }
 
@@ -242,11 +246,22 @@ async function callGeminiParse(text: string, prompt = buildPrompt(text)): Promis
     throw new Error(`Gemini 解析失敗（${response.status}）${detail ? `：${detail.slice(0, 200)}` : ''}`);
   }
 
-  const payload = (await response.json()) as {
+  const bodyText = await response.text();
+  if (!bodyText.trim()) {
+    throw new BookingParseIncompleteError('AI 未回傳解析結果，請稍後再試');
+  }
+  let payload: {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
   };
+  try {
+    payload = JSON.parse(bodyText) as typeof payload;
+  } catch {
+    throw new BookingParseIncompleteError('AI 回傳格式異常，請稍後再試');
+  }
   const rawJson = payload.candidates?.[0]?.content?.parts?.[0]?.text;
-  if (!rawJson) throw new Error('AI 未回傳解析結果');
+  if (!rawJson?.trim()) {
+    throw new BookingParseIncompleteError('AI 未回傳解析結果，請稍後再試');
+  }
   return parseAiJson(rawJson);
 }
 
