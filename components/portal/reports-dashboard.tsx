@@ -84,9 +84,11 @@ function today(): string {
 export function ReportsDashboard({
   storeFilter,
   showStorePicker = false,
+  showAiAssistant = true,
 }: {
   storeFilter?: StoreSlug;
   showStorePicker?: boolean;
+  showAiAssistant?: boolean;
 }) {
   const [from, setFrom] = useState(LEDGER_DEFAULT_FROM);
   const [to, setTo] = useState(today());
@@ -498,7 +500,9 @@ export function ReportsDashboard({
         />
       </section>
 
-      <ReportsAiBox store={activeStore} onApplyFilter={handleApplyAiFilter} />
+      {showAiAssistant ? (
+        <ReportsAiBox store={activeStore} onApplyFilter={handleApplyAiFilter} />
+      ) : null}
 
       <section ref={ledgerSectionRef} className="space-y-3 border-t border-[#333] pt-5 scroll-mt-4">
         <div className="flex flex-wrap items-end justify-between gap-3">

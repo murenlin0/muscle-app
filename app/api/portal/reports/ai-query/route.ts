@@ -39,6 +39,10 @@ export async function POST(request: Request) {
   const session = await requireReportsAccess(parseReportStoreParam(body.store) ?? undefined);
   if (session instanceof NextResponse) return session;
 
+  if (session.role === 'store') {
+    return NextResponse.json({ error: 'AI 報表助手僅總管理員可用' }, { status: 403 });
+  }
+
   try {
     const roster = await listActiveStaffForRoster();
     const intent = await extractReportQuery(question, roster);

@@ -26,7 +26,7 @@ export default function ManagerReportsPage() {
       size="full"
       backHref={managerBase}
     >
-      <ReportsDashboard storeFilter={store.slug} />
+      <ReportsDashboard storeFilter={store.slug} showAiAssistant={false} />
     </PortalShell>
   );
 }

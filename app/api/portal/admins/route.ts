@@ -59,5 +59,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  if (data?.id) {
+    await supabase.from('portal_account_stores').upsert(
+      { account_id: data.id, store_id: body.storeId },
+      { onConflict: 'account_id,store_id' },
+    );
+  }
+
   return NextResponse.json({ account: data });
 }
