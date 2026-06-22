@@ -31,7 +31,7 @@ export async function POST(request: Request) {
 
   if (!isReportsAiConfigured()) {
     return NextResponse.json(
-      { error: 'AI 尚未啟用，請設定 GROQ_API_KEY' },
+      { error: 'AI 尚未啟用，請設定 GEMINI_API_KEY' },
       { status: 400 },
     );
   }

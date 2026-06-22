@@ -7,10 +7,9 @@ import type { StaffUiParsedBooking } from '@/lib/booking-message';
 import { parseStoreDateTime, STORE_TIMEZONE } from '@/lib/store-timezone';
 import type { StaffRosterEntry } from '@/lib/staff-auth-server';
 
-const GROQ_MODEL = process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile';
 const GEMINI_MODEL = process.env.GEMINI_MODEL ?? 'gemini-2.0-flash';
 
-function readEnvKey(name: 'GROQ_API_KEY' | 'GEMINI_API_KEY'): string {
+function readEnvKey(name: 'GEMINI_API_KEY'): string {
   const raw = process.env[name];
   if (!raw) return '';
   return raw.trim().replace(/^["']|["']$/g, '');
@@ -187,53 +186,6 @@ function parseAiJson(raw: string): AiBookingResponse {
   }
 }
 
-async function callGroqParse(text: string, prompt = buildPrompt(text)): Promise<AiBookingResponse> {
-  const apiKey = readEnvKey('GROQ_API_KEY');
-  if (!apiKey) {
-    throw new Error('尚未設定 GROQ_API_KEY');
-  }
-
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: GROQ_MODEL,
-      messages: [
-        {
-          role: 'system',
-          content: '你是筋棧預約訊息解析助手。只回傳 JSON 物件，不要 markdown 或其他文字。',
-        },
-        { role: 'user', content: prompt },
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.1,
-    }),
-  });
-
-  if (!response.ok) {
-    const detail = await response.text().catch(() => '');
-    if (response.status === 429) {
-      throw new BookingParseIncompleteError('AI 請求過於頻繁，請稍後再試');
-    }
-    if (response.status === 401 || response.status === 403) {
-      throw new BookingParseIncompleteError(
-        'GROQ_API_KEY 無效，請到 Vercel muscle-app-mivu 重新貼上 gsk_ 開頭的金鑰',
-      );
-    }
-    throw new Error(`Groq 解析失敗（${response.status}）${detail ? `：${detail.slice(0, 200)}` : ''}`);
-  }
-
-  const payload = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const rawJson = payload.choices?.[0]?.message?.content;
-  if (!rawJson) throw new Error('AI 未回傳解析結果');
-  return parseAiJson(rawJson);
-}
-
 async function callGeminiParse(text: string, prompt = buildPrompt(text)): Promise<AiBookingResponse> {
   const apiKey = readEnvKey('GEMINI_API_KEY');
   if (!apiKey) {
@@ -278,7 +230,7 @@ async function callGeminiParse(text: string, prompt = buildPrompt(text)): Promis
     if (response.status === 429) {
       if (detail.includes('limit: 0')) {
         throw new BookingParseIncompleteError(
-          'Gemini 免費額度尚未啟用，建議改用 Groq（設定 GROQ_API_KEY）',
+          'Gemini 免費額度尚未啟用，請至 Google AI Studio 啟用 billing 或預付點數',
         );
       }
       throw new BookingParseIncompleteError('AI 額度已用完，請稍後再試');
@@ -299,14 +251,11 @@ async function callGeminiParse(text: string, prompt = buildPrompt(text)): Promis
 
 async function callAiParse(text: string, prompt?: string): Promise<AiBookingResponse> {
   const userPrompt = prompt ?? buildPrompt(text);
-  if (isGroqConfigured()) {
-    return callGroqParse(text, userPrompt);
-  }
   if (isGeminiConfigured()) {
     return callGeminiParse(text, userPrompt);
   }
   throw new BookingParseIncompleteError(
-    'AI 解析尚未啟用，請在 Vercel 或 .env.local 設定 GROQ_API_KEY',
+    'AI 解析尚未啟用，請在 Vercel 或 .env.local 設定 GEMINI_API_KEY',
   );
 }
 
@@ -337,28 +286,24 @@ export async function parseBookingMessageWithAi(
   return result.data;
 }
 
-export function isGroqConfigured(): boolean {
-  return Boolean(readEnvKey('GROQ_API_KEY'));
-}
-
 export function isGeminiConfigured(): boolean {
   return Boolean(readEnvKey('GEMINI_API_KEY'));
 }
 
-export async function probeGroqKey(): Promise<boolean> {
-  const apiKey = readEnvKey('GROQ_API_KEY');
+export async function probeGeminiKey(): Promise<boolean> {
+  const apiKey = readEnvKey('GEMINI_API_KEY');
   if (!apiKey) return false;
   try {
-    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+    const res = await fetch(url, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
       },
       body: JSON.stringify({
-        model: GROQ_MODEL,
-        messages: [{ role: 'user', content: 'OK' }],
-        max_tokens: 1,
+        contents: [{ parts: [{ text: 'OK' }] }],
+        generationConfig: { maxOutputTokens: 1 },
       }),
     });
     return res.ok;
@@ -368,13 +313,13 @@ export async function probeGroqKey(): Promise<boolean> {
 }
 
 export function isBookingAiConfigured(): boolean {
-  return isGroqConfigured() || isGeminiConfigured();
+  return isGeminiConfigured();
 }
 
 export function assertBookingAiConfigured(): void {
   if (!isBookingAiConfigured()) {
     throw new BookingParseIncompleteError(
-      'AI 解析尚未啟用，請在 Vercel 或 .env.local 設定 GROQ_API_KEY',
+      'AI 解析尚未啟用，請在 Vercel 或 .env.local 設定 GEMINI_API_KEY',
     );
   }
 }

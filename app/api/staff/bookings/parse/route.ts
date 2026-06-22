@@ -4,7 +4,7 @@ import {
   mergeStaffUiBooking,
   resolveStoreSlugFromStaffName,
 } from '@/lib/booking-message';
-import { BookingParseIncompleteError, isGroqConfigured } from '@/lib/booking-message-ai';
+import { BookingParseIncompleteError } from '@/lib/booking-message-ai';
 import { parseBookingForStaffPreview } from '@/lib/booking-message-parse-server';
 import { listActiveStaffForRoster } from '@/lib/staff-auth-server';
 import { requireStaffSession } from '@/lib/portal-api';
@@ -34,7 +34,7 @@ export async function POST(request: Request) {
       storeSlug,
     });
     const preview = buildBookingPreviewForStaffUi(draft);
-    return NextResponse.json({ preview, parsedBy: method, aiProvider: isGroqConfigured() ? 'groq' : 'gemini' });
+    return NextResponse.json({ preview, parsedBy: method, aiProvider: 'gemini' });
   } catch (e) {
     if (e instanceof BookingParseIncompleteError) {
       return NextResponse.json({ error: e.message }, { status: 400 });

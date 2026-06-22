@@ -77,7 +77,7 @@ export async function POST(request: Request) {
       normalizedText: result.normalizedText,
       extractedText: result.extractedText ?? null,
       parseMethod: result.parseMethod ?? null,
-      aiProvider: 'groq',
+      aiProvider: 'gemini',
     });
   } catch (e) {
     if (e instanceof BookingParseIncompleteError) {

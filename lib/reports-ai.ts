@@ -7,16 +7,16 @@ import {
 } from '@/lib/transaction-category';
 import type { StaffRosterEntry } from '@/lib/staff-auth-server';
 
-const GROQ_MODEL = process.env.GROQ_REPORTS_MODEL ?? process.env.GROQ_MODEL ?? 'llama-3.3-70b-versatile';
+const GEMINI_MODEL = process.env.GEMINI_REPORTS_MODEL ?? process.env.GEMINI_MODEL ?? 'gemini-2.0-flash';
 
-function readGroqKey(): string {
-  const raw = process.env.GROQ_API_KEY;
+function readGeminiKey(): string {
+  const raw = process.env.GEMINI_API_KEY;
   if (!raw) return '';
   return raw.trim().replace(/^["']|["']$/g, '');
 }
 
 export function isReportsAiConfigured(): boolean {
-  return Boolean(readGroqKey());
+  return Boolean(readGeminiKey());
 }
 
 export class ReportsAiError extends Error {
@@ -87,7 +87,7 @@ export interface ReportQueryIntent {
   topNType: TopNType | null;
 }
 
-/** 偵測修改/同步類請求（Groq 備援） */
+/** 偵測修改/同步類請求 */
 export function detectModifyRequest(question: string): string | null {
   const q = question.trim();
   if (!q) return null;
@@ -408,29 +408,32 @@ export async function extractReportQuery(
     };
   }
 
-  const apiKey = readGroqKey();
+  const apiKey = readGeminiKey();
   if (!apiKey) {
-    throw new ReportsAiError('AI 尚未啟用，請設定 GROQ_API_KEY');
+    throw new ReportsAiError('AI 尚未啟用，請設定 GEMINI_API_KEY');
   }
 
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
+      'x-goog-api-key': apiKey,
     },
     body: JSON.stringify({
-      model: GROQ_MODEL,
-      messages: [
+      contents: [
         {
-          role: 'system',
-          content:
-            '你是報表查詢解析助手。只回傳 JSON 物件，不要 markdown 或其他文字。絕不可將修改/刪除/新增/同步請求解析為查詢 intent，應設 blocked=true。',
+          parts: [
+            {
+              text: `你是報表查詢解析助手。只回傳 JSON 物件，不要 markdown 或其他文字。絕不可將修改/刪除/新增/同步請求解析為查詢 intent，應設 blocked=true。\n\n${buildPrompt(question, roster)}`,
+            },
+          ],
         },
-        { role: 'user', content: buildPrompt(question, roster) },
       ],
-      response_format: { type: 'json_object' },
-      temperature: 0.1,
+      generationConfig: {
+        temperature: 0.1,
+        responseMimeType: 'application/json',
+      },
     }),
   });
 
@@ -440,7 +443,7 @@ export async function extractReportQuery(
       throw new ReportsAiError('AI 請求過於頻繁，請稍後再試');
     }
     if (response.status === 401 || response.status === 403) {
-      throw new ReportsAiError('GROQ_API_KEY 無效，請重新設定金鑰');
+      throw new ReportsAiError('GEMINI_API_KEY 無效，請重新設定金鑰');
     }
     throw new ReportsAiError(
       `AI 解析失敗（${response.status}）${detail ? `：${detail.slice(0, 160)}` : ''}`,
@@ -448,9 +451,9 @@ export async function extractReportQuery(
   }
 
   const payload = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
   };
-  const rawJson = payload.choices?.[0]?.message?.content;
+  const rawJson = payload.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!rawJson) throw new ReportsAiError('AI 未回傳解析結果');
 
   let parsed: Record<string, unknown>;

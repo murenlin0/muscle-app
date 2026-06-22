@@ -30,7 +30,7 @@ export interface StaffPreviewParseResult {
   method: BookingParseMethod;
 }
 
-/** 師傅「預覽解析」：一律走 AI（Groq 優先，不套用舊規則格式） */
+/** 師傅「預覽解析」：一律走 Gemini AI */
 export async function parseBookingForStaffPreview(
   text: string,
   options?: { roster?: StaffRosterEntry[] },

@@ -80,7 +80,7 @@ export function BookingPreviewPanel({
           <h2 className="mt-1 text-lg font-bold">{preview.clientName}</h2>
           {parsedBy === 'ai' ? (
             <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-              由 AI 解析（Groq），請確認左側負責師傅（分店）與時間後再建立
+              由 AI 解析（Gemini），請確認左側負責師傅（分店）與時間後再建立
             </p>
           ) : parsedBy === 'ai-image' ? (
             <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
