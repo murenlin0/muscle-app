@@ -41,6 +41,29 @@ export class BookingParseIncompleteError extends Error {
   }
 }
 
+export function isGeminiQuotaError(e: unknown): boolean {
+  const msg =
+    e instanceof BookingParseIncompleteError || e instanceof Error ? e.message : String(e ?? '');
+  return /429|quota|配額|額度已用完|exceeded your current quota/i.test(msg);
+}
+
+export function throwGeminiHttpError(status: number, detail: string): never {
+  if (status === 429) {
+    if (detail.includes('limit: 0')) {
+      throw new BookingParseIncompleteError(
+        'Gemini 免費額度尚未啟用，請至 Google AI Studio 啟用 billing 或預付點數',
+      );
+    }
+    throw new BookingParseIncompleteError(
+      'Gemini API 配額已用完，請至 ai.google.dev 查看用量，或改貼文字稍後再試',
+    );
+  }
+  if (status === 401 || status === 403) {
+    throw new BookingParseIncompleteError('GEMINI_API_KEY 無效');
+  }
+  throw new BookingParseIncompleteError(`Gemini 連線失敗（${status}），請稍後再試`);
+}
+
 function taipeiNowParts(ref = new Date()): { date: string; time: string } {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: STORE_TIMEZONE,
@@ -234,18 +257,7 @@ async function callGeminiParse(text: string, prompt = buildPrompt(text)): Promis
 
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
-    if (response.status === 429) {
-      if (detail.includes('limit: 0')) {
-        throw new BookingParseIncompleteError(
-          'Gemini 免費額度尚未啟用，請至 Google AI Studio 啟用 billing 或預付點數',
-        );
-      }
-      throw new BookingParseIncompleteError('AI 額度已用完，請稍後再試');
-    }
-    if (response.status === 401 || response.status === 403) {
-      throw new BookingParseIncompleteError('GEMINI_API_KEY 無效');
-    }
-    throw new Error(`Gemini 解析失敗（${response.status}）${detail ? `：${detail.slice(0, 200)}` : ''}`);
+    throwGeminiHttpError(response.status, detail);
   }
 
   const bodyText = await response.text();

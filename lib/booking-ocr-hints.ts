@@ -140,6 +140,11 @@ function missingFieldsMessage(fields: FlexibleBookingFields): string {
   return missing.length ? `缺少${missing.join('、')}` : '無法解析此訊息';
 }
 
+/** 僅用 OCR regex 嘗試解析（不呼叫 AI，省配額） */
+export function tryParseBookingFromOcrTextOnly(ocrText: string): AiBookingParseResult {
+  return tryCompleteBookingFromOcrText({ status: 'incomplete', message: '' }, ocrText);
+}
+
 /** OCR 文字 regex 補齊 AI 未抓到的欄位 */
 export function tryCompleteBookingFromOcrText(
   parsed: AiBookingParseResult,

@@ -1,11 +1,13 @@
 import {
   BookingParseIncompleteError,
   isGeminiConfigured,
+  isGeminiQuotaError,
   parseBookingChatTextWithAiEx,
   processAiBookingResponse,
+  throwGeminiHttpError,
   type AiBookingParseResult,
 } from '@/lib/booking-message-ai';
-import { tryCompleteBookingFromOcrText } from '@/lib/booking-ocr-hints';
+import { tryCompleteBookingFromOcrText, tryParseBookingFromOcrTextOnly } from '@/lib/booking-ocr-hints';
 import type { StaffUiParsedBooking } from '@/lib/booking-message';
 
 /** 圖片 base64 上限 4MB */
@@ -146,7 +148,7 @@ async function callGeminiGenerate(parts: Array<{ text?: string; inline_data?: { 
 
   if (!res.ok) {
     const errBody = await res.text();
-    throw new Error(`Gemini 失敗 (${res.status}): ${errBody.slice(0, 300)}`);
+    throwGeminiHttpError(res.status, errBody);
   }
 
   const bodyText = await res.text();
@@ -243,6 +245,11 @@ export async function parseBookingImageWithAiEx(
       throw new BookingParseIncompleteError('截圖文字過少，請確認是否為 LINE 對話截圖');
     }
 
+    const regexFirst = tryParseBookingFromOcrTextOnly(extractedText);
+    if (regexFirst.status === 'complete') {
+      return { ...regexFirst, extractedText, parseMethod: 'ocr-text' };
+    }
+
     let parsed = await parseBookingChatTextWithAiEx(extractedText);
     parsed = tryCompleteBookingFromOcrText(parsed, extractedText);
     if (parsed.status === 'complete') {
@@ -258,6 +265,17 @@ export async function parseBookingImageWithAiEx(
       parseMethod: 'vision-json',
     };
   } catch (primaryErr) {
+    if (isGeminiQuotaError(primaryErr)) {
+      const err = new BookingParseIncompleteError(
+        primaryErr instanceof Error ? primaryErr.message : 'Gemini API 配額已用完',
+      );
+      if (extractedText) {
+        (err as BookingParseIncompleteError & { extractedText?: string }).extractedText =
+          extractedText;
+      }
+      throw err;
+    }
+
     console.warn('[vision-ai] OCR+解析失敗，嘗試 vision JSON 備援:', primaryErr);
 
     try {
