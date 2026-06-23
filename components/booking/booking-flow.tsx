@@ -273,7 +273,7 @@ export function BookingFlow() {
               loading={sending}
               onClick={() => void handleSend()}
             >
-              {sending ? '送出中…' : '送出 等待小編回覆'}
+              {sending ? '送出中…' : '確認完畢，透過LINE送出'}
             </BindSubmitButton>
             </div>
           </div>
