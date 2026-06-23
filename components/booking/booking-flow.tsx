@@ -261,7 +261,12 @@ export function BookingFlow() {
                 <AlertTriangle className="size-6" strokeWidth={2.5} />
               </div>
               <p className="text-lg font-bold text-amber-50">注意：預約尚未成功</p>
-              <p className="mt-1.5 text-base font-semibold text-amber-100">送出後請等待小編回覆</p>
+              <p className="mt-1.5 text-base font-semibold text-amber-100">
+                送出後
+                <span className="mx-1 inline-block rounded-md bg-red-500/35 px-2 py-0.5 font-bold text-red-200 ring-1 ring-red-400/70">
+                  請等待小編回覆
+                </span>
+              </p>
             </div>
             <div className="flex gap-2">
             <Button type="button" variant="outline" className="h-11 flex-1" onClick={() => setStep(2)}>
@@ -269,6 +274,7 @@ export function BookingFlow() {
             </Button>
             <BindSubmitButton
               type="button"
+              tone="line"
               className="h-11 flex-[2]"
               loading={sending}
               onClick={() => void handleSend()}
