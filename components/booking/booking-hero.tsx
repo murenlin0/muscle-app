@@ -27,7 +27,7 @@ export function BookingHero() {
         專業運動按摩，讓身體回到最佳狀態
       </h1>
       <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-        深層組織、運動恢復與傷害修復，依您的狀況調整。線上三步驟完成預約，無須電話確認。
+        深層組織、運動恢復，依您的狀況調整。線上三步驟完成預約，無須電話確認。
       </p>
     </header>
   );

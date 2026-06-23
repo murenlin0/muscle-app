@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import liff from '@line/liff';
-import { ChevronLeft, Copy } from 'lucide-react';
+import { ChevronLeft, Copy, AlertTriangle } from 'lucide-react';
 import { useLiff } from '@/app/components/liff-provider';
 import { BookingHero } from '@/components/booking/booking-hero';
 import { BookingNav } from '@/components/booking/booking-nav';
@@ -217,6 +217,24 @@ export function BookingFlow() {
 
         {step === 3 && selectedService && startsAt ? (
           <div className="space-y-5">
+            <div
+              className="rounded-2xl border-2 border-amber-400/80 bg-amber-500/20 px-4 py-5 text-center shadow-[0_0_28px_oklch(0.75_0.15_85/0.3)]"
+              role="alert"
+            >
+              <div className="mx-auto mb-3 flex size-14 items-center justify-center rounded-full bg-amber-500/30 text-amber-100">
+                <AlertTriangle className="size-7" strokeWidth={2.5} />
+              </div>
+              <p className="text-xl font-bold text-amber-50">注意：預約尚未成功</p>
+              <p className="mt-2 text-base font-semibold leading-relaxed text-amber-100">
+                按下「送出 LINE 預約」後，請在 LINE 對話中
+                <span className="underline decoration-2 underline-offset-2">再按一次「傳送」</span>
+                ，我們才收得到。
+              </p>
+              <p className="mt-2 text-sm leading-relaxed text-amber-100/90">
+                小編收到訊息後，會再跟您做最後確認。
+              </p>
+            </div>
+
             <h2 className="text-lg font-bold">確認並送出</h2>
             <Card className="glass-card">
               <CardHeader>
@@ -243,9 +261,6 @@ export function BookingFlow() {
                 <pre className="whitespace-pre-wrap rounded-lg border border-border/60 bg-input/40 p-4 font-mono text-sm leading-relaxed">
                   {messageText}
                 </pre>
-                <p className="rounded-lg border border-orange-400/40 bg-orange-500/10 px-3 py-2.5 text-sm font-semibold leading-relaxed text-orange-300">
-                  注意！預約尚未完成，請確認 LINE 的訊息是否傳出，小編還會跟您做最後確認。
-                </p>
               </CardContent>
             </Card>
 
@@ -272,7 +287,11 @@ export function BookingFlow() {
             nextDisabled={step === 1 ? !canNextStep1 : !canNextStep2}
           />
         ) : (
-          <div className="flex gap-2 py-2">
+          <div className="space-y-3 py-2">
+            <p className="rounded-xl border border-amber-400/60 bg-amber-500/15 px-3 py-2.5 text-center text-sm font-bold text-amber-100">
+              送出後請在 LINE 按「傳送」，預約才算完成
+            </p>
+            <div className="flex gap-2">
             <Button type="button" variant="outline" className="h-11 flex-1" onClick={() => setStep(2)}>
               上一步
             </Button>
@@ -284,6 +303,7 @@ export function BookingFlow() {
             >
               {sending ? '送出中…' : '送出 LINE 預約'}
             </BindSubmitButton>
+            </div>
           </div>
         )}
 

@@ -22,6 +22,13 @@ const LiffContext = createContext<LiffContextValue | null>(null);
 
 const DEV_LINE_USER_ID = process.env.NEXT_PUBLIC_DEV_LINE_USER_ID ?? 'dev-local-user-001';
 
+/** 僅本機 dev server（localhost）略過 LIFF；正式／preview 環境不受影響 */
+function isLocalDevPreview(): boolean {
+  if (process.env.NODE_ENV !== 'development') return false;
+  const host = typeof window !== 'undefined' ? window.location.hostname : '';
+  return host === 'localhost' || host === '127.0.0.1';
+}
+
 function apiHeaders(lineUserId: string): Record<string, string> {
   return {
     'x-line-user-id': lineUserId,
@@ -73,7 +80,7 @@ export function LiffProvider({ children }: { children: React.ReactNode }) {
         let userId: string;
         let name: string | null = null;
 
-        if (liffId) {
+        if (liffId && !isLocalDevPreview()) {
           setLoadingMessage('正在連線 LINE…');
           await withTimeout(
             liff.init({ liffId }),
