@@ -252,7 +252,7 @@ export function BookingFlow() {
             nextDisabled={step === 1 ? !canNextStep1 : !canNextStep2}
           />
         ) : (
-          <div className="space-y-3 py-2">
+          <div className="space-y-5 py-2">
             <div
               className="rounded-2xl border-2 border-amber-400/80 bg-amber-500/20 px-4 py-4 text-center shadow-[0_0_28px_oklch(0.75_0.15_85/0.3)]"
               role="alert"
@@ -273,7 +273,7 @@ export function BookingFlow() {
               loading={sending}
               onClick={() => void handleSend()}
             >
-              {sending ? '送出中…' : '確認完畢，透過LINE送出'}
+              {sending ? '送出中…' : 'LINE送出'}
             </BindSubmitButton>
             </div>
           </div>
