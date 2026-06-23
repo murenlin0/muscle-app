@@ -20,7 +20,6 @@ import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
@@ -217,41 +216,7 @@ export function BookingFlow() {
 
         {step === 3 && selectedService && startsAt ? (
           <div className="space-y-5">
-            <div
-              className="rounded-2xl border-2 border-amber-400/80 bg-amber-500/20 px-4 py-5 text-center shadow-[0_0_28px_oklch(0.75_0.15_85/0.3)]"
-              role="alert"
-            >
-              <div className="mx-auto mb-3 flex size-14 items-center justify-center rounded-full bg-amber-500/30 text-amber-100">
-                <AlertTriangle className="size-7" strokeWidth={2.5} />
-              </div>
-              <p className="text-xl font-bold text-amber-50">注意：預約尚未成功</p>
-              <p className="mt-2 text-base font-semibold leading-relaxed text-amber-100">
-                按下「送出 LINE 預約」後，請在 LINE 對話中
-                <span className="underline decoration-2 underline-offset-2">再按一次「傳送」</span>
-                ，我們才收得到。
-              </p>
-              <p className="mt-2 text-sm leading-relaxed text-amber-100/90">
-                小編收到訊息後，會再跟您做最後確認。
-              </p>
-            </div>
-
             <h2 className="text-lg font-bold">確認並送出</h2>
-            <Card className="glass-card">
-              <CardHeader>
-                <CardTitle className="text-base">會員資料</CardTitle>
-                <CardDescription>如需修改請至儲值金頁面</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2 text-base">
-                <p>
-                  <span className="text-muted-foreground">姓名：</span>
-                  {client.name}
-                </p>
-                <p>
-                  <span className="text-muted-foreground">電話：</span>
-                  {client.phone}
-                </p>
-              </CardContent>
-            </Card>
 
             <Card className="glass-card border-primary/15">
               <CardHeader>
@@ -288,9 +253,16 @@ export function BookingFlow() {
           />
         ) : (
           <div className="space-y-3 py-2">
-            <p className="rounded-xl border border-amber-400/60 bg-amber-500/15 px-3 py-2.5 text-center text-sm font-bold text-amber-100">
-              送出後請在 LINE 按「傳送」，預約才算完成
-            </p>
+            <div
+              className="rounded-2xl border-2 border-amber-400/80 bg-amber-500/20 px-4 py-4 text-center shadow-[0_0_28px_oklch(0.75_0.15_85/0.3)]"
+              role="alert"
+            >
+              <div className="mx-auto mb-2 flex size-12 items-center justify-center rounded-full bg-amber-500/30 text-amber-100">
+                <AlertTriangle className="size-6" strokeWidth={2.5} />
+              </div>
+              <p className="text-lg font-bold text-amber-50">注意：預約尚未成功</p>
+              <p className="mt-1.5 text-base font-semibold text-amber-100">送出後請等待小編回覆</p>
+            </div>
             <div className="flex gap-2">
             <Button type="button" variant="outline" className="h-11 flex-1" onClick={() => setStep(2)}>
               上一步
@@ -301,7 +273,7 @@ export function BookingFlow() {
               loading={sending}
               onClick={() => void handleSend()}
             >
-              {sending ? '送出中…' : '送出 LINE 預約'}
+              {sending ? '送出中…' : '送出 等待小編回覆'}
             </BindSubmitButton>
             </div>
           </div>
