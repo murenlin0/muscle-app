@@ -6,6 +6,10 @@ import {
 import { refreshGoogleAccessToken } from '@/lib/google-oauth';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { getCalendarEventStatus, getCalendarEventSummary, patchCalendarEventSummary } from '@/lib/google-calendar';
+import {
+  applyTitleBalanceIfMissing,
+  patchGoogleCalendarTitleIfNeeded,
+} from '@/lib/calendar-title-patch';
 import { parseStaffPrefixFromCalendarTitle } from '@/lib/booking-message';
 import { parseCompoundVipTitle } from '@/lib/ledger-title-fix';
 import {
@@ -54,7 +58,9 @@ function buildCalendarSplitTitles(
       : `${clientName ?? ''}${clientPhone ?? ''}`;
   const vip = suffix.startsWith('VIP') ? suffix : `VIP${suffix}`;
   return {
-    topupTitle: `+${topup}、${balanceAfterTopup}${vip}`,
+    topupTitle: head
+      ? `${head}+${topup}、${balanceAfterTopup}${vip}`
+      : `+${topup}、${balanceAfterTopup}${vip}`,
     usageTitle: `${head}-${usage}、${balanceAfterUsage}${vip}`,
   };
 }
@@ -932,6 +938,10 @@ export async function syncCalendarCheckouts(
         parseCompoundVipTitle(title) ?? parseSimpleTopupUsage(title);
 
       const rowsToInsert: TxRow[] = [];
+      let calendarPatch:
+        | { topup: number; usage: number; balanceAfterUsage: number }
+        | { usage: number; balanceAfterUsage: number }
+        | null = null;
 
       if (compound) {
         if (!memberRowsByStore.has(storeId)) {
@@ -996,12 +1006,42 @@ export async function syncCalendarCheckouts(
           source: 'calendar_sync',
           member_note: calendarCheckoutNote(ev.id, 'usage'),
         });
+        calendarPatch = {
+          topup: compound.topup,
+          usage: compound.usage,
+          balanceAfterUsage: afterUsage,
+        };
       } else {
         const amount = parseSingleCheckoutAmount(title, payment.defaultCategory);
+        let finalTitle = title;
+        let balanceAfterUsage: number | null = null;
+
+        if (payment.defaultCategory === '會員使用' && client?.phone) {
+          if (!memberRowsByStore.has(storeId)) {
+            memberRowsByStore.set(storeId, await loadMemberRowsForBalance(storeId));
+          }
+          const memberRows = memberRowsByStore.get(storeId)!;
+          const pending = pendingByStore.get(storeId) ?? [];
+          const prior =
+            (clientMemberBalance(memberRows, client.phone) ?? 0) +
+            pending
+              .filter((p) => p.client_phone === client.phone)
+              .reduce((s, p) => s + memberRowSignedAmount(p.category, p.amount), 0);
+          balanceAfterUsage = prior - amount;
+          finalTitle = applyTitleBalanceIfMissing(
+            title,
+            '會員使用',
+            amount,
+            balanceAfterUsage,
+            client.name ?? null,
+            client.phone,
+          );
+        }
+
         rowsToInsert.push({
           store_id: storeId,
           occurred_on: occurredOn,
-          title,
+          title: finalTitle,
           amount,
           category: payment.defaultCategory,
           payment_methods: payment.methods,
@@ -1012,6 +1052,9 @@ export async function syncCalendarCheckouts(
           source: 'calendar_sync',
           member_note: calendarCheckoutNote(ev.id, 'single'),
         });
+        if (balanceAfterUsage !== null) {
+          calendarPatch = { usage: amount, balanceAfterUsage };
+        }
       }
 
       // 先鎖定 appointment，避免 webhook 與手動同步同時寫入兩筆
@@ -1061,6 +1104,22 @@ export async function syncCalendarCheckouts(
       const pending = pendingByStore.get(storeId) ?? [];
       pending.push(...rowsToInsert);
       pendingByStore.set(storeId, pending);
+
+      // 原標題缺、餘額 → 回寫 Google 日曆
+      if (calendarPatch) {
+        await patchGoogleCalendarTitleIfNeeded(ev.id, title, {
+          ...calendarPatch,
+          clientName: client?.name ?? null,
+          clientPhone: client?.phone ?? null,
+        }).then(async (patched) => {
+          if (patched) {
+            await supabase
+              .from('appointments')
+              .update({ calendar_title: patched })
+              .eq('id', appt.id);
+          }
+        });
+      }
 
       // 有儲值 → 升級客人為 VIP（名字前加 VIP、設 is_vip=true）
       // 同時更新日曆事件標題與 appointments.calendar_title

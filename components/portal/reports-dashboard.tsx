@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import { CATEGORY_NOTION_STYLE, LEDGER_ACCOUNT_STYLE } from '@/lib/category-styles';
 import type { FinancialOverview } from '@/lib/financial-summary-server';
 import { LEDGER_UI_PAGE_SIZE } from '@/lib/ledger-pagination';
+import { sortLedgerDisplayRows } from '@/lib/ledger-display-sort';
 import { REPORTS_UI_VERSION } from '@/lib/reports-ui-version';
 import { STORE_LIST, type StoreSlug } from '@/lib/stores';
 import {
@@ -160,8 +161,7 @@ export function ReportsDashboard({
 
   const displayRows = useMemo(() => {
     const rows = report?.rows ?? [];
-    // API 固定新→舊；僅在使用者選「舊→新」時反轉
-    if (sortOrder === 'asc') return [...rows].reverse();
+    if (sortOrder === 'asc') return sortLedgerDisplayRows(rows, false);
     return rows;
   }, [report?.rows, sortOrder]);
 

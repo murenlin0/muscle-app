@@ -1,4 +1,5 @@
 import { resolveClientFromFields } from '@/lib/ledger-client-display';
+import { sortLedgerDisplayRows } from '@/lib/ledger-display-sort';
 import { parseNotionNamePhone } from '@/lib/phone';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { fetchAllPages } from '@/lib/supabase-paginate';
@@ -326,13 +327,16 @@ async function fetchTransactionRows(
     return q;
   });
 
-  return all
-    .filter(
-      (row) =>
-        (!clientPhone || rowMatchesClientPhone(row, clientPhone)) &&
-        (!ledgerAccount || rowMatchesLedgerAccount(row, ledgerAccount)),
-    )
-    .map(mapTxRow);
+  return sortLedgerDisplayRows(
+    all
+      .filter(
+        (row) =>
+          (!clientPhone || rowMatchesClientPhone(row, clientPhone)) &&
+          (!ledgerAccount || rowMatchesLedgerAccount(row, ledgerAccount)),
+      )
+      .map(mapTxRow),
+    true,
+  );
 }
 
 async function fetchTransactionPage(
@@ -369,13 +373,16 @@ async function fetchTransactionPage(
 
   if (error) throw new Error(error.message);
   const rows = (data as TxDbRow[] | null) ?? [];
-  return rows
-    .filter(
-      (row) =>
-        (!clientPhone || rowMatchesClientPhone(row, clientPhone)) &&
-        (!ledgerAccount || rowMatchesLedgerAccount(row, ledgerAccount)),
-    )
-    .map(mapTxRow);
+  return sortLedgerDisplayRows(
+    rows
+      .filter(
+        (row) =>
+          (!clientPhone || rowMatchesClientPhone(row, clientPhone)) &&
+          (!ledgerAccount || rowMatchesLedgerAccount(row, ledgerAccount)),
+      )
+      .map(mapTxRow),
+    true,
+  );
 }
 
 export async function listDailyTransactions(

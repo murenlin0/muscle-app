@@ -7,6 +7,10 @@ import { refreshGoogleAccessToken } from '@/lib/google-oauth';
 import { parseStaffPrefixFromCalendarTitle, resolveStoreSlugFromStaffName } from '@/lib/booking-message';
 import { parseCompoundVipTitle } from '@/lib/ledger-title-fix';
 import {
+  applyTitleBalanceIfMissing,
+  patchGoogleCalendarTitleIfNeeded,
+} from '@/lib/calendar-title-patch';
+import {
   clientMemberBalance,
   memberRowSignedAmount,
   parseBalanceAfter顿号,
@@ -298,34 +302,6 @@ async function loadMemberRowsForBalance(storeId: StoreSlug): Promise<MemberBalan
     offset += 1000;
   }
   return all;
-}
-
-function applyTitleBalanceIfMissing(
-  title: string,
-  category: TransactionCategory,
-  amount: number,
-  balanceAfter: number,
-  clientName: string | null,
-  clientPhone: string | null,
-): string {
-  if (parseBalanceAfter顿号(stripAllSpaces(title)) !== null) return title;
-  if (!['會員儲值', '會員使用', '會員補差額'].includes(category)) return title;
-
-  const t = stripAllSpaces(title);
-  const vipSuffix =
-    clientName && clientPhone
-      ? `VIP${clientName}${clientPhone}`
-      : t.match(/VIP.+$/)?.[0] ?? '';
-
-  const head = t.match(/^(.+?\d+分)/)?.[1] ?? t.match(/^(.+?)(?=\+|-|\d)/)?.[1] ?? '';
-
-  if (category === '會員使用') {
-    return `${head}-${amount}、${balanceAfter}${vipSuffix}`;
-  }
-  if (category === '會員儲值') {
-    return `+${amount}、${balanceAfter}${vipSuffix}`;
-  }
-  return title;
 }
 
 type MemberRowWithMeta = MemberBalanceRow & { id: string; source?: string };
@@ -728,6 +704,34 @@ export async function syncCalendarBackfill(
       existingNotes.add(noteKey);
       result.imported += rows.length;
       result.titles.push(ev.summary ?? ev.id);
+
+      const compound = parseCompoundVipTitle(title) ?? parseSimpleTopupUsage(title);
+      const usageRow = rows.find((r) => r.category === '會員使用');
+      const clientName = rows[0]?.client_name ?? null;
+      const clientPhone = rows[0]?.client_phone ?? null;
+      if (compound && usageRow) {
+        const balanceAfterUsage = parseBalanceAfter顿号(stripAllSpaces(usageRow.title));
+        if (balanceAfterUsage !== null) {
+          await patchGoogleCalendarTitleIfNeeded(ev.id, title, {
+            topup: compound.topup,
+            usage: compound.usage,
+            balanceAfterUsage,
+            clientName,
+            clientPhone,
+          });
+        }
+      } else if (rows.length === 1 && rows[0]?.category === '會員使用') {
+        const balanceAfterUsage = parseBalanceAfter顿号(stripAllSpaces(rows[0].title));
+        if (balanceAfterUsage !== null) {
+          await patchGoogleCalendarTitleIfNeeded(ev.id, title, {
+            usage: rows[0].amount,
+            balanceAfterUsage,
+            clientName,
+            clientPhone,
+          });
+        }
+      }
+
       for (const row of rows) {
         if (row.client_phone) clientsToSync.add(`${resolvedStore}:${row.client_phone}`);
       }

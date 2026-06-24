@@ -9,6 +9,7 @@ import {
   formatClientKey,
   formatClientKeyLabel,
 } from '@/lib/ledger-client-display';
+import { compareLedgerDisplayRows } from '@/lib/ledger-display-sort';
 import type { StoreSlug } from '@/lib/stores';
 
 function fmt(n: number) {
@@ -53,10 +54,7 @@ async function fetchClientRows(
     page += 1;
   }
 
-  return all.sort((a, b) => {
-    if (a.occurredOn !== b.occurredOn) return b.occurredOn.localeCompare(a.occurredOn);
-    return b.id.localeCompare(a.id);
-  });
+  return all.sort((a, b) => compareLedgerDisplayRows(a, b, true));
 }
 
 export function ClientLedgerDrawer({
