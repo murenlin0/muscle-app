@@ -981,7 +981,14 @@ export async function syncCalendarCheckouts(
         rowsToInsert.push({
           store_id: storeId,
           occurred_on: occurredOn,
-          title: topupTitle,
+          title: applyTitleBalanceIfMissing(
+            topupTitle,
+            '會員儲值',
+            compound.topup,
+            afterTopup,
+            client?.name ?? null,
+            client?.phone ?? null,
+          ),
           amount: compound.topup,
           category: '會員儲值',
           payment_methods: topupMethods,
@@ -995,7 +1002,14 @@ export async function syncCalendarCheckouts(
         rowsToInsert.push({
           store_id: storeId,
           occurred_on: occurredOn,
-          title: usageTitle,
+          title: applyTitleBalanceIfMissing(
+            usageTitle,
+            '會員使用',
+            compound.usage,
+            afterUsage,
+            client?.name ?? null,
+            client?.phone ?? null,
+          ),
           amount: compound.usage,
           category: '會員使用',
           payment_methods: [],

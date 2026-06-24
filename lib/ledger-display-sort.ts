@@ -1,6 +1,10 @@
 import type { TransactionCategory } from '@/lib/transaction-category';
 
-/** 同日多筆：儲值 → 補差額 → 使用（+4000 在 -1000 上方） */
+/**
+ * 同日多筆類型優先序（數字小＝事件較早）。
+ * 降序（新→舊）：使用在上、儲值在下（-1000 在 +4000 上方）。
+ * 升序（舊→新）：儲值在上、使用在下（+4000 在 -1000 上方）。
+ */
 const MEMBER_ROW_ORDER: Partial<Record<TransactionCategory, number>> = {
   會員儲值: 0,
   會員補差額: 1,
@@ -30,7 +34,7 @@ export function compareLedgerDisplayRows(
 
   const ca = memberRowOrder(a.category);
   const cb = memberRowOrder(b.category);
-  if (ca !== cb) return ca - cb;
+  if (ca !== cb) return dateDescending ? cb - ca : ca - cb;
 
   return dateDescending ? b.id.localeCompare(a.id) : a.id.localeCompare(b.id);
 }
