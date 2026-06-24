@@ -415,7 +415,9 @@ export function ReportsDashboard({
     const data = (await res.json()) as {
       error?: string;
       result?: {
+        created: number;
         updated: number;
+        unlinked: number;
         skippedSame: number;
         skippedNoNotionPage: number;
         skippedConflict: number;
@@ -431,7 +433,7 @@ export function ReportsDashboard({
     }
     const r = data.result;
     setSyncMsg(
-      `已同步至 Notion：更新 ${r?.updated ?? 0} 筆（區間 ${formatDate(from)}～${formatDate(to)}，已連結 ${r?.linked ?? 0} 頁；一致略過 ${r?.skippedSame ?? 0}）`,
+      `已同步至 Notion：新建 ${r?.created ?? 0} · 更新 ${r?.updated ?? 0} 筆（區間 ${formatDate(from)}～${formatDate(to)}，共 ${r?.scanned ?? 0} 筆；一致略過 ${r?.skippedSame ?? 0}）`,
     );
     if (r?.errors?.length) {
       setError(r.errors.slice(0, 3).join('；'));
@@ -596,7 +598,7 @@ export function ReportsDashboard({
           variant="outline"
           disabled={notionExportSyncing}
           onClick={() => void handleNotionExportSync()}
-          title="將目前報表區間內、已連結 Notion 的修改寫回 Notion"
+          title="將目前報表區間內所有列寫回 Notion（未連結者會新建頁面）"
         >
           {notionExportSyncing ? '寫回中…' : '同步至 Notion'}
         </Button>

@@ -478,6 +478,52 @@ export interface CreateNotionDailyPageInput {
   paymentMethods?: string[];
 }
 
+function notionVersionForStore(storeId: StoreSlug): string {
+  return storeId === 'store2' ? NOTION_VERSION_MULTI_SOURCE : NOTION_VERSION;
+}
+
+function createPageParentsForStore(storeId: StoreSlug): Record<string, string>[] {
+  if (storeId === 'store2') {
+    return [
+      { data_source_id: NOTION_STORE2_DAILY_DATA_SOURCE_ID },
+      { database_id: NOTION_STORE2_DAILY_DB_ID },
+    ];
+  }
+  return [{ database_id: NOTION_STORE1_DAILY_DB_ID }];
+}
+
+/** 在指定分店每日紀錄資料庫新增一頁，回傳新 pageId */
+export async function createNotionPageForStore(
+  storeId: StoreSlug,
+  properties: Record<string, unknown>,
+): Promise<string> {
+  const parents = createPageParentsForStore(storeId);
+  let lastError: Error | null = null;
+
+  for (const parent of parents) {
+    const res = await fetch('https://api.notion.com/v1/pages', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${notionToken()}`,
+        'Notion-Version': notionVersionForStore(storeId),
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ parent, properties }),
+    });
+
+    if (res.ok) {
+      const data = (await res.json()) as { id: string };
+      return data.id;
+    }
+
+    const body = await res.text();
+    lastError = wrapNotionError(res.status, body);
+    if (res.status !== 400) break;
+  }
+
+  throw lastError ?? new Error('建立 Notion 頁面失敗');
+}
+
 /** 在 store1 每日紀錄資料庫新增一頁，回傳新 pageId */
 export async function createNotionDailyPage(
   input: CreateNotionDailyPageInput,
@@ -498,22 +544,25 @@ export async function createNotionDailyPage(
     properties['時數'] = { number: hours };
   }
 
-  const res = await fetch('https://api.notion.com/v1/pages', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${notionToken()}`,
-      'Notion-Version': NOTION_VERSION,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ parent: { database_id: databaseId }, properties }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw wrapNotionError(res.status, body);
+  if (databaseId !== NOTION_STORE1_DAILY_DB_ID) {
+    const res = await fetch('https://api.notion.com/v1/pages', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${notionToken()}`,
+        'Notion-Version': NOTION_VERSION,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ parent: { database_id: databaseId }, properties }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw wrapNotionError(res.status, body);
+    }
+    const data = (await res.json()) as { id: string };
+    return data.id;
   }
-  const data = (await res.json()) as { id: string };
-  return data.id;
+
+  return createNotionPageForStore('store1', properties);
 }
 
 export function buildNotionStaffUpdate(staffName: string) {

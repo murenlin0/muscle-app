@@ -1,5 +1,6 @@
 import {
   buildNotionServiceHoursUpdate,
+  createNotionPageForStore,
   getNotionDailyDbId,
   queryNotionDatabaseAll,
   updateNotionPageProperties,
@@ -9,7 +10,7 @@ import {
   getNotionPropertyName,
   STORE2_PAYMENT_LOCATION_MAP,
 } from '@/lib/notion-store-schema';
-import { computeServiceHours, serviceHoursEqual } from '@/lib/service-hours';
+import { computeServiceHours, minutesFromTitle, serviceHoursEqual } from '@/lib/service-hours';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { normalizeStaffName } from '@/lib/notion-title-normalize';
 import type { StoreSlug } from '@/lib/stores';
@@ -20,7 +21,7 @@ import {
 
 export interface DbExportRow {
   id: string;
-  notion_page_id: string;
+  notion_page_id: string | null;
   occurred_on: string;
   title: string;
   amount: number;
@@ -43,11 +44,12 @@ export interface SyncToNotionResult {
   dryRun: boolean;
   scanned: number;
   linked: number;
+  unlinked: number;
+  created: number;
   updated: number;
   skippedSame: number;
   skippedNoNotionPage: number;
   skippedConflict: number;
-  skippedUnlinked: number;
   errors: string[];
   samples: Array<{ pageId: string; occurredOn: string; fields: string[] }>;
 }
@@ -129,11 +131,68 @@ function buildDesignatedProperty(value: boolean, storeId: StoreSlug) {
   return { [prop]: { checkbox: value } };
 }
 
+function resolveServiceTypeForNotion(row: DbExportRow): string {
+  const existing = row.service_type?.trim();
+  if (existing) return existing;
+
+  const mins = minutesFromTitle(row.title);
+  switch (row.category) {
+    case '會員儲值':
+      return '儲值';
+    case '會員補差額':
+      return 'VIP 結清';
+    case '會員使用':
+      return mins ? `VIP ${mins}分` : 'VIP 60分';
+    case '支出':
+      return '支出';
+    case '工資':
+      return '工資';
+    case '收入':
+      return '收入';
+    case '店租收入':
+      return '店租收入';
+    case '分紅':
+      return '分紅';
+    case '轉出':
+    case '轉入':
+      return '轉移';
+    default:
+      return mins ? `${mins}分` : '60分';
+  }
+}
+
 function notionPaymentMatchesDb(
   notionRow: NotionDailyRow,
   dbRow: DbExportRow,
 ): boolean {
   return paymentMethodsEqual(notionRow.paymentMethods, dbRow.payment_methods);
+}
+
+export function buildNotionCreatePropertiesFromDbRow(
+  dbRow: DbExportRow,
+  storeId: StoreSlug,
+): Record<string, unknown> {
+  const props: Record<string, unknown> = {};
+  Object.assign(props, buildTitleProperty(dbRow.title.trim(), storeId));
+  Object.assign(props, buildDateProperty(dbRow.occurred_on.slice(0, 10), storeId));
+  Object.assign(props, buildAmountProperty(dbRow.amount, storeId));
+  Object.assign(props, buildServiceTypeProperty(resolveServiceTypeForNotion(dbRow), storeId));
+
+  const staff = normalizeStaffName(dbRow.staff_name);
+  if (staff) Object.assign(props, buildStaffProperty(staff, storeId));
+
+  const paymentPatch = buildPaymentProperty(dbRow.payment_methods, storeId);
+  if (paymentPatch) Object.assign(props, paymentPatch);
+
+  Object.assign(props, buildMemberNoteProperty((dbRow.member_note ?? '').trim(), storeId));
+  Object.assign(props, buildDesignatedProperty(dbRow.is_designated, storeId));
+
+  const hours = computeServiceHours(dbRow.title, dbRow.category);
+  if (hours != null) {
+    Object.assign(props, buildNotionServiceHoursUpdate(hours, storeId));
+  }
+
+  return props;
 }
 
 export function buildNotionPatchFromDbRow(
@@ -223,7 +282,6 @@ async function loadDbRowsForExport(
         'id, notion_page_id, occurred_on, title, amount, category, service_type, payment_methods, staff_name, member_note, is_designated',
       )
       .eq('store_id', storeId)
-      .not('notion_page_id', 'is', null)
       .order('occurred_on', { ascending: true })
       .order('id', { ascending: true })
       .range(offset, offset + 999);
@@ -235,10 +293,9 @@ async function loadDbRowsForExport(
     if (!data?.length) break;
 
     for (const row of data) {
-      if (!row.notion_page_id) continue;
       all.push({
         id: row.id as string,
-        notion_page_id: row.notion_page_id as string,
+        notion_page_id: (row.notion_page_id as string | null) ?? null,
         occurred_on: row.occurred_on as string,
         title: row.title as string,
         amount: row.amount as number,
@@ -258,9 +315,24 @@ async function loadDbRowsForExport(
   return all;
 }
 
+async function linkDbRowToNotionPage(
+  storeId: StoreSlug,
+  rowId: string,
+  pageId: string,
+): Promise<void> {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from('daily_transactions')
+    .update({ notion_page_id: pageId })
+    .eq('id', rowId)
+    .eq('store_id', storeId);
+  if (error) throw new Error(error.message);
+}
+
 function groupDbRowsByPage(rows: DbExportRow[]): Map<string, DbExportRow[]> {
   const map = new Map<string, DbExportRow[]>();
   for (const row of rows) {
+    if (!row.notion_page_id) continue;
     const pageId = pageIdFromNotionRef(row.notion_page_id);
     const arr = map.get(pageId);
     if (arr) arr.push(row);
@@ -270,7 +342,7 @@ function groupDbRowsByPage(rows: DbExportRow[]): Map<string, DbExportRow[]> {
 }
 
 function pickPrimaryRow(rows: DbExportRow[]): { row: DbExportRow; conflict: boolean } {
-  const withoutSuffix = rows.filter((r) => !r.notion_page_id.includes('#'));
+  const withoutSuffix = rows.filter((r) => !r.notion_page_id!.includes('#'));
   const pool = withoutSuffix.length ? withoutSuffix : rows;
   const titles = new Set(pool.map((r) => r.title.trim()));
   const conflict = titles.size > 1;
@@ -284,23 +356,53 @@ export async function syncDailyTransactionsToNotion(
 ): Promise<SyncToNotionResult> {
   const dryRun = Boolean(options.dryRun);
   const dbRows = await loadDbRowsForExport(storeId, options.from, options.to);
+  const linkedRows = dbRows.filter((r) => r.notion_page_id);
+  const unlinkedRows = dbRows.filter((r) => !r.notion_page_id);
   const notionRows = await queryNotionDatabaseAll(getNotionDailyDbId(storeId));
   const notionByPage = new Map(notionRows.map((r) => [r.pageId, r]));
 
-  const grouped = groupDbRowsByPage(dbRows);
+  const grouped = groupDbRowsByPage(linkedRows);
   const result: SyncToNotionResult = {
     storeId,
     dryRun,
     scanned: dbRows.length,
     linked: grouped.size,
+    unlinked: unlinkedRows.length,
+    created: 0,
     updated: 0,
     skippedSame: 0,
     skippedNoNotionPage: 0,
     skippedConflict: 0,
-    skippedUnlinked: 0,
     errors: [],
     samples: [],
   };
+
+  for (const row of unlinkedRows) {
+    const properties = buildNotionCreatePropertiesFromDbRow(row, storeId);
+
+    if (result.samples.length < 8) {
+      result.samples.push({
+        pageId: '(新建)',
+        occurredOn: row.occurred_on,
+        fields: ['新建'],
+      });
+    }
+
+    if (dryRun) {
+      result.created += 1;
+      continue;
+    }
+
+    try {
+      const pageId = await createNotionPageForStore(storeId, properties);
+      await linkDbRowToNotionPage(storeId, row.id, pageId);
+      result.created += 1;
+    } catch (e) {
+      result.errors.push(
+        `[${row.occurred_on}] 新建失敗 ${row.id}: ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
 
   for (const [pageId, rows] of grouped) {
     const notionRow = notionByPage.get(pageId);
