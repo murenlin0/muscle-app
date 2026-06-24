@@ -240,6 +240,7 @@ export function EditableLedgerTable({
   const [rowStatus, setRowStatus] = useState<Record<string, RowStatus>>({});
   const [rowError, setRowError] = useState<string | null>(null);
   const [staffOptions, setStaffOptions] = useState<string[]>([]);
+  const [hoveredRowIndex, setHoveredRowIndex] = useState<number | null>(null);
 
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
@@ -493,10 +494,19 @@ export function EditableLedgerTable({
   }, [rows]);
 
   const tableMinWidth =
-    colOrder.reduce((sum, col) => sum + widths[col], 0) + 48 + 32;
+    colOrder.reduce((sum, col) => sum + widths[col], 0) + 48 + 40;
+
+  function insertButtonClass(visible: boolean) {
+    return cn(
+      'flex size-7 shrink-0 items-center justify-center rounded-md border text-base leading-none transition-all',
+      visible
+        ? 'border-[#5c8aff]/60 bg-[#2a3348] text-[#8ab4ff] shadow-sm'
+        : 'border-transparent bg-transparent text-transparent',
+    );
+  }
 
   return (
-    <div className="overflow-hidden rounded-md border border-[#333] bg-[#1c1c1c] shadow-sm">
+    <div className="rounded-md border border-[#333] bg-[#1c1c1c] shadow-sm">
       {rowError ? (
         <div className="border-b border-red-900/50 bg-red-950/40 px-3 py-2 text-xs text-red-300">
           {rowError}
@@ -523,7 +533,7 @@ export function EditableLedgerTable({
           style={{ minWidth: tableMinWidth }}
         >
           <colgroup>
-            <col style={{ width: 32 }} />
+            <col style={{ width: 40 }} />
             {colOrder.map((col) => (
               <col key={col} style={{ width: widths[col] }} />
             ))}
@@ -531,7 +541,7 @@ export function EditableLedgerTable({
           </colgroup>
           <thead>
             <tr className="border-b border-[#333] bg-[#252525] text-[11px] font-medium tracking-wide text-[#8a8a8a]">
-              <th className="px-0 py-0" aria-label="新增" />
+              <th className="sticky left-0 z-30 bg-[#252525] px-0 py-0" aria-label="新增" />
               {colOrder.map((col) => (
                 <th
                   key={col}
@@ -563,16 +573,21 @@ export function EditableLedgerTable({
                 </td>
               </tr>
             ) : rows.length === 0 ? (
-              <tr className="group">
-                <td className="relative w-8 p-0 align-middle">
-                  <button
-                    type="button"
-                    onClick={() => insertDraftAt(0)}
-                    className="absolute left-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded border border-[#444] bg-[#252525] text-[#aaa] opacity-0 transition hover:border-[#5c8aff] hover:text-[#5c8aff] group-hover:opacity-100"
-                    title="在此新增一列"
-                  >
-                    +
-                  </button>
+              <tr
+                onMouseEnter={() => setHoveredRowIndex(0)}
+                onMouseLeave={() => setHoveredRowIndex(null)}
+              >
+                <td className="sticky left-0 z-20 bg-[#1c1c1c] p-0 align-middle">
+                  <div className="flex h-full items-center justify-center py-1">
+                    <button
+                      type="button"
+                      onClick={() => insertDraftAt(0)}
+                      className={insertButtonClass(hoveredRowIndex === 0)}
+                      title="在此新增一列"
+                    >
+                      +
+                    </button>
+                  </div>
                 </td>
                 <td colSpan={9} className="px-4 py-10 text-center text-[#888]">
                   尚無資料，請按左側 + 或下方新增一列。
@@ -587,22 +602,37 @@ export function EditableLedgerTable({
                 return (
                   <tr
                     key={row.id}
+                    onMouseEnter={() => setHoveredRowIndex(rowIndex)}
+                    onMouseLeave={() => setHoveredRowIndex(null)}
                     className={cn(
-                      'group border-b border-[#2a2a2a] transition-colors duration-300',
+                      'border-b border-[#2a2a2a] transition-colors duration-300',
                       status === 'saved' && 'bg-[#1f2a1f]/80',
                       status === 'error' && 'bg-[#2a1f1f]/80',
                       status !== 'saved' && status !== 'error' && 'hover:bg-[#262626]',
                     )}
                   >
-                    <td className="relative w-8 p-0 align-middle">
-                      <button
-                        type="button"
-                        onClick={() => insertDraftAt(rowIndex)}
-                        className="absolute left-1 top-1/2 z-[2] flex size-6 -translate-y-1/2 items-center justify-center rounded border border-[#444] bg-[#252525] text-sm leading-none text-[#aaa] opacity-0 transition hover:border-[#5c8aff] hover:bg-[#2a2a2a] hover:text-[#5c8aff] group-hover:opacity-100"
-                        title="在此列上方新增（依目前篩選帶入預設值）"
-                      >
-                        +
-                      </button>
+                    <td
+                      className={cn(
+                        'sticky left-0 z-20 p-0 align-middle',
+                        status === 'saved'
+                          ? 'bg-[#1f2a1f]/95'
+                          : status === 'error'
+                            ? 'bg-[#2a1f1f]/95'
+                            : hoveredRowIndex === rowIndex
+                              ? 'bg-[#262626]'
+                              : 'bg-[#1c1c1c]',
+                      )}
+                    >
+                      <div className="flex items-center justify-center py-0.5">
+                        <button
+                          type="button"
+                          onClick={() => insertDraftAt(rowIndex)}
+                          className={insertButtonClass(hoveredRowIndex === rowIndex)}
+                          title="在此列上方新增（依目前篩選帶入預設值）"
+                        >
+                          +
+                        </button>
+                      </div>
                     </td>
                     <td className="p-0 align-middle">
                       <input
@@ -774,7 +804,7 @@ export function EditableLedgerTable({
                       <button
                         type="button"
                         onClick={() => void deleteRow(row)}
-                        className="rounded px-1 py-0.5 text-[#666] opacity-0 transition hover:text-red-400 group-hover:opacity-100"
+                        className="rounded px-1 py-0.5 text-[#666] transition hover:text-red-400"
                         title="刪除"
                       >
                         ×
