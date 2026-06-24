@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import {
-  actorFromSession,
+  isLedgerEditTableReady,
   listLedgerEdits,
 } from '@/lib/ledger-edit-history-server';
 import { parseReportStoreParam, portalJson, requireReportsAccess, resolveReportStoreId } from '@/lib/portal-api';
