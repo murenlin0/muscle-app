@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { LedgerRow } from '@/components/portal/editable-ledger-table';
 import type { ClientLedgerDisplayRow } from '@/components/client-ledger-table';
@@ -9,7 +9,6 @@ import {
   formatClientKey,
   formatClientKeyLabel,
 } from '@/lib/ledger-client-display';
-import { clientMemberBalance } from '@/lib/ledger-title-balance';
 import type { StoreSlug } from '@/lib/stores';
 
 function fmt(n: number) {
@@ -79,6 +78,7 @@ export function ClientLedgerDrawer({
 }) {
   const [mounted, setMounted] = useState(false);
   const [rows, setRows] = useState<LedgerRow[]>([]);
+  const [ledgerBalance, setLedgerBalance] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
 
@@ -100,11 +100,24 @@ export function ClientLedgerDrawer({
     setLoading(true);
     setFetchError(null);
     try {
-      const data = await fetchClientRows(storeId, from, to, client.phone);
+      const [data, balanceRes] = await Promise.all([
+        fetchClientRows(storeId, from, to, client.phone),
+        fetch(
+          `/api/portal/clients?store=${encodeURIComponent(storeId)}&phone=${encodeURIComponent(client.phone)}`,
+          { cache: 'no-store' },
+        ),
+      ]);
       setRows(data);
+      if (balanceRes.ok) {
+        const balData = (await balanceRes.json()) as { balance?: number };
+        setLedgerBalance(balData.balance ?? null);
+      } else {
+        setLedgerBalance(null);
+      }
     } catch (e) {
       setFetchError(e instanceof Error ? e.message : '載入失敗');
       setRows([]);
+      setLedgerBalance(null);
     } finally {
       setLoading(false);
     }
@@ -113,27 +126,14 @@ export function ClientLedgerDrawer({
   useEffect(() => {
     if (!open || !client) {
       setRows([]);
+      setLedgerBalance(null);
       setFetchError(null);
       return;
     }
     void loadRows();
   }, [open, client, loadRows]);
 
-  const balance = useMemo(() => {
-    if (!client) return null;
-    const memberRows = rows
-      .filter((r) => ['會員儲值', '會員使用', '會員補差額'].includes(r.category))
-      .map((r) => ({
-        id: r.id,
-        occurred_on: r.occurredOn,
-        title: r.title,
-        amount: r.amount,
-        category: r.category,
-        client_name: r.clientName,
-        client_phone: r.clientPhone,
-      }));
-    return clientMemberBalance(memberRows, client.phone);
-  }, [client, rows]);
+  const balance = ledgerBalance;
 
   if (!mounted || !open || !client) return null;
 

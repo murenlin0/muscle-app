@@ -2,6 +2,7 @@ import {
   getGoogleCalendarId,
   getGoogleRefreshToken,
 } from '@/lib/integration-settings';
+import { syncClientBalanceInDb } from '@/lib/client-balance-server';
 import { refreshGoogleAccessToken } from '@/lib/google-oauth';
 import { parseStaffPrefixFromCalendarTitle, resolveStoreSlugFromStaffName } from '@/lib/booking-message';
 import { parseCompoundVipTitle } from '@/lib/ledger-title-fix';
@@ -129,7 +130,9 @@ function buildCalendarSplitTitles(
       : `${clientName ?? ''}${clientPhone ?? ''}`;
   const vip = suffix.startsWith('VIP') ? suffix : `VIP${suffix}`;
   return {
-    topupTitle: `+${topup}、${balanceAfterTopup}${vip}`,
+    topupTitle: head
+      ? `${head}+${topup}、${balanceAfterTopup}${vip}`
+      : `+${topup}、${balanceAfterTopup}${vip}`,
     usageTitle: `${head}-${usage}、${balanceAfterUsage}${vip}`,
   };
 }
@@ -653,6 +656,7 @@ export async function syncCalendarBackfill(
   const memberRowsByStore = new Map<StoreSlug, MemberBalanceRow[]>();
   const pendingByStore = new Map<StoreSlug, TxInsert[]>();
   const supabase = getSupabaseAdmin();
+  const clientsToSync = new Set<string>();
 
   async function memberRowsFor(store: StoreSlug): Promise<MemberBalanceRow[]> {
     if (!memberRowsByStore.has(store)) {
@@ -724,10 +728,28 @@ export async function syncCalendarBackfill(
       existingNotes.add(noteKey);
       result.imported += rows.length;
       result.titles.push(ev.summary ?? ev.id);
+      for (const row of rows) {
+        if (row.client_phone) clientsToSync.add(`${resolvedStore}:${row.client_phone}`);
+      }
     } catch (e) {
       result.errors.push(
         `[${ev.summary ?? ev.id}] ${e instanceof Error ? e.message : String(e)}`,
       );
+    }
+  }
+
+  if (!options.dryRun) {
+    for (const key of clientsToSync) {
+      const sep = key.indexOf(':');
+      const store = key.slice(0, sep) as StoreSlug;
+      const phone = key.slice(sep + 1);
+      try {
+        await syncClientBalanceInDb(store, phone);
+      } catch (e) {
+        result.errors.push(
+          `[餘額同步 ${phone}] ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
     }
   }
 

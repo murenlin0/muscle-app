@@ -1,5 +1,11 @@
 import { getSupabaseAdmin } from '@/lib/supabase';
 import type { StoreSlug } from '@/lib/stores';
+import {
+  getClientBalanceFromLedger,
+  loadStoreMemberRows,
+  syncClientBalanceInDb,
+} from '@/lib/client-balance-server';
+import { clientMemberBalance } from '@/lib/ledger-title-balance';
 
 export interface ClientListItem {
   id: string;
@@ -12,11 +18,14 @@ export interface ClientListItem {
 
 export async function listClients(storeId: StoreSlug): Promise<ClientListItem[]> {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from('clients')
-    .select('id, name, phone, balance, is_vip, is_active')
-    .eq('store_id', storeId)
-    .order('name');
+  const [{ data, error }, memberRows] = await Promise.all([
+    supabase
+      .from('clients')
+      .select('id, name, phone, balance, is_vip, is_active')
+      .eq('store_id', storeId)
+      .order('name'),
+    loadStoreMemberRows(storeId),
+  ]);
 
   if (error) throw new Error(error.message);
 
@@ -24,8 +33,10 @@ export async function listClients(storeId: StoreSlug): Promise<ClientListItem[]>
     id: row.id as string,
     name: row.name as string,
     phone: row.phone as string,
-    balance: row.balance as number,
+    balance: clientMemberBalance(memberRows, row.phone as string) ?? 0,
     isVip: Boolean(row.is_vip),
     isActive: Boolean(row.is_active),
   }));
 }
+
+export { getClientBalanceFromLedger, syncClientBalanceInDb };
