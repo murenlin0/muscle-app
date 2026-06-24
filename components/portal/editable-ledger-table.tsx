@@ -224,6 +224,7 @@ export function EditableLedgerTable({
   onClientClick,
   onStatsChange,
   onRowCreated,
+  onEditCommitted,
 }: {
   rows: LedgerRow[];
   loading: boolean;
@@ -234,6 +235,7 @@ export function EditableLedgerTable({
   onClientClick?: (client: { name: string; phone: string }) => void;
   onStatsChange?: (stats: { totalRows: number; totalAmount: number }) => void;
   onRowCreated?: () => void;
+  onEditCommitted?: () => void;
 }) {
   const [rows, setRows] = useState<LedgerRow[]>(initialRows);
   const [widths, setWidths] = useState<Record<ColKey, number>>(DEFAULT_WIDTHS);
@@ -437,6 +439,7 @@ export function EditableLedgerTable({
 
     flashSaved(persistedId);
     if (isNew) onRowCreated?.();
+    onEditCommitted?.();
   }
 
   async function deleteRow(row: LedgerRow) {
@@ -472,6 +475,7 @@ export function EditableLedgerTable({
       delete next[row.id];
       return next;
     });
+    onEditCommitted?.();
   }
 
   const showInitialEmpty = loading && rows.length === 0;

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ClientLedgerDrawer } from '@/components/portal/client-ledger-drawer';
 import { EditableLedgerTable, type LedgerRow } from '@/components/portal/editable-ledger-table';
+import { LedgerEditHistoryDrawer } from '@/components/portal/ledger-edit-history-drawer';
 import { FinancialOverviewPanel } from '@/components/portal/financial-overview-panel';
 import { ReportsAiBox, type AiReportFilter } from '@/components/portal/reports-ai-box';
 import { StatusBanner } from '@/components/portal/status-banner';
@@ -121,6 +122,8 @@ export function ReportsDashboard({
   const [selectedClient, setSelectedClient] = useState<{ name: string; phone: string } | null>(
     null,
   );
+  const [editHistoryOpen, setEditHistoryOpen] = useState(false);
+  const [editHistoryRefreshKey, setEditHistoryRefreshKey] = useState(0);
   const ledgerSectionRef = useRef<HTMLElement>(null);
 
   const activeStore = storeFilter ?? store;
@@ -292,6 +295,46 @@ export function ReportsDashboard({
     void loadLedgerPage(page, false);
   }
 
+  const bumpEditHistory = useCallback(() => {
+    setEditHistoryRefreshKey((key) => key + 1);
+  }, []);
+
+  const handleUndoEdit = useCallback(async () => {
+    const res = await fetch('/api/portal/reports/edit-history/undo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ storeId: activeStore }),
+    });
+    const data = (await res.json()) as { error?: string; summary?: string };
+    if (!res.ok) {
+      throw new Error(data.error ?? '復原失敗');
+    }
+    await loadLedgerPage(ledgerPage, true);
+    await loadOverview();
+    bumpEditHistory();
+    if (data.summary) {
+      setSyncMsg(`已復原：${data.summary}`);
+    }
+  }, [activeStore, ledgerPage, loadLedgerPage, loadOverview, bumpEditHistory]);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== 'z') return;
+      const el = e.target as HTMLElement | null;
+      if (!el) return;
+      const tag = el.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable) {
+        return;
+      }
+      e.preventDefault();
+      void handleUndoEdit().catch((err) => {
+        setError(err instanceof Error ? err.message : '復原失敗');
+      });
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleUndoEdit]);
+
   async function handleNormalizeLedger() {
     setNormalizing(true);
     setSyncMsg(null);
@@ -447,6 +490,21 @@ export function ReportsDashboard({
     <div className="flex flex-col gap-5">
       {error ? <StatusBanner variant="error">{error}</StatusBanner> : null}
       {syncMsg ? <StatusBanner variant="success">{syncMsg}</StatusBanner> : null}
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-[#666]">
+          手動新增、修改、刪除都會記錄在編輯紀錄；按 Ctrl+Z 可復原上一步
+        </p>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="border-[#444] bg-[#252525] text-[#ddd] hover:bg-[#2f2f2f]"
+          onClick={() => setEditHistoryOpen(true)}
+        >
+          編輯紀錄
+        </Button>
+      </div>
 
       <div className="flex flex-wrap items-end gap-3 rounded-md border border-[#333] bg-[#1c1c1c] p-3">
         <div className="space-y-1">
@@ -643,6 +701,7 @@ export function ReportsDashboard({
           draftDefaults={ledgerDraftDefaults}
           onClientClick={setSelectedClient}
           onRowCreated={() => void load(ledgerPage)}
+          onEditCommitted={bumpEditHistory}
         />
 
         {ledgerMeta && totalPages > 1 ? (
@@ -684,6 +743,14 @@ export function ReportsDashboard({
         to={to}
         vipMemberPhones={vipMemberPhones}
         onClose={() => setSelectedClient(null)}
+      />
+
+      <LedgerEditHistoryDrawer
+        open={editHistoryOpen}
+        storeId={activeStore}
+        refreshKey={editHistoryRefreshKey}
+        onClose={() => setEditHistoryOpen(false)}
+        onUndo={handleUndoEdit}
       />
     </div>
   );

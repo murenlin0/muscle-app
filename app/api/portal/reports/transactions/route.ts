@@ -2,7 +2,10 @@ import { NextResponse } from 'next/server';
 import { parseReportStoreParam, portalJson, requireReportsAccess, resolveReportStoreId } from '@/lib/portal-api';
 
 export const dynamic = 'force-dynamic';
-import { createDailyTransaction } from '@/lib/daily-transactions-server';
+import {
+  actorFromSession,
+  createDailyTransactionWithLog,
+} from '@/lib/ledger-edit-history-server';
 import { listDailyTransactions } from '@/lib/reports-server';
 import type { TransactionCategory } from '@/lib/transaction-category';
 import { TRANSACTION_CATEGORIES } from '@/lib/transaction-category';
@@ -114,16 +117,20 @@ export async function POST(request: Request) {
   }
 
   try {
-    const id = await createDailyTransaction(storeId, {
-      occurredOn: body.occurredOn,
-      title: body.title,
-      amount: Number(body.amount) || 0,
-      category: body.category,
-      paymentMethods: body.paymentMethods ?? [],
-      staffName: body.staffName,
-      clientName: body.clientName,
-      clientPhone: body.clientPhone,
-    });
+    const { id } = await createDailyTransactionWithLog(
+      storeId,
+      {
+        occurredOn: body.occurredOn,
+        title: body.title,
+        amount: Number(body.amount) || 0,
+        category: body.category,
+        paymentMethods: body.paymentMethods ?? [],
+        staffName: body.staffName,
+        clientName: body.clientName,
+        clientPhone: body.clientPhone,
+      },
+      actorFromSession(session),
+    );
     return NextResponse.json({ ok: true, id });
   } catch (e) {
     const message = e instanceof Error ? e.message : '新增失敗';

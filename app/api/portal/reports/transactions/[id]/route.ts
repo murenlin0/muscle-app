@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { parseReportStoreParam, requireReportsAccess } from '@/lib/portal-api';
 import {
-  deleteDailyTransaction,
-  updateDailyTransaction,
-} from '@/lib/daily-transactions-server';
+  actorFromSession,
+  deleteDailyTransactionWithLog,
+  updateDailyTransactionWithLog,
+} from '@/lib/ledger-edit-history-server';
 import type { TransactionCategory } from '@/lib/transaction-category';
 import { TRANSACTION_CATEGORIES } from '@/lib/transaction-category';
 import type { StoreSlug } from '@/lib/stores';
@@ -51,16 +52,21 @@ export async function PATCH(
   }
 
   try {
-    await updateDailyTransaction(id, storeId, {
-      occurredOn: body.occurredOn,
-      title: body.title,
-      amount: body.amount,
-      category: body.category,
-      paymentMethods: body.paymentMethods,
-      staffName: body.staffName,
-      clientName: body.clientName,
-      clientPhone: body.clientPhone,
-    });
+    await updateDailyTransactionWithLog(
+      id,
+      storeId,
+      {
+        occurredOn: body.occurredOn,
+        title: body.title,
+        amount: body.amount,
+        category: body.category,
+        paymentMethods: body.paymentMethods,
+        staffName: body.staffName,
+        clientName: body.clientName,
+        clientPhone: body.clientPhone,
+      },
+      actorFromSession(session),
+    );
     return NextResponse.json({ ok: true });
   } catch (e) {
     const message = e instanceof Error ? e.message : '更新失敗';
@@ -84,7 +90,7 @@ export async function DELETE(
   }
 
   try {
-    await deleteDailyTransaction(id, storeId);
+    await deleteDailyTransactionWithLog(id, storeId, actorFromSession(session));
     return NextResponse.json({ ok: true });
   } catch (e) {
     const message = e instanceof Error ? e.message : '刪除失敗';
