@@ -25,15 +25,20 @@ const NOTION_VERSION = '2022-06-28';
 const NOTION_VERSION_MULTI_SOURCE = '2025-09-03';
 
 export const NOTION_STORE1_DAILY_DB_ID = 'bba35d9c-9bb4-4299-80e8-c91fbd23f5ce';
+/** 民有店「新版筋棧1店每日紀錄」data source（實際流水資料） */
+export const NOTION_STORE1_DAILY_DATA_SOURCE_ID = '13807d21-c964-8145-acb2-000b99a3f61a';
 /** 文一店資料庫容器（含多個 data source，不可直接 query） */
 export const NOTION_STORE2_DAILY_DB_ID = '13507d21-c964-80e0-944c-f8d1d2953ff0';
 /** 文一店「筋棧文一店每日紀錄」data source（實際流水資料） */
 export const NOTION_STORE2_DAILY_DATA_SOURCE_ID = '13507d21-c964-8180-9711-000bee4840f8';
 
-const NOTION_DATA_SOURCE_QUERY_IDS = new Set([NOTION_STORE2_DAILY_DATA_SOURCE_ID]);
+const NOTION_DATA_SOURCE_QUERY_IDS = new Set([
+  NOTION_STORE1_DAILY_DATA_SOURCE_ID,
+  NOTION_STORE2_DAILY_DATA_SOURCE_ID,
+]);
 
 export const NOTION_DAILY_DB_BY_STORE: Record<StoreSlug, string> = {
-  store1: NOTION_STORE1_DAILY_DB_ID,
+  store1: NOTION_STORE1_DAILY_DATA_SOURCE_ID,
   store2: NOTION_STORE2_DAILY_DATA_SOURCE_ID,
 };
 
@@ -42,7 +47,10 @@ export function getNotionDailyDbId(storeId: StoreSlug): string {
 }
 
 export function storeIdFromNotionDailyDbId(databaseId: string): StoreSlug {
-  return databaseId === NOTION_STORE2_DAILY_DATA_SOURCE_ID ? 'store2' : 'store1';
+  if (databaseId === NOTION_STORE2_DAILY_DATA_SOURCE_ID || databaseId === NOTION_STORE2_DAILY_DB_ID) {
+    return 'store2';
+  }
+  return 'store1';
 }
 
 function isDataSourceQueryId(id: string): boolean {
@@ -254,7 +262,7 @@ export async function probeNotionConnection(
       '金鑰有效但找不到資料庫。請在 Notion 每日紀錄資料庫 → ⋯ → Connect to → 選同一個 Integration（民有店、文一店都要連）。';
   } else if (notionCode === 'multiple_data_sources_for_database') {
     hint =
-      '此 Notion 資料庫含多個 data source，請改用文一店每日紀錄的 data source ID 查詢（程式已自動處理，若仍失敗請 Redeploy 最新版）。';
+      '此 Notion 資料庫含多個 data source，請 Redeploy 最新版程式（民有店、文一店皆需改用 data source ID 查詢）。';
   }
 
   return {
@@ -311,7 +319,7 @@ function wrapNotionError(status: number, body: string): Error {
   }
   if (status === 400 && body.includes('multiple_data_sources_for_database')) {
     return new Error(
-      '文一店 Notion 資料庫含多個 data source，請 Redeploy 最新版程式後再同步。',
+      'Notion 資料庫含多個 data source，請 Redeploy 最新版程式後再同步（民有店、文一店皆已改用 data source）。',
     );
   }
   return new Error(`Notion query 失敗 (${status}): ${body}`);
@@ -489,7 +497,10 @@ function createPageParentsForStore(storeId: StoreSlug): Record<string, string>[]
       { database_id: NOTION_STORE2_DAILY_DB_ID },
     ];
   }
-  return [{ database_id: NOTION_STORE1_DAILY_DB_ID }];
+  return [
+    { data_source_id: NOTION_STORE1_DAILY_DATA_SOURCE_ID },
+    { database_id: NOTION_STORE1_DAILY_DB_ID },
+  ];
 }
 
 /** 在指定分店每日紀錄資料庫新增一頁，回傳新 pageId */

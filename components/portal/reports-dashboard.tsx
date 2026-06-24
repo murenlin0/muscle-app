@@ -433,7 +433,7 @@ export function ReportsDashboard({
     }
     const r = data.result;
     setSyncMsg(
-      `已同步至 Notion：新建 ${r?.created ?? 0} · 更新 ${r?.updated ?? 0} 筆（區間 ${formatDate(from)}～${formatDate(to)}，共 ${r?.scanned ?? 0} 筆；一致略過 ${r?.skippedSame ?? 0}）`,
+      `已同步至 Notion：新建 ${r?.created ?? 0} · 更新 ${r?.updated ?? 0} 筆（區間 ${formatDate(from)}～${formatDate(to)}，共 ${r?.scanned ?? 0} 筆；一致略過 ${r?.skippedSame ?? 0}${(r?.skippedNoNotionPage ?? 0) > 0 ? `；找不到 Notion 頁 ${r?.skippedNoNotionPage}` : ''}）`,
     );
     if (r?.errors?.length) {
       setError(r.errors.slice(0, 3).join('；'));

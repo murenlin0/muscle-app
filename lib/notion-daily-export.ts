@@ -8,6 +8,7 @@ import {
 } from '@/lib/notion-api';
 import {
   getNotionPropertyName,
+  isNotionFieldWritable,
   STORE2_PAYMENT_LOCATION_MAP,
 } from '@/lib/notion-store-schema';
 import { computeServiceHours, minutesFromTitle, serviceHoursEqual } from '@/lib/service-hours';
@@ -188,7 +189,7 @@ export function buildNotionCreatePropertiesFromDbRow(
   Object.assign(props, buildDesignatedProperty(dbRow.is_designated, storeId));
 
   const hours = computeServiceHours(dbRow.title, dbRow.category);
-  if (hours != null) {
+  if (hours != null && isNotionFieldWritable('時數', storeId)) {
     Object.assign(props, buildNotionServiceHoursUpdate(hours, storeId));
   }
 
@@ -258,7 +259,10 @@ export function buildNotionPatchFromDbRow(
   }
 
   const computedHours = computeServiceHours(dbTitle, dbRow.category);
-  if (!serviceHoursEqual(computedHours, notionRow.serviceHours)) {
+  if (
+    isNotionFieldWritable('時數', storeId) &&
+    !serviceHoursEqual(computedHours, notionRow.serviceHours)
+  ) {
     Object.assign(patch, buildNotionServiceHoursUpdate(computedHours, storeId));
     fields.push('時數');
   }

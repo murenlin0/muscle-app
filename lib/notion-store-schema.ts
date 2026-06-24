@@ -75,7 +75,21 @@ export const NOTION_SCHEMA_BY_STORE: Record<
   },
 };
 
-/** 文一店「使用位置」select → 民有店「付款方式」multi_select 語意 */
+/** 各店可寫回的 Notion 欄位（新版民有店已移除「時數」，改由公式「員工工時」計算） */
+export const NOTION_WRITABLE_FIELDS: Record<StoreSlug, ReadonlySet<NotionCanonicalField>> = {
+  store1: new Set(
+    NOTION_CANONICAL_FIELDS.filter((field) => field !== '時數'),
+  ),
+  store2: new Set(NOTION_CANONICAL_FIELDS),
+};
+
+export function isNotionFieldWritable(
+  canonicalName: NotionCanonicalField,
+  storeId: StoreSlug,
+): boolean {
+  return NOTION_WRITABLE_FIELDS[storeId].has(canonicalName);
+}
+
 export const STORE2_PAYMENT_LOCATION_MAP: Record<string, string[]> = {
   現金: ['現金'],
   郵局: ['富邦'],
