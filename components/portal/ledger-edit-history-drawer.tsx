@@ -35,15 +35,18 @@ function formatEditTime(iso: string): string {
   }).format(new Date(iso));
 }
 
-async function fetchEditHistory(storeId: StoreSlug): Promise<LedgerEditHistoryItem[]> {
+async function fetchEditHistory(
+  storeId: StoreSlug,
+): Promise<{ rows: LedgerEditHistoryItem[]; tableReady: boolean }> {
   const qs = new URLSearchParams({ store: storeId, limit: '80' });
   const res = await fetch(`/api/portal/reports/edit-history?${qs}`, { cache: 'no-store' });
   const data = (await res.json()) as {
     edits?: LedgerEditHistoryItem[];
+    tableReady?: boolean;
     error?: string;
   };
   if (!res.ok) throw new Error(data.error ?? '無法載入編輯紀錄');
-  return data.edits ?? [];
+  return { rows: data.edits ?? [], tableReady: data.tableReady ?? true };
 }
 
 export function LedgerEditHistoryDrawer({
@@ -61,6 +64,7 @@ export function LedgerEditHistoryDrawer({
 }) {
   const [mounted, setMounted] = useState(false);
   const [rows, setRows] = useState<LedgerEditHistoryItem[]>([]);
+  const [tableReady, setTableReady] = useState(true);
   const [loading, setLoading] = useState(false);
   const [undoing, setUndoing] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -83,7 +87,9 @@ export function LedgerEditHistoryDrawer({
     setLoading(true);
     setFetchError(null);
     try {
-      setRows(await fetchEditHistory(storeId));
+      const data = await fetchEditHistory(storeId);
+      setRows(data.rows);
+      setTableReady(data.tableReady);
     } catch (e) {
       setFetchError(e instanceof Error ? e.message : '載入失敗');
       setRows([]);
@@ -154,12 +160,19 @@ export function LedgerEditHistoryDrawer({
         </div>
 
         <div className="border-b border-[#2a2a2a] px-5 py-3">
+          {!tableReady ? (
+            <p className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs leading-relaxed text-amber-200/95">
+              編輯紀錄資料表尚未建立。請至 Supabase → SQL Editor，貼上並執行
+              <code className="mx-1 rounded bg-black/30 px-1">supabase/18_ledger_edit_history.sql</code>
+              後重新整理此頁。
+            </p>
+          ) : null}
           <Button
             type="button"
             size="sm"
             variant="outline"
             className="w-full border-[#444] bg-[#252525] text-[#ddd] hover:bg-[#2f2f2f]"
-            disabled={!canUndo || undoing || loading}
+            disabled={!canUndo || undoing || loading || !tableReady}
             onClick={() => void handleUndoClick()}
           >
             {undoing ? '復原中…' : '復原上一步（Ctrl+Z）'}
@@ -173,7 +186,11 @@ export function LedgerEditHistoryDrawer({
           ) : loading ? (
             <p className="py-8 text-center text-sm text-[#666]">載入中…</p>
           ) : rows.length === 0 ? (
-            <p className="py-8 text-center text-sm text-[#666]">尚無手動編輯紀錄</p>
+            <p className="py-8 text-center text-sm text-[#666]">
+              {fetchError?.includes('資料表尚未建立')
+                ? fetchError
+                : '尚無手動編輯紀錄'}
+            </p>
           ) : (
             <ul className="space-y-2">
               {rows.map((row) => {

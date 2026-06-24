@@ -25,3 +25,5 @@ create index if not exists daily_transaction_edits_undo_stack_idx
 alter table public.daily_transaction_edits enable row level security;
 
 grant select, insert, update, delete on public.daily_transaction_edits to service_role;
+
+notify pgrst, 'reload schema';

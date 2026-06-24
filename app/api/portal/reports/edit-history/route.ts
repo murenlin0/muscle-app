@@ -24,8 +24,11 @@ export async function GET(request: Request) {
   const limit = limitParam ? Math.min(Math.max(Number(limitParam) || 80, 1), 200) : 80;
 
   try {
-    const edits = await listLedgerEdits(resolved.storeId, limit);
-    return portalJson({ edits });
+    const [edits, tableReady] = await Promise.all([
+      listLedgerEdits(resolved.storeId, limit),
+      isLedgerEditTableReady(),
+    ]);
+    return portalJson({ edits, tableReady });
   } catch (e) {
     const message = e instanceof Error ? e.message : '無法載入編輯紀錄';
     return NextResponse.json({ error: message }, { status: 500 });

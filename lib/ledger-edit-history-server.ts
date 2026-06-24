@@ -43,6 +43,34 @@ export interface EditActor {
   role: string;
 }
 
+export class LedgerEditTableMissingError extends Error {
+  constructor() {
+    super(
+      '編輯紀錄資料表尚未建立。請至 Supabase → SQL Editor 執行 supabase/18_ledger_edit_history.sql（或 reconcile.sql 區段 J）',
+    );
+    this.name = 'LedgerEditTableMissingError';
+  }
+}
+
+export function isEditTableMissingError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? String((error as { code?: string }).code)
+      : '';
+  return (
+    code === 'PGRST205' ||
+    msg.includes('daily_transaction_edits') ||
+    msg.includes('schema cache')
+  );
+}
+
+function rethrowUnlessMissingTable(error: unknown): void {
+  if (isEditTableMissingError(error)) {
+    throw new LedgerEditTableMissingError();
+  }
+}
+
 export function actorFromSession(session: PortalSession): EditActor {
   if (session.role === 'super') {
     return { name: session.displayName, role: 'super' };
@@ -186,7 +214,10 @@ async function insertEditLog(input: {
     })
     .select('id')
     .single();
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (isEditTableMissingError(error)) throw new LedgerEditTableMissingError();
+    throw new Error(error.message);
+  }
   return data.id as string;
 }
 
@@ -239,7 +270,12 @@ export async function logTransactionDelete(
   });
 }
 
-export async function listLedgerEdits(
+export async function isLedgerEditTableReady(): Promise<boolean> {
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase.from('daily_transaction_edits').select('id').limit(1);
+  if (!error) return true;
+  return !isEditTableMissingError(error);
+}
   storeId: StoreSlug,
   limit = 80,
 ): Promise<LedgerEditRecord[]> {
@@ -252,7 +288,10 @@ export async function listLedgerEdits(
     .eq('store_id', storeId)
     .order('created_at', { ascending: false })
     .limit(limit);
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (isEditTableMissingError(error)) return [];
+    throw new Error(error.message);
+  }
   return (data ?? []).map(mapEditRow);
 }
 
@@ -330,7 +369,10 @@ export async function undoLatestLedgerEdit(
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (error) throw new Error(error.message);
+  if (error) {
+    rethrowUnlessMissingTable(error);
+    throw new Error(error.message);
+  }
   if (!data) throw new Error('沒有可復原的編輯');
 
   const edit = mapEditRow(data);
@@ -365,10 +407,15 @@ export async function createDailyTransactionWithLog(
   actor: EditActor,
 ): Promise<{ id: string; editId: string }> {
   const id = await createDailyTransaction(storeId, input);
-  const snapshot = await fetchTransactionSnapshot(id, storeId);
-  if (!snapshot) throw new Error('新增後無法讀取紀錄');
-  const editId = await logTransactionCreate(storeId, snapshot, actor);
-  return { id, editId };
+  try {
+    const snapshot = await fetchTransactionSnapshot(id, storeId);
+    if (!snapshot) throw new Error('新增後無法讀取紀錄');
+    const editId = await logTransactionCreate(storeId, snapshot, actor);
+    return { id, editId };
+  } catch (e) {
+    if (isEditTableMissingError(e)) return { id, editId: '' };
+    throw e;
+  }
 }
 
 export async function updateDailyTransactionWithLog(
@@ -380,10 +427,15 @@ export async function updateDailyTransactionWithLog(
   const before = await fetchTransactionSnapshot(id, storeId);
   if (!before) throw new Error('找不到要修改的列');
   await updateDailyTransaction(id, storeId, input);
-  const after = await fetchTransactionSnapshot(id, storeId);
-  if (!after) throw new Error('修改後無法讀取紀錄');
-  const editId = await logTransactionUpdate(storeId, before, after, actor);
-  return { editId };
+  try {
+    const after = await fetchTransactionSnapshot(id, storeId);
+    if (!after) throw new Error('修改後無法讀取紀錄');
+    const editId = await logTransactionUpdate(storeId, before, after, actor);
+    return { editId };
+  } catch (e) {
+    if (isEditTableMissingError(e)) return { editId: '' };
+    throw e;
+  }
 }
 
 export async function deleteDailyTransactionWithLog(
@@ -394,6 +446,11 @@ export async function deleteDailyTransactionWithLog(
   const before = await fetchTransactionSnapshot(id, storeId);
   if (!before) throw new Error('找不到要刪除的列');
   await deleteDailyTransaction(id, storeId);
-  const editId = await logTransactionDelete(storeId, before, actor);
-  return { editId };
+  try {
+    const editId = await logTransactionDelete(storeId, before, actor);
+    return { editId };
+  } catch (e) {
+    if (isEditTableMissingError(e)) return { editId: '' };
+    throw e;
+  }
 }
