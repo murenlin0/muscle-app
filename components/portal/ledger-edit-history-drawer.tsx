@@ -41,12 +41,18 @@ async function fetchEditHistory(
   const qs = new URLSearchParams({ store: storeId, limit: '80' });
   const res = await fetch(`/api/portal/reports/edit-history?${qs}`, { cache: 'no-store' });
   const data = (await res.json()) as {
-    edits?: LedgerEditHistoryItem[];
+    edits?: Array<LedgerEditHistoryItem & { details?: string[] }>;
     tableReady?: boolean;
     error?: string;
   };
   if (!res.ok) throw new Error(data.error ?? '無法載入編輯紀錄');
-  return { rows: data.edits ?? [], tableReady: data.tableReady ?? true };
+  return {
+    rows: (data.edits ?? []).map((edit) => ({
+      ...edit,
+      details: edit.details ?? [],
+    })),
+    tableReady: data.tableReady ?? true,
+  };
 }
 
 export function LedgerEditHistoryDrawer({
@@ -226,6 +232,15 @@ export function LedgerEditHistoryDrawer({
                     >
                       {row.summary}
                     </p>
+                    {row.details.length > 0 ? (
+                      <ul className="mt-2 space-y-1 text-xs leading-relaxed text-[#aaa]">
+                        {row.details.map((line, index) => (
+                          <li key={`${row.id}-${index}`} className={cn(undone && 'line-through')}>
+                            {line}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
                     <p className="mt-1 text-[10px] text-[#666]">{row.actorName}</p>
                     {undone ? (
                       <p className="mt-1 text-[10px] text-[#555]">已復原</p>

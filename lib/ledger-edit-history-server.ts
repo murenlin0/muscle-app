@@ -36,6 +36,7 @@ export interface LedgerEditRecord {
   undoneAt: string | null;
   before: TransactionSnapshot | null;
   after: TransactionSnapshot | null;
+  details: string[];
 }
 
 export interface EditActor {
@@ -91,6 +92,105 @@ function fmtAmount(amount: number): string {
   return Math.abs(Math.round(amount)).toLocaleString('zh-TW');
 }
 
+function fmtDate(iso: string): string {
+  const [y, m, d] = iso.split('-');
+  return y && m && d ? `${y}/${m}/${d}` : iso;
+}
+
+function fmtText(value: string | null | undefined): string {
+  const t = (value ?? '').trim();
+  return t || '（空）';
+}
+
+function fmtAmountLabel(amount: number, category: TransactionCategory): string {
+  if (amount === 0) return '（空）';
+  const n = Math.round(amount);
+  if (category === '會員使用') return `-$${fmtAmount(Math.abs(n))}`;
+  if (['支出', '工資', '分紅', '轉出'].includes(category) && n > 0) {
+    return `-$${fmtAmount(n)}`;
+  }
+  if (n < 0) return `-$${fmtAmount(Math.abs(n))}`;
+  return `$${fmtAmount(n)}`;
+}
+
+function fmtAccounts(methods: string[]): string {
+  return methods.length ? methods.join('、') : '（空）';
+}
+
+function fmtClient(name: string | null, phone: string | null): string {
+  const parts = [name?.trim(), phone?.trim()].filter(Boolean);
+  return parts.length ? parts.join(' ') : '（空）';
+}
+
+function buildUpdateDetailLines(
+  before: TransactionSnapshot,
+  after: TransactionSnapshot,
+): string[] {
+  const lines: string[] = [];
+  if (before.occurredOn !== after.occurredOn) {
+    lines.push(`日期：${fmtDate(before.occurredOn)} → ${fmtDate(after.occurredOn)}`);
+  }
+  if (before.title !== after.title) {
+    lines.push(`標題：${fmtText(before.title)} → ${fmtText(after.title)}`);
+  }
+  if (before.category !== after.category) {
+    lines.push(`類型：${before.category} → ${after.category}`);
+  }
+  if (before.amount !== after.amount) {
+    lines.push(
+      `金額：${fmtAmountLabel(before.amount, before.category)} → ${fmtAmountLabel(after.amount, after.category)}`,
+    );
+  }
+  if (JSON.stringify(before.paymentMethods) !== JSON.stringify(after.paymentMethods)) {
+    lines.push(
+      `帳戶：${fmtAccounts(before.paymentMethods)} → ${fmtAccounts(after.paymentMethods)}`,
+    );
+  }
+  if (before.staffName !== after.staffName) {
+    lines.push(`人員：${fmtText(before.staffName)} → ${fmtText(after.staffName)}`);
+  }
+  if (before.clientName !== after.clientName || before.clientPhone !== after.clientPhone) {
+    lines.push(
+      `客人：${fmtClient(before.clientName, before.clientPhone)} → ${fmtClient(after.clientName, after.clientPhone)}`,
+    );
+  }
+  return lines;
+}
+
+export function buildEditDetails(input: {
+  action: LedgerEditAction;
+  before: TransactionSnapshot | null;
+  after: TransactionSnapshot | null;
+}): string[] {
+  const { action, before, after } = input;
+  if (action === 'update' && before && after) {
+    return buildUpdateDetailLines(before, after);
+  }
+  if (action === 'create' && after) {
+    const lines = [
+      `日期：${fmtDate(after.occurredOn)}`,
+      `標題：${fmtText(after.title)}`,
+      `類型：${after.category}`,
+      `金額：${fmtAmountLabel(after.amount, after.category)}`,
+    ];
+    if (after.paymentMethods.length) lines.push(`帳戶：${after.paymentMethods.join('、')}`);
+    if (after.staffName?.trim()) lines.push(`人員：${after.staffName.trim()}`);
+    if (after.clientName?.trim() || after.clientPhone?.trim()) {
+      lines.push(`客人：${fmtClient(after.clientName, after.clientPhone)}`);
+    }
+    return lines;
+  }
+  if (action === 'delete' && before) {
+    return [
+      `日期：${fmtDate(before.occurredOn)}`,
+      `標題：${fmtText(before.title)}`,
+      `類型：${before.category}`,
+      `金額：${fmtAmountLabel(before.amount, before.category)}`,
+    ];
+  }
+  return [];
+}
+
 export function summarizeLedgerEdit(
   action: Exclude<LedgerEditAction, 'undo'>,
   before: TransactionSnapshot | null,
@@ -103,20 +203,9 @@ export function summarizeLedgerEdit(
     return `刪除「${truncate(before.title, 28)}」· ${before.category}`;
   }
   if (action === 'update' && before && after) {
-    const changes: string[] = [];
-    if (before.occurredOn !== after.occurredOn) changes.push('日期');
-    if (before.title !== after.title) changes.push('標題');
-    if (before.amount !== after.amount) changes.push('金額');
-    if (before.category !== after.category) changes.push('類型');
-    if (JSON.stringify(before.paymentMethods) !== JSON.stringify(after.paymentMethods)) {
-      changes.push('帳戶');
-    }
-    if (before.staffName !== after.staffName) changes.push('人員');
-    if (before.clientName !== after.clientName || before.clientPhone !== after.clientPhone) {
-      changes.push('客人');
-    }
-    const label = changes.length ? changes.join('、') : '內容';
-    return `修改「${truncate(after.title, 24)}」· ${label}`;
+    const lines = buildUpdateDetailLines(before, after);
+    const head = `修改「${truncate(after.title, 24)}」`;
+    return lines.length ? `${head} · ${lines.join('；')}` : head;
   }
   return '流水帳異動';
 }
@@ -158,18 +247,22 @@ function mapEditRow(row: {
   before_data: TransactionSnapshot | null;
   after_data: TransactionSnapshot | null;
 }): LedgerEditRecord {
+  const action = row.action as LedgerEditAction;
+  const before = row.before_data;
+  const after = row.after_data;
   return {
     id: row.id,
     storeId: row.store_id as StoreSlug,
     transactionId: row.transaction_id,
-    action: row.action as LedgerEditAction,
+    action,
     summary: row.summary,
     actorName: row.actor_name,
     actorRole: row.actor_role,
     createdAt: row.created_at,
     undoneAt: row.undone_at,
-    before: row.before_data,
-    after: row.after_data,
+    before,
+    after,
+    details: buildEditDetails({ action, before, after }),
   };
 }
 

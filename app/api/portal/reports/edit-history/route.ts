@@ -28,7 +28,18 @@ export async function GET(request: Request) {
       listLedgerEdits(resolved.storeId, limit),
       isLedgerEditTableReady(),
     ]);
-    return portalJson({ edits, tableReady });
+    return portalJson({
+      edits: edits.map((edit) => ({
+        id: edit.id,
+        action: edit.action,
+        summary: edit.summary,
+        details: edit.details,
+        actorName: edit.actorName,
+        createdAt: edit.createdAt,
+        undoneAt: edit.undoneAt,
+      })),
+      tableReady,
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : '無法載入編輯紀錄';
     return NextResponse.json({ error: message }, { status: 500 });
