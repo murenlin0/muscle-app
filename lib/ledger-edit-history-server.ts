@@ -276,6 +276,8 @@ export async function isLedgerEditTableReady(): Promise<boolean> {
   if (!error) return true;
   return !isEditTableMissingError(error);
 }
+
+export async function listLedgerEdits(
   storeId: StoreSlug,
   limit = 80,
 ): Promise<LedgerEditRecord[]> {
