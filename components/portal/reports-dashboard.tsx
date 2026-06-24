@@ -139,6 +139,19 @@ export function ReportsDashboard({
     [ledgerPresetFilter],
   );
 
+  const ledgerDraftDefaults = useMemo((): Partial<LedgerRow> => {
+    const defaultCategory =
+      category ||
+      (activeCategories?.length === 1 ? activeCategories[0] : undefined) ||
+      '一般消費';
+    return {
+      occurredOn: to,
+      category: defaultCategory,
+      paymentMethods: activeAccount ? [activeAccount] : [],
+      staffName: staffFilter,
+    };
+  }, [to, category, activeCategories, activeAccount, staffFilter]);
+
   const filterCategories = activeCategories;
 
   const filterPresetLabel = ledgerPresetFilter ? labelForLedgerPreset(ledgerPresetFilter) : null;
@@ -349,10 +362,20 @@ export function ReportsDashboard({
     const res = await fetch('/api/portal/reports/sync-calendar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lookbackHours: 72 }),
+      body: JSON.stringify({
+        fromDate: from,
+        toDate: to,
+      }),
     });
     const data = (await res.json()) as {
       error?: string;
+      backfill?: {
+        imported?: number;
+        skippedExisting?: number;
+        skippedPending?: number;
+        errors?: string[];
+        titles?: string[];
+      };
       processed?: number;
       skipped?: number;
       errors?: string[];
@@ -364,14 +387,25 @@ export function ReportsDashboard({
       setError(data.error ?? '日曆同步失敗');
       return;
     }
-    const errNote = data.errors?.length ? `（${data.errors.length} 筆錯誤）` : '';
-    const cancelNote =
-      data.deletions?.cancelled ? `、取消預約 ${data.deletions.cancelled} 筆` : '';
-    setSyncMsg(
-      `日曆同步完成：新增 ${data.processed ?? 0} 筆、略過 ${data.skipped ?? 0} 筆${cancelNote}${errNote}`,
-    );
-    if (data.errors?.length) {
-      setError(data.errors.slice(0, 3).join('；'));
+    if (data.backfill) {
+      const bf = data.backfill;
+      const errNote = bf.errors?.length ? `（${bf.errors.length} 筆錯誤）` : '';
+      setSyncMsg(
+        `日曆補匯完成：新增 ${bf.imported ?? 0} 筆、略過已有 ${bf.skippedExisting ?? 0} 筆${errNote}`,
+      );
+      if (bf.errors?.length) {
+        setError(bf.errors.slice(0, 3).join('；'));
+      }
+    } else {
+      const errNote = data.errors?.length ? `（${data.errors.length} 筆錯誤）` : '';
+      const cancelNote =
+        data.deletions?.cancelled ? `、取消預約 ${data.deletions.cancelled} 筆` : '';
+      setSyncMsg(
+        `日曆同步完成：新增 ${data.processed ?? 0} 筆、略過 ${data.skipped ?? 0} 筆${cancelNote}${errNote}`,
+      );
+      if (data.errors?.length) {
+        setError(data.errors.slice(0, 3).join('；'));
+      }
     }
     await load(0);
   }
@@ -473,7 +507,7 @@ export function ReportsDashboard({
           variant="outline"
           disabled={calSyncing}
           onClick={() => void handleCalendarSync()}
-          title="同步近 72 小時內已結帳的日曆事件（僅處理師傅 UI 建立的預約）"
+          title="依上方起迄日，補匯 Google 日曆已結帳但報表缺漏的事件"
         >
           {calSyncing ? '同步中…' : '同步日曆結帳'}
         </Button>
@@ -606,7 +640,9 @@ export function ReportsDashboard({
           dataGeneration={dataGeneration}
           storeId={activeStore}
           vipMemberPhones={vipMemberPhones}
+          draftDefaults={ledgerDraftDefaults}
           onClientClick={setSelectedClient}
+          onRowCreated={() => void load(ledgerPage)}
         />
 
         {ledgerMeta && totalPages > 1 ? (

@@ -3,7 +3,7 @@ import {
   getGoogleRefreshToken,
 } from '@/lib/integration-settings';
 import { refreshGoogleAccessToken } from '@/lib/google-oauth';
-import { parseStaffPrefixFromCalendarTitle } from '@/lib/booking-message';
+import { parseStaffPrefixFromCalendarTitle, resolveStoreSlugFromStaffName } from '@/lib/booking-message';
 import { parseCompoundVipTitle } from '@/lib/ledger-title-fix';
 import {
   clientMemberBalance,
@@ -15,6 +15,7 @@ import { canonicalStaffName } from '@/lib/multi-staff-split';
 import { normalizeStaffName } from '@/lib/notion-title-normalize';
 import { parseNotionNamePhone, stripAllSpaces } from '@/lib/phone';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { listActiveStaffForRoster } from '@/lib/staff-auth-server';
 import { formatStoreDateIso } from '@/lib/store-timezone';
 import type { StoreSlug } from '@/lib/stores';
 import type { TransactionCategory } from '@/lib/transaction-category';
@@ -207,7 +208,8 @@ async function fetchCalendarEventsInRange(
   return all;
 }
 
-async function loadExistingGcalNotes(storeId: StoreSlug): Promise<Set<string>> {
+/** 全店共用日曆：gcal 事件 ID 任一店已有即略過，避免重複匯入 */
+async function loadExistingGcalEventIds(): Promise<Set<string>> {
   const supabase = getSupabaseAdmin();
   const notes = new Set<string>();
   let offset = 0;
@@ -215,18 +217,63 @@ async function loadExistingGcalNotes(storeId: StoreSlug): Promise<Set<string>> {
     const { data, error } = await supabase
       .from('daily_transactions')
       .select('member_note')
-      .eq('store_id', storeId)
       .like('member_note', 'gcal:%')
       .range(offset, offset + 999);
     if (error) throw new Error(error.message);
     for (const row of data ?? []) {
       const note = row.member_note as string;
-      if (note) notes.add(note.split(':').slice(0, 2).join(':')); // gcal:EVENT_ID
+      if (note) notes.add(note.split(':').slice(0, 2).join(':'));
     }
     if (!data?.length || data.length < 1000) break;
     offset += 1000;
   }
   return notes;
+}
+
+async function loadAppointmentStoreByEventId(
+  timeMin: string,
+  timeMax: string,
+): Promise<Map<string, StoreSlug>> {
+  const supabase = getSupabaseAdmin();
+  const map = new Map<string, StoreSlug>();
+  const { data, error } = await supabase
+    .from('appointments')
+    .select('calendar_event_id, store_id')
+    .not('calendar_event_id', 'is', null)
+    .gte('starts_at', timeMin)
+    .lte('starts_at', timeMax);
+  if (error) throw new Error(error.message);
+  for (const row of data ?? []) {
+    const eventId = row.calendar_event_id as string;
+    if (eventId) map.set(eventId, row.store_id as StoreSlug);
+  }
+  return map;
+}
+
+function resolveStoreForCalendarEvent(
+  title: string,
+  eventId: string,
+  appointmentStoreByEventId: Map<string, StoreSlug>,
+  roster: Awaited<ReturnType<typeof listActiveStaffForRoster>>,
+  fallbackStore: StoreSlug,
+): StoreSlug {
+  const fromAppt = appointmentStoreByEventId.get(eventId);
+  if (fromAppt) return fromAppt;
+
+  const staffName = resolveStaffDisplayNameFromTitle(title);
+  const fromStaff = resolveStoreSlugFromStaffName(staffName, roster);
+  if (fromStaff) return fromStaff;
+
+  const prefix = parseStaffPrefixFromCalendarTitle(title);
+  if (prefix) {
+    const fromPrefix = resolveStoreSlugFromStaffName(prefix, roster);
+    if (fromPrefix) return fromPrefix;
+    const normalized = normalizeStaffName(prefix) ?? prefix;
+    const fromCanonical = resolveStoreSlugFromStaffName(canonicalStaffName(normalized), roster);
+    if (fromCanonical) return fromCanonical;
+  }
+
+  return fallbackStore;
 }
 
 async function loadMemberRowsForBalance(storeId: StoreSlug): Promise<MemberBalanceRow[]> {
@@ -600,10 +647,19 @@ export async function syncCalendarBackfill(
 
   result.checkoutColored = checkoutEvents.length;
 
-  const existingNotes = await loadExistingGcalNotes(storeId);
-  const memberRows = await loadMemberRowsForBalance(storeId);
-  const pendingInserts: TxInsert[] = [];
+  const existingNotes = await loadExistingGcalEventIds();
+  const appointmentStoreByEventId = await loadAppointmentStoreByEventId(timeMin, timeMax);
+  const roster = await listActiveStaffForRoster();
+  const memberRowsByStore = new Map<StoreSlug, MemberBalanceRow[]>();
+  const pendingByStore = new Map<StoreSlug, TxInsert[]>();
   const supabase = getSupabaseAdmin();
+
+  async function memberRowsFor(store: StoreSlug): Promise<MemberBalanceRow[]> {
+    if (!memberRowsByStore.has(store)) {
+      memberRowsByStore.set(store, await loadMemberRowsForBalance(store));
+    }
+    return memberRowsByStore.get(store)!;
+  }
 
   for (const ev of checkoutEvents) {
     const noteKey = `gcal:${ev.id}`;
@@ -612,8 +668,22 @@ export async function syncCalendarBackfill(
       continue;
     }
 
+    const title = ev.summary?.trim() ?? '';
+    const resolvedStore = resolveStoreForCalendarEvent(
+      title,
+      ev.id,
+      appointmentStoreByEventId,
+      roster,
+      storeId,
+    );
+    if (options.storeId && resolvedStore !== options.storeId) {
+      continue;
+    }
+
     try {
-      const rows = buildRowsFromEvent(ev, storeId, memberRows, pendingInserts);
+      const memberRows = await memberRowsFor(resolvedStore);
+      const pendingInserts = pendingByStore.get(resolvedStore) ?? [];
+      const rows = buildRowsFromEvent(ev, resolvedStore, memberRows, pendingInserts);
       if (!rows.length) {
         result.skippedPending++;
         continue;
@@ -624,6 +694,7 @@ export async function syncCalendarBackfill(
         if (mismatch) result.balanceMismatches.push(mismatch);
         pendingInserts.push(row);
       }
+      pendingByStore.set(resolvedStore, pendingInserts);
 
       if (options.dryRun) {
         result.imported += rows.length;
@@ -635,6 +706,7 @@ export async function syncCalendarBackfill(
       if (error) {
         result.errors.push(`[${ev.summary}] 寫入失敗：${error.message}`);
         for (let i = 0; i < rows.length; i++) pendingInserts.pop();
+        pendingByStore.set(resolvedStore, pendingInserts);
         continue;
       }
 
@@ -648,6 +720,7 @@ export async function syncCalendarBackfill(
           client_phone: row.client_phone,
         });
       }
+      memberRowsByStore.set(resolvedStore, memberRows);
       existingNotes.add(noteKey);
       result.imported += rows.length;
       result.titles.push(ev.summary ?? ev.id);

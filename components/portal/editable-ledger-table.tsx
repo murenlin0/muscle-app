@@ -152,7 +152,7 @@ function todayIso() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function newDraftRow(): LedgerRow {
+function newDraftRow(overrides?: Partial<LedgerRow>): LedgerRow {
   return {
     id: `new-${crypto.randomUUID()}`,
     occurredOn: todayIso(),
@@ -163,6 +163,7 @@ function newDraftRow(): LedgerRow {
     staffName: null,
     clientName: null,
     clientPhone: null,
+    ...overrides,
   };
 }
 
@@ -219,16 +220,20 @@ export function EditableLedgerTable({
   dataGeneration,
   storeId,
   vipMemberPhones = new Set(),
+  draftDefaults,
   onClientClick,
   onStatsChange,
+  onRowCreated,
 }: {
   rows: LedgerRow[];
   loading: boolean;
   dataGeneration: number;
   storeId: StoreSlug;
   vipMemberPhones?: Set<string>;
+  draftDefaults?: Partial<LedgerRow>;
   onClientClick?: (client: { name: string; phone: string }) => void;
   onStatsChange?: (stats: { totalRows: number; totalAmount: number }) => void;
+  onRowCreated?: () => void;
 }) {
   const [rows, setRows] = useState<LedgerRow[]>(initialRows);
   const [widths, setWidths] = useState<Record<ColKey, number>>(DEFAULT_WIDTHS);
@@ -243,7 +248,29 @@ export function EditableLedgerTable({
   const resizeRef = useRef<{ col: ColKey; startX: number; startW: number } | null>(null);
   const lastSavedRef = useRef<Map<string, string>>(new Map());
   const savedTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const draftDefaultsRef = useRef(draftDefaults);
+  draftDefaultsRef.current = draftDefaults;
+  const titleFocusRef = useRef<string | null>(null);
   const prevDataGenerationRef = useRef(0);
+
+  function buildDraftRow(atIndex?: number): LedgerRow {
+    const neighbor = atIndex !== undefined ? rowsRef.current[atIndex] : undefined;
+    const defaults = draftDefaultsRef.current;
+    return newDraftRow({
+      ...defaults,
+      occurredOn: neighbor?.occurredOn ?? defaults?.occurredOn ?? todayIso(),
+    });
+  }
+
+  function insertDraftAt(index: number) {
+    const draft = buildDraftRow(index);
+    titleFocusRef.current = draft.id;
+    const next = [...rowsRef.current];
+    next.splice(index, 0, draft);
+    rowsRef.current = next;
+    setRows(next);
+    onStatsChange?.(computeTotals(next));
+  }
 
   useEffect(() => {
     if (dataGeneration === 0 || dataGeneration === prevDataGenerationRef.current) return;
@@ -408,6 +435,7 @@ export function EditableLedgerTable({
     }
 
     flashSaved(persistedId);
+    if (isNew) onRowCreated?.();
   }
 
   async function deleteRow(row: LedgerRow) {
@@ -452,8 +480,20 @@ export function EditableLedgerTable({
     resizeRef.current = { col, startX: e.clientX, startW: widths[col] };
   }
 
+  useEffect(() => {
+    const focusId = titleFocusRef.current;
+    if (!focusId) return;
+    titleFocusRef.current = null;
+    requestAnimationFrame(() => {
+      const el = document.querySelector<HTMLInputElement>(
+        `[data-ledger-title="${focusId}"]`,
+      );
+      el?.focus();
+    });
+  }, [rows]);
+
   const tableMinWidth =
-    colOrder.reduce((sum, col) => sum + widths[col], 0) + 48;
+    colOrder.reduce((sum, col) => sum + widths[col], 0) + 48 + 32;
 
   return (
     <div className="overflow-hidden rounded-md border border-[#333] bg-[#1c1c1c] shadow-sm">
@@ -483,6 +523,7 @@ export function EditableLedgerTable({
           style={{ minWidth: tableMinWidth }}
         >
           <colgroup>
+            <col style={{ width: 32 }} />
             {colOrder.map((col) => (
               <col key={col} style={{ width: widths[col] }} />
             ))}
@@ -490,6 +531,7 @@ export function EditableLedgerTable({
           </colgroup>
           <thead>
             <tr className="border-b border-[#333] bg-[#252525] text-[11px] font-medium tracking-wide text-[#8a8a8a]">
+              <th className="px-0 py-0" aria-label="新增" />
               {colOrder.map((col) => (
                 <th
                   key={col}
@@ -516,18 +558,28 @@ export function EditableLedgerTable({
           <tbody>
             {showInitialEmpty ? (
               <tr>
-                <td colSpan={9} className="px-4 py-10 text-center text-[#888]">
+                <td colSpan={10} className="px-4 py-10 text-center text-[#888]">
                   載入中…
                 </td>
               </tr>
             ) : rows.length === 0 ? (
-              <tr>
+              <tr className="group">
+                <td className="relative w-8 p-0 align-middle">
+                  <button
+                    type="button"
+                    onClick={() => insertDraftAt(0)}
+                    className="absolute left-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded border border-[#444] bg-[#252525] text-[#aaa] opacity-0 transition hover:border-[#5c8aff] hover:text-[#5c8aff] group-hover:opacity-100"
+                    title="在此新增一列"
+                  >
+                    +
+                  </button>
+                </td>
                 <td colSpan={9} className="px-4 py-10 text-center text-[#888]">
-                  尚無資料，請按下方新增一列。
+                  尚無資料，請按左側 + 或下方新增一列。
                 </td>
               </tr>
             ) : (
-              rows.map((row) => {
+              rows.map((row, rowIndex) => {
                 const status = rowStatus[row.id];
                 const showAccount = shouldShowLedgerAccount(row.category);
                 const account = primaryLedgerAccount(row.paymentMethods, row.category);
@@ -542,6 +594,16 @@ export function EditableLedgerTable({
                       status !== 'saved' && status !== 'error' && 'hover:bg-[#262626]',
                     )}
                   >
+                    <td className="relative w-8 p-0 align-middle">
+                      <button
+                        type="button"
+                        onClick={() => insertDraftAt(rowIndex)}
+                        className="absolute left-1 top-1/2 z-[2] flex size-6 -translate-y-1/2 items-center justify-center rounded border border-[#444] bg-[#252525] text-sm leading-none text-[#aaa] opacity-0 transition hover:border-[#5c8aff] hover:bg-[#2a2a2a] hover:text-[#5c8aff] group-hover:opacity-100"
+                        title="在此列上方新增（依目前篩選帶入預設值）"
+                      >
+                        +
+                      </button>
+                    </td>
                     <td className="p-0 align-middle">
                       <input
                         type="date"
@@ -554,6 +616,7 @@ export function EditableLedgerTable({
                     <td className="p-0 align-middle">
                       <input
                         type="text"
+                        data-ledger-title={row.id}
                         value={row.title}
                         onChange={(e) => updateRow(row.id, { title: e.target.value })}
                         onBlur={() => {
@@ -728,7 +791,8 @@ export function EditableLedgerTable({
       <button
         type="button"
         onClick={() => {
-          const next = [...rowsRef.current, newDraftRow()];
+          const next = [...rowsRef.current, buildDraftRow()];
+          titleFocusRef.current = next[next.length - 1]!.id;
           rowsRef.current = next;
           setRows(next);
           onStatsChange?.(computeTotals(next));

@@ -24,12 +24,19 @@ async function main() {
   loadEnv();
   const dryRun = process.argv.includes('--dry-run');
   const fromDate = process.argv.find((a) => a.startsWith('--from='))?.slice(7) ?? '2026-06-11';
+  const toDate = process.argv.find((a) => a.startsWith('--to='))?.slice(5);
+  const storeId = (process.argv.find((a) => a.startsWith('--store='))?.slice(8) ?? 'store1') as
+    | 'store1'
+    | 'store2';
 
-  console.log(`${dryRun ? '[預覽]' : '[正式]'} 匯入日曆結帳 ${fromDate} 起…\n`);
+  console.log(
+    `${dryRun ? '[預覽]' : '[正式]'} 匯入日曆結帳 ${fromDate}${toDate ? `～${toDate}` : ' 起'}（${storeId}）…\n`,
+  );
 
   const result = await syncCalendarBackfill({
     fromDate,
-    storeId: 'store1',
+    toDate,
+    storeId,
     dryRun,
   });
 
