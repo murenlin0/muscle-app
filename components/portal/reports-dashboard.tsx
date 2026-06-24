@@ -108,6 +108,7 @@ export function ReportsDashboard({
   const [overviewLoading, setOverviewLoading] = useState(true);
   const [normalizing, setNormalizing] = useState(false);
   const [notionSyncing, setNotionSyncing] = useState(false);
+  const [notionExportSyncing, setNotionExportSyncing] = useState(false);
   const [calSyncing, setCalSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
@@ -398,6 +399,45 @@ export function ReportsDashboard({
     await load(0);
   }
 
+  async function handleNotionExportSync() {
+    setNotionExportSyncing(true);
+    setSyncMsg(null);
+    setError(null);
+    const res = await fetch('/api/portal/reports/sync-to-notion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        storeId: activeStore,
+        from,
+        to,
+      }),
+    });
+    const data = (await res.json()) as {
+      error?: string;
+      result?: {
+        updated: number;
+        skippedSame: number;
+        skippedNoNotionPage: number;
+        skippedConflict: number;
+        linked: number;
+        scanned: number;
+        errors?: string[];
+      };
+    };
+    setNotionExportSyncing(false);
+    if (!res.ok) {
+      setError(data.error ?? '同步至 Notion 失敗');
+      return;
+    }
+    const r = data.result;
+    setSyncMsg(
+      `已同步至 Notion：更新 ${r?.updated ?? 0} 筆（區間 ${formatDate(from)}～${formatDate(to)}，已連結 ${r?.linked ?? 0} 頁；一致略過 ${r?.skippedSame ?? 0}）`,
+    );
+    if (r?.errors?.length) {
+      setError(r.errors.slice(0, 3).join('；'));
+    }
+  }
+
   async function handleCalendarSync() {
     setCalSyncing(true);
     setSyncMsg(null);
@@ -549,6 +589,16 @@ export function ReportsDashboard({
           onClick={() => void handleNotionSync()}
         >
           {notionSyncing ? '同步中…' : '從 Notion 同步'}
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={notionExportSyncing}
+          onClick={() => void handleNotionExportSync()}
+          title="將目前報表區間內、已連結 Notion 的修改寫回 Notion"
+        >
+          {notionExportSyncing ? '寫回中…' : '同步至 Notion'}
         </Button>
         <Button
           type="button"
