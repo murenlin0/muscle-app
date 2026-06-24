@@ -11,6 +11,11 @@ const MEMBER_ROW_ORDER: Partial<Record<TransactionCategory, number>> = {
   會員使用: 2,
 };
 
+function ledgerDateKey(iso: string): string {
+  const part = iso.includes('T') ? iso.split('T')[0]! : iso;
+  return part.slice(0, 10);
+}
+
 function memberRowOrder(category: string): number {
   return MEMBER_ROW_ORDER[category as TransactionCategory] ?? 9;
 }
@@ -26,10 +31,12 @@ export function compareLedgerDisplayRows(
   b: LedgerSortRow,
   dateDescending: boolean,
 ): number {
-  if (a.occurredOn !== b.occurredOn) {
+  const dateA = ledgerDateKey(a.occurredOn);
+  const dateB = ledgerDateKey(b.occurredOn);
+  if (dateA !== dateB) {
     return dateDescending
-      ? b.occurredOn.localeCompare(a.occurredOn)
-      : a.occurredOn.localeCompare(b.occurredOn);
+      ? dateB.localeCompare(dateA)
+      : dateA.localeCompare(dateB);
   }
 
   const ca = memberRowOrder(a.category);

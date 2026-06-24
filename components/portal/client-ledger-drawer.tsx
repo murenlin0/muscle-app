@@ -9,7 +9,7 @@ import {
   formatClientKey,
   formatClientKeyLabel,
 } from '@/lib/ledger-client-display';
-import { compareLedgerDisplayRows } from '@/lib/ledger-display-sort';
+import { sortLedgerDisplayRows } from '@/lib/ledger-display-sort';
 import type { StoreSlug } from '@/lib/stores';
 
 function fmt(n: number) {
@@ -54,7 +54,7 @@ async function fetchClientRows(
     page += 1;
   }
 
-  return all.sort((a, b) => compareLedgerDisplayRows(a, b, true));
+  return sortLedgerDisplayRows(all, true);
 }
 
 export function ClientLedgerDrawer({

@@ -1,6 +1,13 @@
 'use client';
 
-import { CATEGORY_NOTION_STYLE, ledgerAmountClass } from '@/lib/category-styles';
+import { useMemo } from 'react';
+import {
+  CATEGORY_NOTION_STYLE,
+  formatSignedAmount,
+  ledgerAmountClass,
+} from '@/lib/category-styles';
+import { sortLedgerDisplayRows } from '@/lib/ledger-display-sort';
+import { ledgerDisplayAmount } from '@/lib/ledger-amount';
 import type { TransactionCategory } from '@/lib/transaction-category';
 import { cn } from '@/lib/utils';
 
@@ -20,10 +27,6 @@ function formatDate(iso: string): string {
   return `${y}/${m}/${d}`;
 }
 
-function fmt(n: number): string {
-  return Math.abs(Math.round(n)).toLocaleString('zh-TW');
-}
-
 export function ClientLedgerTable({
   rows,
   loading,
@@ -39,6 +42,7 @@ export function ClientLedgerTable({
 }) {
   const isPortal = variant === 'portal';
   const pad = compact ? 'px-2 py-2.5' : 'px-3 py-2.5';
+  const displayRows = useMemo(() => sortLedgerDisplayRows(rows, true), [rows]);
 
   if (loading) {
     return (
@@ -86,11 +90,15 @@ export function ClientLedgerTable({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => {
+            {displayRows.map((row) => {
               const categoryStyle =
                 row.categoryClassName ??
                 CATEGORY_NOTION_STYLE[row.category as TransactionCategory] ??
                 'rounded-full border border-border/50 bg-transparent px-2 py-0.5 text-[10px] text-muted-foreground';
+              const signedAmount = ledgerDisplayAmount(
+                row.category as TransactionCategory,
+                row.amount,
+              );
 
               return (
                 <tr
@@ -112,7 +120,7 @@ export function ClientLedgerTable({
                   </td>
                   <td
                     className={cn(
-                      'max-w-[9rem] truncate',
+                      isPortal ? 'min-w-0 max-w-[15rem] break-all' : 'max-w-[9rem] truncate',
                       pad,
                       isPortal ? 'text-[#ddd]' : 'text-foreground/90',
                     )}
@@ -123,11 +131,11 @@ export function ClientLedgerTable({
                   <td
                     className={cn(
                       'whitespace-nowrap text-right font-medium tabular-nums',
-                      ledgerAmountClass(row.amount),
+                      ledgerAmountClass(signedAmount),
                       pad,
                     )}
                   >
-                    {isPortal ? `$${fmt(row.amount)}` : `${row.amount >= 0 ? '+' : '-'}$${fmt(row.amount)}`}
+                    {formatSignedAmount(signedAmount)}
                   </td>
                   <td className={pad}>
                     <span className={cn('inline-block font-medium', categoryStyle)}>

@@ -21,6 +21,18 @@ export function normalizeLedgerAmount(
   return n;
 }
 
+/** 客人消費紀錄：會員使用顯示為負數 */
+export function ledgerDisplayAmount(
+  category: TransactionCategory | typeof LEGACY_TRANSFER_CATEGORY,
+  amount: number,
+): number {
+  const n = Math.round(Math.abs(amount));
+  if (n === 0) return 0;
+  if (category === '會員使用') return -n;
+  if (category === '會員儲值' || category === '會員補差額') return n;
+  return normalizeLedgerAmount(category, amount);
+}
+
 export function shouldShowLedgerAccount(category: TransactionCategory): boolean {
   return category !== '會員使用';
 }
