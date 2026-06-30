@@ -2,6 +2,10 @@ import {
   getGoogleCalendarId,
   getGoogleRefreshToken,
 } from '@/lib/integration-settings';
+import {
+  calendarEventMatchesReportRows,
+  type ReportRowForMatch,
+} from '@/lib/calendar-report-match';
 import { syncClientBalanceInDb } from '@/lib/client-balance-server';
 import { refreshGoogleAccessToken } from '@/lib/google-oauth';
 import { parseStaffPrefixFromCalendarTitle, resolveStoreSlugFromStaffName } from '@/lib/booking-message';
@@ -52,6 +56,8 @@ export interface CalendarBackfillOptions {
   dryRun?: boolean;
   /** 略過 appointments 限制，匯入所有已結帳色事件 */
   ignoreAppointmentGate?: boolean;
+  /** 報表已有同標題/同電話列時略過（避免 notion_import 重複） */
+  skipIfReportRowExists?: boolean;
 }
 
 export interface BalanceMismatchRow {
@@ -70,6 +76,7 @@ export interface CalendarBackfillResult {
   checkoutColored: number;
   imported: number;
   skippedExisting: number;
+  skippedReportMatch: number;
   skippedPending: number;
   errors: string[];
   titles: string[];
@@ -253,6 +260,41 @@ async function loadAppointmentStoreByEventId(
   for (const row of data ?? []) {
     const eventId = row.calendar_event_id as string;
     if (eventId) map.set(eventId, row.store_id as StoreSlug);
+  }
+  return map;
+}
+
+async function loadReportRowsByDate(
+  storeId: StoreSlug,
+  fromDate: string,
+  toDate: string,
+): Promise<Map<string, ReportRowForMatch[]>> {
+  const supabase = getSupabaseAdmin();
+  const map = new Map<string, ReportRowForMatch[]>();
+  let offset = 0;
+  for (;;) {
+    const { data, error } = await supabase
+      .from('daily_transactions')
+      .select('occurred_on, title, amount, member_note')
+      .eq('store_id', storeId)
+      .gte('occurred_on', fromDate)
+      .lte('occurred_on', toDate)
+      .order('occurred_on', { ascending: true })
+      .range(offset, offset + 999);
+    if (error) throw new Error(error.message);
+    if (!data?.length) break;
+    for (const row of data) {
+      const date = row.occurred_on as string;
+      const arr = map.get(date) ?? [];
+      arr.push({
+        title: row.title as string,
+        amount: row.amount as number,
+        member_note: (row.member_note as string | null) ?? null,
+      });
+      map.set(date, arr);
+    }
+    if (data.length < 1000) break;
+    offset += 1000;
   }
   return map;
 }
@@ -603,6 +645,7 @@ export async function syncCalendarBackfill(
     checkoutColored: 0,
     imported: 0,
     skippedExisting: 0,
+    skippedReportMatch: 0,
     skippedPending: 0,
     errors: [],
     titles: [],
@@ -611,6 +654,10 @@ export async function syncCalendarBackfill(
 
   const events = await fetchCalendarEventsInRange(timeMin, timeMax);
   result.scanned = events.length;
+
+  const reportRowsByDate = options.skipIfReportRowExists
+    ? await loadReportRowsByDate(storeId, options.fromDate, toDate)
+    : null;
 
   const checkoutEvents = events
     .filter((ev) => {
@@ -660,6 +707,15 @@ export async function syncCalendarBackfill(
       continue;
     }
 
+    if (reportRowsByDate) {
+      const occurredOn = formatStoreDateIso(new Date(eventStartIso(ev)));
+      const dayRows = reportRowsByDate.get(occurredOn) ?? [];
+      if (calendarEventMatchesReportRows(ev.id, title, dayRows)) {
+        result.skippedReportMatch += 1;
+        continue;
+      }
+    }
+
     try {
       const memberRows = await memberRowsFor(resolvedStore);
       const pendingInserts = pendingByStore.get(resolvedStore) ?? [];
@@ -675,6 +731,18 @@ export async function syncCalendarBackfill(
         pendingInserts.push(row);
       }
       pendingByStore.set(resolvedStore, pendingInserts);
+
+      if (reportRowsByDate) {
+        for (const row of rows) {
+          const arr = reportRowsByDate.get(row.occurred_on) ?? [];
+          arr.push({
+            title: row.title,
+            amount: row.amount,
+            member_note: row.member_note,
+          });
+          reportRowsByDate.set(row.occurred_on, arr);
+        }
+      }
 
       if (options.dryRun) {
         result.imported += rows.length;
