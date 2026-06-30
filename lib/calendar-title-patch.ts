@@ -118,6 +118,35 @@ export function applyTitleBalanceIfMissing(
   return title;
 }
 
+/** 拆成儲值+使用兩筆後，回寫 Google 日曆為 +topup-usage、餘額VIP 合寫標題 */
+export async function patchCalendarAfterCompoundSplit(
+  eventId: string,
+  originalTitle: string,
+  input: {
+    topup: number;
+    usage: number;
+    balanceAfterUsage: number;
+    clientName: string | null;
+    clientPhone: string | null;
+  },
+): Promise<string | null> {
+  const patched = buildCompoundCalendarSummary(
+    originalTitle,
+    input.topup,
+    input.usage,
+    input.balanceAfterUsage,
+    input.clientName,
+    input.clientPhone,
+  );
+  if (stripAllSpaces(patched) === stripAllSpaces(originalTitle)) return null;
+  try {
+    await patchCalendarEventSummary(eventId, patched);
+    return patched;
+  } catch {
+    return null;
+  }
+}
+
 /** 原日曆標題缺、餘額時回寫 Google Calendar */
 export async function patchGoogleCalendarTitleIfNeeded(
   eventId: string,

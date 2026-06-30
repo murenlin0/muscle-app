@@ -5,17 +5,20 @@ import {
 import {
   calendarEventIsStaffRenameOnly,
   calendarEventMatchesReportRows,
-  inferCheckoutPaymentFromTitle,
-  isCalendarCheckoutEvent,
   type ReportRowForMatch,
 } from '@/lib/calendar-report-match';
 import { updateReportStaffFromCalendarEvent } from '@/lib/calendar-checkout-sync';
+import {
+  getCheckoutPaymentFromColor,
+  isCheckoutCalendarEvent,
+} from '@/lib/calendar-checkout-colors';
 import { syncClientBalanceInDb } from '@/lib/client-balance-server';
 import { refreshGoogleAccessToken } from '@/lib/google-oauth';
 import { parseStaffPrefixFromCalendarTitle, resolveStoreSlugFromStaffName } from '@/lib/booking-message';
 import { parseCompoundVipTitle } from '@/lib/ledger-title-fix';
 import {
   applyTitleBalanceIfMissing,
+  patchCalendarAfterCompoundSplit,
   patchGoogleCalendarTitleIfNeeded,
 } from '@/lib/calendar-title-patch';
 import {
@@ -32,16 +35,6 @@ import { listActiveStaffForRoster } from '@/lib/staff-auth-server';
 import { formatStoreDateIso } from '@/lib/store-timezone';
 import type { StoreSlug } from '@/lib/stores';
 import type { TransactionCategory } from '@/lib/transaction-category';
-
-const COLOR_TO_PAYMENT: Record<
-  string,
-  { methods: string[]; defaultCategory: TransactionCategory }
-> = {
-  '5': { methods: ['現金'], defaultCategory: '一般消費' },
-  '7': { methods: ['富邦'], defaultCategory: '一般消費' },
-  '9': { methods: ['富邦'], defaultCategory: '一般消費' },
-  '3': { methods: [], defaultCategory: '會員使用' },
-};
 
 interface GoogleCalendarEvent {
   id: string;
@@ -508,8 +501,7 @@ function buildRowsFromEvent(
   const title = ev.summary?.trim() ?? '';
   if (!title) return [];
 
-  const payment =
-    COLOR_TO_PAYMENT[ev.colorId ?? ''] ?? inferCheckoutPaymentFromTitle(title);
+  const payment = getCheckoutPaymentFromColor(ev.colorId);
   if (!payment) return [];
 
   const staffName = resolveStaffDisplayNameFromTitle(title);
@@ -665,14 +657,7 @@ export async function syncCalendarBackfill(
     : null;
 
   const checkoutEvents = events
-    .filter((ev) => {
-      if (ev.status === 'cancelled') return false;
-      return isCalendarCheckoutEvent(
-        ev.colorId,
-        ev.summary?.trim() ?? '',
-        COLOR_TO_PAYMENT,
-      );
-    })
+    .filter((ev) => isCheckoutCalendarEvent(ev.colorId, ev.status))
     .sort(
       (a, b) =>
         new Date(eventStartIso(a)).getTime() - new Date(eventStartIso(b)).getTime(),
@@ -812,7 +797,7 @@ export async function syncCalendarBackfill(
       if (compound && usageRow) {
         const balanceAfterUsage = parseBalanceAfter顿号(stripAllSpaces(usageRow.title));
         if (balanceAfterUsage !== null) {
-          await patchGoogleCalendarTitleIfNeeded(ev.id, title, {
+          await patchCalendarAfterCompoundSplit(ev.id, title, {
             topup: compound.topup,
             usage: compound.usage,
             balanceAfterUsage,

@@ -8,6 +8,7 @@ import { getSupabaseAdmin } from '@/lib/supabase';
 import { getCalendarEventStatus, getCalendarEventSummary, patchCalendarEventSummary } from '@/lib/google-calendar';
 import {
   applyTitleBalanceIfMissing,
+  patchCalendarAfterCompoundSplit,
   patchGoogleCalendarTitleIfNeeded,
 } from '@/lib/calendar-title-patch';
 import { parseStaffPrefixFromCalendarTitle, resolveStoreSlugFromStaffName } from '@/lib/booking-message';
@@ -23,6 +24,11 @@ import { findStaffByName, listActiveStaffForRoster } from '@/lib/staff-auth-serv
 import { formatStoreDateIso } from '@/lib/store-timezone';
 import type { StoreSlug } from '@/lib/stores';
 import type { TransactionCategory } from '@/lib/transaction-category';
+import {
+  getCheckoutPaymentFromColor,
+  isCalendarCheckoutColor,
+  isCheckoutCalendarEvent,
+} from '@/lib/calendar-checkout-colors';
 import {
   calendarTitleHasCheckoutAmounts,
   minutesFromCalendarTitle,
@@ -198,24 +204,9 @@ export async function repairCalendarCheckout(
 }
 
 /**
- * Google Calendar colorId → 付款方式 + 類型
- *
- * 師傅在日曆結帳時用顏色表示付款方式：
- *   5 (黃/Banana)   = 現金
- *   7 (藍/Peacock)  = 富邦（轉帳）
- *   3 (紫/Grape)    = 會員使用
- *
- * 灰 (8/Graphite) 為待結帳，不在此處理。
+ * Google Calendar colorId → 付款方式（詳見 calendar-checkout-colors.ts）
+ * 5 Banana、6 Tangerine = 現金；7/9 = 富邦；3 = 會員使用；8 灰 = 待結帳
  */
-const COLOR_TO_PAYMENT: Record<
-  string,
-  { methods: string[]; defaultCategory: TransactionCategory }
-> = {
-  '5': { methods: ['現金'], defaultCategory: '一般消費' },   // 現金
-  '7': { methods: ['富邦'], defaultCategory: '一般消費' },   // 轉帳
-  '9': { methods: ['富邦'], defaultCategory: '一般消費' },   // Blueberry 深藍也算轉帳
-  '3': { methods: [], defaultCategory: '會員使用' },          // 純會員使用
-};
 
 interface GoogleCalendarEvent {
   id: string;
@@ -734,7 +725,7 @@ export async function syncCalendarCompletedStaffRenames(
   for (const ev of events) {
     if (ev.status === 'cancelled') continue;
     const color = ev.colorId ?? '';
-    if (!(color in COLOR_TO_PAYMENT)) continue;
+    if (!isCalendarCheckoutColor(ev.colorId)) continue;
 
     const title = ev.summary?.trim();
     if (!title) continue;
@@ -808,7 +799,7 @@ export async function syncClientCalendarAppointments(
  * 只處理：
  *   1. calendar_event_id 存在於 appointments（師傅 UI 建立）
  *   2. appointments.status = 'pending_checkout'
- *   3. 事件顏色已從灰（8）改為 COLOR_TO_PAYMENT 中的顏色
+ *   3. 事件顏色已從灰（8）改為結帳色（含 5/6 現金、7/9 富邦、3 會員使用）
  *
  * @param lookbackHours 往前回溯多少小時的「最近更新」事件（預設 72hr）
  */
@@ -857,11 +848,7 @@ export async function syncCalendarCheckouts(
   const events = calData.items ?? [];
 
   // 篩選：顏色已換成結帳色（非灰、非預設）
-  const checkoutEvents = events.filter((ev) => {
-    if (ev.status === 'cancelled') return false;
-    const color = ev.colorId ?? '';
-    return color in COLOR_TO_PAYMENT;
-  });
+  const checkoutEvents = events.filter((ev) => isCheckoutCalendarEvent(ev.colorId, ev.status));
 
   if (checkoutEvents.length === 0) return result;
 
@@ -932,7 +919,7 @@ export async function syncCalendarCheckouts(
         continue;
       }
 
-      const payment = COLOR_TO_PAYMENT[ev.colorId ?? ''];
+      const payment = getCheckoutPaymentFromColor(ev.colorId);
       if (!payment) {
         result.skipped++;
         continue;
@@ -1139,8 +1126,22 @@ export async function syncCalendarCheckouts(
       pending.push(...rowsToInsert);
       pendingByStore.set(storeId, pending);
 
-      // 原標題缺、餘額 → 回寫 Google 日曆
-      if (calendarPatch) {
+      // 拆帳兩筆 → 回寫 Google 日曆合寫標題（+topup-usage、餘額VIP）
+      if (calendarPatch && 'topup' in calendarPatch) {
+        const patched = await patchCalendarAfterCompoundSplit(ev.id, title, {
+          topup: calendarPatch.topup,
+          usage: calendarPatch.usage,
+          balanceAfterUsage: calendarPatch.balanceAfterUsage,
+          clientName: client?.name ?? null,
+          clientPhone: client?.phone ?? null,
+        });
+        if (patched) {
+          await supabase
+            .from('appointments')
+            .update({ calendar_title: patched })
+            .eq('id', appt.id);
+        }
+      } else if (calendarPatch) {
         await patchGoogleCalendarTitleIfNeeded(ev.id, title, {
           ...calendarPatch,
           clientName: client?.name ?? null,
