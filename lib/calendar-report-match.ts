@@ -52,3 +52,31 @@ export function calendarEventMatchesReportRows(
 
   return false;
 }
+
+/** 標題是否含結帳金額（+儲值-使用、會員扣款、現金金額） */
+export function calendarTitleHasCheckoutAmounts(title: string): boolean {
+  const t = normReportTitle(title);
+  if (/\+\d+-\d+/.test(t)) return true;
+  if (/\d+分-\d{3,}/.test(t)) return true;
+  if (/\d+分(\d{3,5})(?!\+|-)/.test(t)) return true;
+  return false;
+}
+
+export function minutesFromCalendarTitle(title: string): string | null {
+  return title.match(/(\d+)分/)?.[1] ?? null;
+}
+
+/**
+ * 日曆標題僅改師傅（有電話與分鐘、無結帳金額），報表同日已有該客戶列。
+ * 此類事件應更新 staff_name，不應補匯新列。
+ */
+export function calendarEventIsStaffRenameOnly(
+  calTitle: string,
+  dayRows: ReportRowForMatch[],
+): boolean {
+  if (calendarTitleHasCheckoutAmounts(calTitle)) return false;
+  const phone = phoneFromTitle(calTitle);
+  if (!phone) return false;
+  const phoneRows = dayRows.filter((r) => r.title.includes(phone));
+  return phoneRows.length >= 1;
+}

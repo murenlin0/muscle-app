@@ -39,26 +39,17 @@ export async function listActiveStaffForRoster(): Promise<StaffRosterEntry[]> {
   }));
 }
 
-/** 流水帳「人員」下拉：合併 staff 表、已同步流水帳、Notion 師傅選項 */
+/** 流水帳「人員」下拉：staff 表 + Notion 師傅選項（不含流水帳曾出現的名稱） */
 export async function listLedgerStaffNames(storeId: StoreSlug): Promise<string[]> {
   const supabase = getSupabaseAdmin();
 
-  const [{ data: staffRows, error: staffErr }, { data: txRows, error: txErr }] =
-    await Promise.all([
-      supabase
-        .from('staff')
-        .select('display_name')
-        .eq('store_id', storeId)
-        .eq('is_active', true),
-      supabase
-        .from('daily_transactions')
-        .select('staff_name')
-        .eq('store_id', storeId)
-        .not('staff_name', 'is', null),
-    ]);
+  const { data: staffRows, error: staffErr } = await supabase
+    .from('staff')
+    .select('display_name')
+    .eq('store_id', storeId)
+    .eq('is_active', true);
 
   if (staffErr) throw new Error(staffErr.message);
-  if (txErr) throw new Error(txErr.message);
 
   let notionNames: string[] = [];
   try {
@@ -70,10 +61,6 @@ export async function listLedgerStaffNames(storeId: StoreSlug): Promise<string[]
   const names = new Set<string>();
   for (const row of staffRows ?? []) {
     const n = row.display_name?.trim();
-    if (n) names.add(n);
-  }
-  for (const row of txRows ?? []) {
-    const n = (row.staff_name as string | null)?.trim();
     if (n) names.add(n);
   }
   for (const n of notionNames) {

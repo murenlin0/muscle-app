@@ -4,8 +4,10 @@ import {
 } from '@/lib/integration-settings';
 import {
   calendarEventMatchesReportRows,
+  calendarEventIsStaffRenameOnly,
   type ReportRowForMatch,
 } from '@/lib/calendar-report-match';
+import { updateReportStaffFromCalendarEvent } from '@/lib/calendar-checkout-sync';
 import { syncClientBalanceInDb } from '@/lib/client-balance-server';
 import { refreshGoogleAccessToken } from '@/lib/google-oauth';
 import { parseStaffPrefixFromCalendarTitle, resolveStoreSlugFromStaffName } from '@/lib/booking-message';
@@ -690,12 +692,8 @@ export async function syncCalendarBackfill(
 
   for (const ev of checkoutEvents) {
     const noteKey = `gcal:${ev.id}`;
-    if (existingNotes.has(noteKey)) {
-      result.skippedExisting++;
-      continue;
-    }
-
     const title = ev.summary?.trim() ?? '';
+    const occurredOn = formatStoreDateIso(new Date(eventStartIso(ev)));
     const resolvedStore = resolveStoreForCalendarEvent(
       title,
       ev.id,
@@ -703,14 +701,43 @@ export async function syncCalendarBackfill(
       roster,
       storeId,
     );
+
+    async function syncStaffFromTitle(): Promise<void> {
+      if (options.dryRun || !title) return;
+      if (options.storeId && resolvedStore !== options.storeId) return;
+      try {
+        await updateReportStaffFromCalendarEvent(supabase, {
+          storeId: resolvedStore,
+          eventId: ev.id,
+          title,
+          occurredOn,
+        });
+      } catch (e) {
+        result.errors.push(
+          `[${title}] 更新師傅失敗：${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+
+    if (existingNotes.has(noteKey)) {
+      await syncStaffFromTitle();
+      result.skippedExisting++;
+      continue;
+    }
+
     if (options.storeId && resolvedStore !== options.storeId) {
       continue;
     }
 
     if (reportRowsByDate) {
-      const occurredOn = formatStoreDateIso(new Date(eventStartIso(ev)));
       const dayRows = reportRowsByDate.get(occurredOn) ?? [];
       if (calendarEventMatchesReportRows(ev.id, title, dayRows)) {
+        await syncStaffFromTitle();
+        result.skippedReportMatch += 1;
+        continue;
+      }
+      if (calendarEventIsStaffRenameOnly(title, dayRows)) {
+        await syncStaffFromTitle();
         result.skippedReportMatch += 1;
         continue;
       }

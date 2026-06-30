@@ -10,7 +10,7 @@ import {
   applyTitleBalanceIfMissing,
   patchGoogleCalendarTitleIfNeeded,
 } from '@/lib/calendar-title-patch';
-import { parseStaffPrefixFromCalendarTitle } from '@/lib/booking-message';
+import { parseStaffPrefixFromCalendarTitle, resolveStoreSlugFromStaffName } from '@/lib/booking-message';
 import { parseCompoundVipTitle } from '@/lib/ledger-title-fix';
 import {
   clientMemberBalance,
@@ -19,10 +19,15 @@ import {
 } from '@/lib/ledger-title-balance';
 import { canonicalStaffName } from '@/lib/multi-staff-split';
 import { normalizeStaffName } from '@/lib/notion-title-normalize';
-import { findStaffByName } from '@/lib/staff-auth-server';
+import { findStaffByName, listActiveStaffForRoster } from '@/lib/staff-auth-server';
 import { formatStoreDateIso } from '@/lib/store-timezone';
 import type { StoreSlug } from '@/lib/stores';
 import type { TransactionCategory } from '@/lib/transaction-category';
+import {
+  calendarTitleHasCheckoutAmounts,
+  minutesFromCalendarTitle,
+  phoneFromTitle,
+} from '@/lib/calendar-report-match';
 
 /**
  * 簡易合寫解析：只要標題含 +N-M 就視為「儲值 N + 使用 M」
@@ -624,6 +629,74 @@ export async function syncCalendarPendingStaffChanges(
 }
 
 /**
+ * 依日曆標題前綴更新報表 staff_name（gcal 連結列，或同日同客戶列）。
+ */
+export async function updateReportStaffFromCalendarEvent(
+  supabase: ReturnType<typeof getSupabaseAdmin>,
+  params: {
+    storeId: StoreSlug;
+    eventId: string;
+    title: string;
+    occurredOn: string;
+  },
+): Promise<number> {
+  const { storeId, eventId, title, occurredOn } = params;
+  const newStaffName = resolveStaffDisplayNameFromTitle(title);
+  if (!newStaffName) return 0;
+
+  const { data: linked, error: linkedErr } = await supabase
+    .from('daily_transactions')
+    .select('id, staff_name')
+    .eq('store_id', storeId)
+    .like('member_note', `gcal:${eventId}:%`);
+
+  if (linkedErr) throw new Error(linkedErr.message);
+
+  const ids = new Set<string>();
+  const phone = phoneFromTitle(title);
+
+  if (linked?.length) {
+    for (const tx of linked) {
+      if ((tx.staff_name as string | null) !== newStaffName) {
+        ids.add(tx.id as string);
+      }
+    }
+  } else if (phone) {
+    const { data: phoneTxs, error: phoneErr } = await supabase
+      .from('daily_transactions')
+      .select('id, staff_name, title')
+      .eq('store_id', storeId)
+      .eq('occurred_on', occurredOn)
+      .or(`client_phone.eq.${phone},title.ilike.%${phone}%`);
+
+    if (phoneErr) throw new Error(phoneErr.message);
+
+    const staffRenameOnly = !calendarTitleHasCheckoutAmounts(title);
+    const mins = minutesFromCalendarTitle(title);
+
+    for (const tx of phoneTxs ?? []) {
+      if ((tx.staff_name as string | null) === newStaffName) continue;
+      if (staffRenameOnly) {
+        if (mins && !(tx.title as string).includes(`${mins}分`)) continue;
+        ids.add(tx.id as string);
+      } else {
+        ids.add(tx.id as string);
+      }
+    }
+  }
+
+  if (!ids.size) return 0;
+
+  const { error: updateErr } = await supabase
+    .from('daily_transactions')
+    .update({ staff_name: newStaffName })
+    .in('id', [...ids]);
+
+  if (updateErr) throw new Error(updateErr.message);
+  return ids.size;
+}
+
+/**
  * 已結帳：日曆標題事後改師傅 → 更新 daily_transactions.staff_name（報表同步）。
  */
 export async function syncCalendarCompletedStaffRenames(
@@ -638,33 +711,18 @@ export async function syncCalendarCompletedStaffRenames(
   if (!(await isGoogleCalendarReady())) return result;
 
   const supabase = getSupabaseAdmin();
-  const { data: completed, error: apptErr } = await supabase
+  const roster = await listActiveStaffForRoster();
+
+  const { data: appts, error: apptErr } = await supabase
     .from('appointments')
-    .select('id, store_id, calendar_event_id, starts_at, client_id')
-    .eq('status', 'completed')
-    .not('calendar_event_id', 'is', null)
-    .not('created_by_staff_id', 'is', null);
+    .select('calendar_event_id, store_id')
+    .not('calendar_event_id', 'is', null);
 
   if (apptErr) throw new Error(apptErr.message);
-  if (!completed?.length) return result;
 
-  const completedByEventId = new Map(
-    completed.map((a) => [a.calendar_event_id as string, a]),
+  const storeByEventId = new Map(
+    (appts ?? []).map((a) => [a.calendar_event_id as string, a.store_id as StoreSlug]),
   );
-
-  const clientIds = [
-    ...new Set(completed.map((a) => a.client_id).filter(Boolean)),
-  ] as string[];
-  const clientMap = new Map<string, { phone: string }>();
-  if (clientIds.length) {
-    const { data } = await supabase
-      .from('clients')
-      .select('id, phone')
-      .in('id', clientIds);
-    for (const row of data ?? []) {
-      clientMap.set(row.id as string, { phone: row.phone as string });
-    }
-  }
 
   let events: GoogleCalendarEvent[];
   try {
@@ -678,60 +736,37 @@ export async function syncCalendarCompletedStaffRenames(
     const color = ev.colorId ?? '';
     if (!(color in COLOR_TO_PAYMENT)) continue;
 
-    const appt = completedByEventId.get(ev.id);
-    if (!appt) continue;
-
     const title = ev.summary?.trim();
     if (!title) continue;
+    if (!resolveStaffDisplayNameFromTitle(title)) continue;
 
-    const newStaffName = resolveStaffDisplayNameFromTitle(title);
-    if (!newStaffName) continue;
-
-    const client = appt.client_id
-      ? clientMap.get(appt.client_id as string)
-      : null;
-    if (!client?.phone) continue;
-
-    const startsAt = ev.start.dateTime
-      ? new Date(ev.start.dateTime)
-      : new Date(appt.starts_at as string);
-    const occurredOn = formatStoreDateIso(startsAt);
-    const storeId = appt.store_id as StoreSlug;
-
-    const { data: txs, error: txErr } = await supabase
-      .from('daily_transactions')
-      .select('id, staff_name')
-      .eq('store_id', storeId)
-      .eq('occurred_on', occurredOn)
-      .eq('client_phone', client.phone)
-      .eq('source', 'calendar_sync');
-
-    if (txErr) {
-      result.errors.push(`[${title}] 查詢報表失敗：${txErr.message}`);
-      continue;
-    }
-    if (!txs?.length) continue;
-
-    const toUpdate = txs.filter(
-      (tx) => (tx.staff_name as string | null) !== newStaffName,
+    const occurredOn = formatStoreDateIso(
+      ev.start.dateTime
+        ? new Date(ev.start.dateTime)
+        : new Date(ev.start.date ?? Date.now()),
     );
-    if (!toUpdate.length) continue;
 
-    const { error: updateErr } = await supabase
-      .from('daily_transactions')
-      .update({ staff_name: newStaffName })
-      .in(
-        'id',
-        toUpdate.map((tx) => tx.id as string),
+    const storeId =
+      storeByEventId.get(ev.id) ??
+      resolveStoreSlugFromStaffName(resolveStaffDisplayNameFromTitle(title), roster);
+    if (!storeId) continue;
+
+    try {
+      const count = await updateReportStaffFromCalendarEvent(supabase, {
+        storeId,
+        eventId: ev.id,
+        title,
+        occurredOn,
+      });
+      if (count > 0) {
+        result.updated += count;
+        result.titles.push(title);
+      }
+    } catch (e) {
+      result.errors.push(
+        `[${title}] 更新報表師傅失敗：${e instanceof Error ? e.message : String(e)}`,
       );
-
-    if (updateErr) {
-      result.errors.push(`[${title}] 更新報表師傅失敗：${updateErr.message}`);
-      continue;
     }
-
-    result.updated += toUpdate.length;
-    result.titles.push(title);
   }
 
   return result;
