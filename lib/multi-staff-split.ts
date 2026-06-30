@@ -5,10 +5,11 @@ import type { TransactionCategory } from '@/lib/transaction-category';
 export function canonicalStaffName(name: string): string {
   const n = name.trim();
   if (n === '湘') return '湘湘';
+  if (n === '寶') return '阿寶';
   return n;
 }
 
-const MULTI_CHAR_STAFF = ['杰恩', 'Yumi', '湘湘'] as const;
+const MULTI_CHAR_STAFF = ['杰恩', 'Yumi', '湘湘', '阿寶'] as const;
 
 export interface MultiStaffSourceRow {
   title: string;
@@ -52,7 +53,7 @@ export function splitCompactStaffNames(raw: string): string[] {
     let matched = false;
     for (const token of MULTI_CHAR_STAFF) {
       if (rest.startsWith(token)) {
-        out.push(token === '湘湘' ? '湘' : token);
+        out.push(token === '湘湘' ? '湘' : token === '阿寶' ? '寶' : token);
         rest = rest.slice(token.length);
         matched = true;
         break;

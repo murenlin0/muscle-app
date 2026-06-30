@@ -81,6 +81,7 @@ export function isCompoundVipTitle(title: string): boolean {
 function titleStaffPrefix(staffName: string | null | undefined, fallback: string): string {
   if (!staffName) return fallback;
   if (staffName === '湘湘') return '湘';
+  if (staffName === '阿寶') return '寶';
   return staffName;
 }
 

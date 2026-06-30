@@ -8,12 +8,12 @@ function canonicalTarget(name: string): string {
   return canonicalStaffName(normalized);
 }
 
-/** 標題前綴／staff_name 比對用別名（如 湘↔湘湘、約翰→錦） */
+/** 標題前綴／staff_name 比對用別名（如 湘↔湘湘、寶↔阿寶、約翰→錦） */
 export function staffTitlePrefixVariants(displayName: string): string[] {
   const canon = canonicalTarget(displayName);
   const out = new Set<string>([canon]);
   if (canon === '湘湘') out.add('湘');
-  if (canon === '湘') out.add('湘湘');
+  if (canon === '阿寶') out.add('寶');
   for (const [alias, target] of Object.entries(STAFF_NAME_ALIASES)) {
     if (target === canon) out.add(alias);
   }
