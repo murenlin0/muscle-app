@@ -1,5 +1,6 @@
 import { buildStaffNameOrFilter } from '@/lib/staff-name-match';
 import { resolveClientFromFields } from '@/lib/ledger-client-display';
+import { canonicalStaffName } from '@/lib/multi-staff-split';
 import { sortLedgerDisplayRows } from '@/lib/ledger-display-sort';
 import { parseNotionNamePhone } from '@/lib/phone';
 import { getSupabaseAdmin } from '@/lib/supabase';
@@ -202,7 +203,7 @@ function mapTxRow(row: TxDbRow): DailyTransactionListItem {
     amount: row.amount,
     category,
     paymentMethods: row.payment_methods ?? [],
-    staffName: row.staff_name ?? null,
+    staffName: row.staff_name ? canonicalStaffName(row.staff_name) : null,
     clientName,
     clientPhone,
   };

@@ -1,4 +1,5 @@
 import { fetchNotionStaffSelectOptions } from '@/lib/notion-api';
+import { canonicalStaffName } from '@/lib/multi-staff-split';
 import { getSupabaseAdmin } from '@/lib/supabase';
 import { getStore, type StoreSlug } from '@/lib/stores';
 
@@ -61,10 +62,11 @@ export async function listLedgerStaffNames(storeId: StoreSlug): Promise<string[]
   const names = new Set<string>();
   for (const row of staffRows ?? []) {
     const n = row.display_name?.trim();
-    if (n) names.add(n);
+    if (n) names.add(canonicalStaffName(n));
   }
   for (const n of notionNames) {
-    if (n.trim()) names.add(n.trim());
+    const t = n.trim();
+    if (t) names.add(canonicalStaffName(t));
   }
 
   return [...names].sort((a, b) => a.localeCompare(b, 'zh-Hant'));
@@ -72,16 +74,23 @@ export async function listLedgerStaffNames(storeId: StoreSlug): Promise<string[]
 
 export async function findStaffByName(storeId: StoreSlug, displayName: string) {
   const supabase = getSupabaseAdmin();
-  const { data, error } = await supabase
-    .from('staff')
-    .select('id, display_name')
-    .eq('store_id', storeId)
-    .eq('display_name', displayName)
-    .eq('is_active', true)
-    .maybeSingle();
+  const canonical = canonicalStaffName(displayName.trim());
+  const candidates = [...new Set([displayName.trim(), canonical])];
+  if (canonical === '阿寶') candidates.push('寶');
+  if (canonical === '湘湘') candidates.push('湘');
 
-  if (error) throw new Error(error.message);
-  return data;
+  for (const name of candidates) {
+    const { data, error } = await supabase
+      .from('staff')
+      .select('id, display_name')
+      .eq('store_id', storeId)
+      .eq('display_name', name)
+      .eq('is_active', true)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (data) return data;
+  }
+  return null;
 }
 
 export async function upsertClientForBooking(
