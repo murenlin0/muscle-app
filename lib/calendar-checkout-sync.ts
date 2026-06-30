@@ -882,27 +882,15 @@ export async function syncCalendarCheckouts(
     appointments.map((a) => [a.calendar_event_id as string, a]),
   );
 
-  // 批次取 staff / client 資料
-  const staffIds = [
-    ...new Set(appointments.map((a) => a.staff_id).filter(Boolean)),
-  ] as string[];
   const clientIds = [
     ...new Set(appointments.map((a) => a.client_id).filter(Boolean)),
   ] as string[];
 
-  const staffMap = new Map<string, { display_name: string }>();
   const clientMap = new Map<
     string,
     { name: string; phone: string; is_vip: boolean }
   >();
 
-  if (staffIds.length) {
-    const { data } = await supabase
-      .from('staff')
-      .select('id, display_name')
-      .in('id', staffIds);
-    for (const row of data ?? []) staffMap.set(row.id as string, row as { display_name: string });
-  }
   if (clientIds.length) {
     const { data } = await supabase
       .from('clients')
@@ -952,11 +940,8 @@ export async function syncCalendarCheckouts(
 
       const title = ev.summary ?? (appt.calendar_title as string | null) ?? '';
       const storeId = appt.store_id as StoreSlug;
-      const staffName =
-        resolveStaffDisplayNameFromTitle(title) ??
-        (appt.staff_id
-          ? (staffMap.get(appt.staff_id as string)?.display_name ?? null)
-          : null);
+      // 人員只看日曆標題前綴（如「仁60分」→ 仁），不用師傅 UI 建立預約的人
+      const staffName = resolveStaffDisplayNameFromTitle(title);
       const client = appt.client_id
         ? clientMap.get(appt.client_id as string) ?? null
         : null;
