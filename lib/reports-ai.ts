@@ -230,7 +230,7 @@ ${staffLines}
   - vip_count：VIP 會員人數
   - balance_by_name：依姓名查會員餘額（clientNameQuery 填姓名）
 - top_n + topN + topNType：前 N 名師傅/客人（時數、營業額、來店次數）
-- sum：加總金額；count：筆數；salary：單一師傅時薪估算；multi_salary：多位師傅各別時薪估算；staff_hours：各師傅時數；filter：只看明細
+- sum：加總金額；count：筆數；salary：單一師傅時薪估算；multi_salary：多位師傅各別時薪估算；staff_hours：師傅服務時數（可指定單一師傅）；filter：只看明細
 
 【日期解析】
 - 「6/1~6/15」「6月1日到15日」→ ${year}-06-01 ~ ${year}-06-15
@@ -242,7 +242,7 @@ ${staffLines}
 
 【其他規則】
 - store：使用者沒指定分店 → null（後端用畫面分店）；明確說某店才填 store
-- staff_hours：categories=null；staffName=null（列全部師傅）
+- staff_hours：查各師傅或單一師傅服務時數；未指定師傅時 staffName=null；指定師傅（如湘湘、仁）時填 staffName；要「列出」該師傅服務明細時同樣填 staffName
 - salary：單一師傅；需 staffName + hourlyRate；調薪則填 rateEffectiveFrom、priorRate
 - multi_salary：多位師傅各別時薪；staffRates 填陣列（staffName 對應 display_name 或暱稱如弘師、杰恩、Jimmy）；staffName/hourlyRate 留 null
 - topN 預設 5
@@ -257,6 +257,8 @@ ${staffLines}
 - 「VIP 有幾個」→ intent=client_stats, clientStatsMode=vip_count
 - 「王小明餘額」→ intent=client_stats, clientStatsMode=balance_by_name, clientNameQuery=王小明
 - 「前3名師傅時數」→ intent=top_n, topN=3, topNType=staff_hours
+- 「報表列出湘湘整個六月按的和她的總時數」→ intent=staff_hours, staffName=湘湘, from=${year}-06-01, to=${year}-06-30
+- 「仁本月服務時數多少」→ intent=staff_hours, staffName=仁, from/to=本月
 - 「弘師700、杰恩650、Jimmy700，6/1~6/15 各算薪水」→ intent=multi_salary, staffRates=[{staffName:"強森弘師",hourlyRate:700},{staffName:"杰恩",hourlyRate:650},{staffName:"Jimmy",hourlyRate:700}], from=${year}-06-01, to=${year}-06-15
 - 「H 強森弘師700/小時 N 杰恩650/小時 j Jimmy700/小時 6/1~6/15 算薪水」→ intent=multi_salary（同上 staffRates）
 - 「弘師時薪650，本月算薪水」→ intent=salary, staffName=強森弘師, hourlyRate=650
@@ -479,7 +481,7 @@ export async function extractReportQuery(
   return intent;
 }
 
-/** 統計類 intent 不套用流水帳細部篩選 */
+/** 統計類 intent 不套用流水帳細部篩選（staff_hours 需同步篩選下方流水帳） */
 export function intentSkipsLedgerFilter(intent: ReportQueryIntentType): boolean {
   return [
     'overview',
@@ -489,7 +491,6 @@ export function intentSkipsLedgerFilter(intent: ReportQueryIntentType): boolean 
     'client_stats',
     'multi_account',
     'top_n',
-    'staff_hours',
     'salary',
     'multi_salary',
   ].includes(intent);

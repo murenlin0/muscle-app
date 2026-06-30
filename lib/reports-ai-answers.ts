@@ -644,11 +644,40 @@ export async function computeReportAnswer(
       intent.to,
       store,
       [...SERVICE_HOURS_CATEGORIES],
-      { ...listOptions },
+      {
+        ...listOptions,
+        staffName: intent.staffName ?? undefined,
+      },
     );
 
+    let rows = report.rows;
+    if (intent.staffName) {
+      rows = rows.filter((r) => staffMatches(r.staffName, intent.staffName!));
+    }
+
+    if (intent.staffName) {
+      let totalHours = 0;
+      let count = 0;
+      for (const r of rows) {
+        const hours = computeServiceHours(r.title, r.category);
+        if (hours == null) continue;
+        totalHours += hours;
+        count += 1;
+      }
+
+      if (!count) {
+        return `${storeLabel}，${range}，「${intent.staffName}」服務時數\n此期間無可計算時數的服務紀錄（一般消費、會員使用）。`;
+      }
+
+      return [
+        `${storeLabel}，${range}，「${intent.staffName}」服務時數（一般消費、會員使用）：`,
+        `· 合計 ${formatServiceHours(totalHours)} 小時`,
+        `· 共 ${count.toLocaleString('zh-TW')} 筆`,
+      ].join('\n');
+    }
+
     const byStaff = new Map<string, number>();
-    for (const r of report.rows) {
+    for (const r of rows) {
       const hours = computeServiceHours(r.title, r.category);
       if (hours == null) continue;
       const name = r.staffName?.trim() || '（未指定）';

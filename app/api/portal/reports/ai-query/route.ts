@@ -104,7 +104,7 @@ function buildFilter(
     from: intent.from,
     to: intent.to,
     store: allowAllStores && !store ? null : (store ?? null),
-    staffName: isStaffHours ? null : intent.staffName,
+    staffName: intent.staffName,
     categories: isStaffHours ? serviceHourCategories : intent.categories,
     account: isStaffHours ? null : intent.account,
   };
