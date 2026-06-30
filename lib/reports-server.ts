@@ -1,3 +1,4 @@
+import { buildStaffNameOrFilter } from '@/lib/staff-name-match';
 import { resolveClientFromFields } from '@/lib/ledger-client-display';
 import { sortLedgerDisplayRows } from '@/lib/ledger-display-sort';
 import { parseNotionNamePhone } from '@/lib/phone';
@@ -177,8 +178,7 @@ function applyStaffNameQuery<T extends { or: (filters: string) => T }>(
   q: T,
   staffName: string,
 ): T {
-  const safe = staffName.trim().replace(/[%,()]/g, '');
-  return q.or(`staff_name.ilike.%${safe}%,title.ilike.%${safe}%`);
+  return q.or(buildStaffNameOrFilter(staffName));
 }
 
 function mapTxRow(row: TxDbRow): DailyTransactionListItem {

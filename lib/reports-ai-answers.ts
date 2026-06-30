@@ -16,17 +16,20 @@ import {
 import { getStore, STORE_LIST, type StoreSlug } from '@/lib/stores';
 import { isRevenueCategory, type TransactionCategory } from '@/lib/transaction-category';
 
+import { rowMatchesStaffFilter } from '@/lib/staff-name-match';
+
 const SERVICE_CATEGORIES = ['一般消費', '會員使用', '會員補差額'] as const;
 
 function fmtMoney(n: number): string {
   return `$${Math.round(n).toLocaleString('zh-TW')}`;
 }
 
-function staffMatches(rowStaff: string | null, target: string): boolean {
-  if (!rowStaff) return false;
-  const a = rowStaff.trim();
-  const b = target.trim();
-  return a === b || a.includes(b) || b.includes(a);
+function staffMatches(
+  rowStaff: string | null,
+  target: string,
+  title = '',
+): boolean {
+  return rowMatchesStaffFilter({ staffName: rowStaff, title }, target);
 }
 
 function titleMinutes(title: string): number {
@@ -434,7 +437,7 @@ async function computeMultiSalaryAnswer(
   let anyHours = false;
 
   for (const { staffName, hourlyRate } of staffRates) {
-    const rows = report.rows.filter((r) => staffMatches(r.staffName, staffName));
+    const rows = report.rows.filter((r) => staffMatches(r.staffName, staffName, r.title));
     let totalHours = 0;
     for (const r of rows) {
       const h = computeServiceHours(r.title, r.category);
@@ -594,7 +597,9 @@ export async function computeReportAnswer(
       [...SERVICE_CATEGORIES],
       { ...listOptions },
     );
-    const rows = report.rows.filter((r) => staffMatches(r.staffName, intent.staffName!));
+    const rows = report.rows.filter((r) =>
+      staffMatches(r.staffName, intent.staffName!, r.title),
+    );
     if (!rows.length) {
       return `在 ${range}（${storeLabel}）找不到「${intent.staffName}」的服務紀錄，無法估算薪資。`;
     }
@@ -652,7 +657,7 @@ export async function computeReportAnswer(
 
     let rows = report.rows;
     if (intent.staffName) {
-      rows = rows.filter((r) => staffMatches(r.staffName, intent.staffName!));
+      rows = rows.filter((r) => staffMatches(r.staffName, intent.staffName!, r.title));
     }
 
     if (intent.staffName) {
@@ -718,7 +723,7 @@ export async function computeReportAnswer(
 
   let rows = report.rows;
   if (intent.staffName) {
-    rows = rows.filter((r) => staffMatches(r.staffName, intent.staffName!));
+    rows = rows.filter((r) => staffMatches(r.staffName, intent.staffName!, r.title));
   }
 
   const count = rows.length;
