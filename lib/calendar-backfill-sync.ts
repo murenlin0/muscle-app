@@ -3,8 +3,10 @@ import {
   getGoogleRefreshToken,
 } from '@/lib/integration-settings';
 import {
-  calendarEventMatchesReportRows,
   calendarEventIsStaffRenameOnly,
+  calendarEventMatchesReportRows,
+  inferCheckoutPaymentFromTitle,
+  isCalendarCheckoutEvent,
   type ReportRowForMatch,
 } from '@/lib/calendar-report-match';
 import { updateReportStaffFromCalendarEvent } from '@/lib/calendar-checkout-sync';
@@ -503,11 +505,12 @@ function buildRowsFromEvent(
   memberRows: MemberBalanceRow[],
   pendingInserts: TxInsert[],
 ): TxInsert[] {
-  const payment = COLOR_TO_PAYMENT[ev.colorId ?? ''];
-  if (!payment) return [];
-
   const title = ev.summary?.trim() ?? '';
   if (!title) return [];
+
+  const payment =
+    COLOR_TO_PAYMENT[ev.colorId ?? ''] ?? inferCheckoutPaymentFromTitle(title);
+  if (!payment) return [];
 
   const staffName = resolveStaffDisplayNameFromTitle(title);
   const client = resolveClientFromTitle(title);
@@ -664,9 +667,11 @@ export async function syncCalendarBackfill(
   const checkoutEvents = events
     .filter((ev) => {
       if (ev.status === 'cancelled') return false;
-      const color = ev.colorId ?? '';
-      if (color === '8' || color === '') return false;
-      return color in COLOR_TO_PAYMENT;
+      return isCalendarCheckoutEvent(
+        ev.colorId,
+        ev.summary?.trim() ?? '',
+        COLOR_TO_PAYMENT,
+      );
     })
     .sort(
       (a, b) =>

@@ -80,3 +80,33 @@ export function calendarEventIsStaffRenameOnly(
   const phoneRows = dayRows.filter((r) => r.title.includes(phone));
   return phoneRows.length >= 1;
 }
+
+/** 標題已含電話＋結帳金額，可視為已結帳（即使日曆未改顏色） */
+export function inferCheckoutPaymentFromTitle(title: string): {
+  methods: string[];
+  defaultCategory: '一般消費' | '會員使用';
+} | null {
+  const t = normReportTitle(title);
+  if (!phoneFromTitle(title)) return null;
+
+  if (/\+\d+-\d+/.test(t) || /\d+分-\d{3,}/.test(t)) {
+    return { methods: [], defaultCategory: '會員使用' };
+  }
+  if (/\d+分\d{3,5}(?!\+|-)/.test(t)) {
+    return { methods: ['現金'], defaultCategory: '一般消費' };
+  }
+  return null;
+}
+
+/** 日曆事件是否應視為已結帳（有結帳色，或標題已寫完金額+電話且非灰=待結帳） */
+export function isCalendarCheckoutEvent(
+  colorId: string | undefined,
+  title: string,
+  checkoutColors: Record<string, unknown>,
+): boolean {
+  const color = colorId ?? '';
+  if (color === '8') return false;
+  if (color in checkoutColors) return true;
+  if (color === '' && inferCheckoutPaymentFromTitle(title)) return true;
+  return false;
+}
